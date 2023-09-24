@@ -1,0 +1,16 @@
+[Unit]
+Description=Incus - container startup/shutdown
+Documentation=man:incus(1)
+After=incus.socket incus.service
+Requires=incus.socket
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/incus admin activateifneeded
+ExecStop=/usr/libexec/incus/shutdown
+TimeoutStartSec=600s
+TimeoutStopSec=600s
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

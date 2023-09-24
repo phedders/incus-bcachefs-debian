@@ -1,0 +1,21 @@
+[Unit]
+Description=Incus Container Hypervisor
+After=network-online.target openvswitch-switch.service lxcfs.service incus.socket
+Requires=network-online.target lxcfs.service incus.socket
+Documentation=man:incus(1)
+
+[Service]
+EnvironmentFile=-/etc/environment
+ExecStartPre=/usr/libexec/incus/lncus-apparmor-load
+ExecStart=/usr/bin/incus --group incus --logfile=/var/log/incus/incus.log
+ExecStartPost=/usr/bin/incus admin waitready --timeout=600
+KillMode=process
+TimeoutStartSec=600s
+TimeoutStopSec=30s
+Restart=on-failure
+LimitNOFILE=1048576
+LimitNPROC=infinity
+TasksMax=infinity
+
+[Install]
+Also=incus-containers.service incus.socket

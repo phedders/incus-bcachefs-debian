@@ -1,0 +1,2 @@
+usr/bin/incus-agent
+debian/wrappers/incus-agent-setup lib/systemd/
