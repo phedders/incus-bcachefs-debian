@@ -26,9 +26,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/lxc/incus/shared"
 	"github.com/lxc/incus/shared/api"
 	"github.com/lxc/incus/shared/proxy"
+	"github.com/lxc/incus/shared/util"
 )
 
 // KeyPairAndCA returns a CertInfo object with a reference to the key pair and
@@ -66,7 +66,7 @@ func KeyPairAndCA(dir, prefix string, kind CertKind, addHosts bool) (*CertInfo, 
 	// If available, load the CA data as well.
 	caFilename := filepath.Join(dir, prefix+".ca")
 	var ca *x509.Certificate
-	if shared.PathExists(caFilename) {
+	if util.PathExists(caFilename) {
 		ca, err = ReadCert(caFilename)
 		if err != nil {
 			return nil, err
@@ -74,14 +74,19 @@ func KeyPairAndCA(dir, prefix string, kind CertKind, addHosts bool) (*CertInfo, 
 	}
 
 	crlFilename := filepath.Join(dir, "ca.crl")
-	var crl *pkix.CertificateList
-	if shared.PathExists(crlFilename) {
+	var crl *x509.RevocationList
+	if util.PathExists(crlFilename) {
 		data, err := os.ReadFile(crlFilename)
 		if err != nil {
 			return nil, err
 		}
 
-		crl, err = x509.ParseCRL(data)
+		pemData, _ := pem.Decode(data)
+		if pemData == nil {
+			return nil, fmt.Errorf("Invalid revocation list")
+		}
+
+		crl, err = x509.ParseRevocationList(pemData.Bytes)
 		if err != nil {
 			return nil, err
 		}
@@ -117,7 +122,7 @@ func KeyPairFromRaw(certificate []byte, key []byte) (*CertInfo, error) {
 type CertInfo struct {
 	keypair tls.Certificate
 	ca      *x509.Certificate
-	crl     *pkix.CertificateList
+	crl     *x509.RevocationList
 }
 
 // KeyPair returns the public/private key pair.
@@ -175,7 +180,7 @@ func (c *CertInfo) Fingerprint() string {
 }
 
 // CRL returns the certificate revocation list.
-func (c *CertInfo) CRL() *pkix.CertificateList {
+func (c *CertInfo) CRL() *x509.RevocationList {
 	return c.crl
 }
 
@@ -240,7 +245,7 @@ func mynames() ([]string, error) {
 // FindOrGenCert generates a keypair if needed.
 // The type argument is false for server, true for client.
 func FindOrGenCert(certf string, keyf string, certtype bool, addHosts bool) error {
-	if shared.PathExists(certf) && shared.PathExists(keyf) {
+	if util.PathExists(certf) && util.PathExists(keyf) {
 		return nil
 	}
 

@@ -372,6 +372,14 @@ var APIExtensions = []string{
 	"numa_cpu_placement",
 	"custom_volume_iso",
 	"network_allocations",
+	"zfs_delegate",
+	"storage_api_remote_volume_snapshot_copy",
+	"operations_get_query_all_projects",
+	"metadata_configuration",
+	"syslog_socket",
+	"event_lifecycle_name_and_project",
+	"instances_nic_limits_priority",
+	"disk_initial_volume_configuration",
 }
 
 // APIExtensionsCount returns the number of available API extensions.

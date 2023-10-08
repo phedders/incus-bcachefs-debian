@@ -17,11 +17,12 @@ import (
 	"github.com/lxc/incus/client"
 	cli "github.com/lxc/incus/internal/cmd"
 	"github.com/lxc/incus/internal/i18n"
-	"github.com/lxc/incus/shared"
+	"github.com/lxc/incus/internal/instance"
 	"github.com/lxc/incus/shared/api"
 	"github.com/lxc/incus/shared/ioprogress"
 	"github.com/lxc/incus/shared/termios"
 	"github.com/lxc/incus/shared/units"
+	"github.com/lxc/incus/shared/util"
 )
 
 type volumeColumn struct {
@@ -97,13 +98,13 @@ Unless specified through a prefix, all volume operations affect "custom" (user c
 	storageVolumeListCmd := cmdStorageVolumeList{global: c.global, storage: c.storage, storageVolume: c}
 	cmd.AddCommand(storageVolumeListCmd.Command())
 
-	// Move
-	storageVolumeMoveCmd := cmdStorageVolumeMove{global: c.global, storage: c.storage, storageVolume: c, storageVolumeCopy: &storageVolumeCopyCmd}
-	cmd.AddCommand(storageVolumeMoveCmd.Command())
-
 	// Rename
 	storageVolumeRenameCmd := cmdStorageVolumeRename{global: c.global, storage: c.storage, storageVolume: c}
 	cmd.AddCommand(storageVolumeRenameCmd.Command())
+
+	// Move
+	storageVolumeMoveCmd := cmdStorageVolumeMove{global: c.global, storage: c.storage, storageVolume: c, storageVolumeCopy: &storageVolumeCopyCmd, storageVolumeRename: &storageVolumeRenameCmd}
+	cmd.AddCommand(storageVolumeMoveCmd.Command())
 
 	// Set
 	storageVolumeSetCmd := cmdStorageVolumeSet{global: c.global, storage: c.storage, storageVolume: c}
@@ -131,7 +132,7 @@ func (c *cmdStorageVolume) parseVolume(defaultType string, name string) (string,
 	fields := strings.SplitN(name, "/", 2)
 	if len(fields) == 1 {
 		return fields[0], defaultType
-	} else if len(fields) == 2 && !shared.StringInSlice(fields[0], []string{"custom", "image", "container", "virtual-machine"}) {
+	} else if len(fields) == 2 && !util.ValueInSlice(fields[0], []string{"custom", "image", "container", "virtual-machine"}) {
 		return name, defaultType
 	}
 
@@ -382,6 +383,10 @@ func (c *cmdStorageVolumeCopy) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if srcIsSnapshot && c.flagVolumeOnly {
+		return fmt.Errorf(i18n.G("Cannot set --volume-only when copying a snapshot"))
+	}
+
 	// If the volume is in local storage, set the target to its location (or provide a helpful error
 	// message if the target is incorrect). If the volume is in remote storage (and the source server is clustered) we
 	// can use any provided target. Note that for standalone servers, this will set the target to "none".
@@ -503,7 +508,7 @@ func (c *cmdStorageVolumeCopy) Run(cmd *cobra.Command, args []string) error {
 
 		if err != nil {
 			progress.Done("")
-			return fmt.Errorf("Failed deleting source volume after copy: %w", err)
+			return fmt.Errorf(i18n.G("Failed deleting source volume after copy: %w"), err)
 		}
 	}
 	progress.Done(finalMsg)
@@ -634,7 +639,7 @@ func (c *cmdStorageVolumeDelete) Run(cmd *cobra.Command, args []string) error {
 	// Parse the input
 	volName, volType := c.storageVolume.parseVolume("custom", args[1])
 
-	// If a target was specified, create the volume on the given member.
+	// If a target was specified, delete the volume on the given member.
 	if c.storage.flagTarget != "" {
 		client = client.UseTarget(c.storage.flagTarget)
 	}
@@ -952,7 +957,7 @@ func (c *cmdStorageVolumeEdit) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Spawn the editor
-	content, err := shared.TextEditor("", []byte(c.helpTemplate()+"\n\n"+string(data)))
+	content, err := textEditor("", []byte(c.helpTemplate()+"\n\n"+string(data)))
 	if err != nil {
 		return err
 	}
@@ -976,7 +981,7 @@ func (c *cmdStorageVolumeEdit) Run(cmd *cobra.Command, args []string) error {
 					return err
 				}
 
-				content, err = shared.TextEditor("", content)
+				content, err = textEditor("", content)
 				if err != nil {
 					return err
 				}
@@ -1008,7 +1013,7 @@ func (c *cmdStorageVolumeEdit) Run(cmd *cobra.Command, args []string) error {
 				return err
 			}
 
-			content, err = shared.TextEditor("", content)
+			content, err = textEditor("", content)
 			if err != nil {
 				return err
 			}
@@ -1264,7 +1269,7 @@ func (c *cmdStorageVolumeInfo) Run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if shared.TimeIsSet(vol.CreatedAt) {
+	if vol.CreatedAt.Unix() != 0 {
 		fmt.Printf(i18n.G("Created: %s")+"\n", vol.CreatedAt.Local().Format(layout))
 	}
 
@@ -1280,7 +1285,7 @@ func (c *cmdStorageVolumeInfo) Run(cmd *cobra.Command, args []string) error {
 
 			var row []string
 
-			fields := strings.Split(snap.Name, shared.SnapshotDelimiter)
+			fields := strings.Split(snap.Name, instance.SnapshotDelimiter)
 			row = append(row, fields[len(fields)-1])
 			row = append(row, snap.Description)
 
@@ -1317,13 +1322,13 @@ func (c *cmdStorageVolumeInfo) Run(cmd *cobra.Command, args []string) error {
 			var row []string
 			row = append(row, backup.Name)
 
-			if shared.TimeIsSet(backup.CreatedAt) {
+			if backup.CreatedAt.Unix() != 0 {
 				row = append(row, backup.CreatedAt.Local().Format(layout))
 			} else {
 				row = append(row, " ")
 			}
 
-			if shared.TimeIsSet(backup.ExpiresAt) {
+			if backup.ExpiresAt.Unix() != 0 {
 				row = append(row, backup.ExpiresAt.Local().Format(layout))
 			} else {
 				row = append(row, " ")
@@ -1451,7 +1456,7 @@ func (c *cmdStorageVolumeList) Run(cmd *cobra.Command, args []string) error {
 	for _, vol := range volumes {
 		row := []string{}
 		for _, column := range columns {
-			if column.NeedsState && !shared.IsSnapshot(vol.Name) && vol.Type != "image" {
+			if column.NeedsState && !instance.IsSnapshot(vol.Name) && vol.Type != "image" {
 				state, err := resource.server.GetStoragePoolVolumeState(resource.name, vol.Type, vol.Name)
 				if err != nil {
 					return err
@@ -1531,7 +1536,7 @@ func (c *cmdStorageVolumeList) parseColumns(clustered bool) ([]volumeColumn, err
 }
 
 func (c *cmdStorageVolumeList) typeColumnData(vol api.StorageVolume, state api.StorageVolumeState) string {
-	if shared.IsSnapshot(vol.Name) {
+	if instance.IsSnapshot(vol.Name) {
 		return fmt.Sprintf("%s (snapshot)", vol.Type)
 	}
 
@@ -1576,10 +1581,11 @@ func (c *cmdStorageVolumeList) projectColumnData(vol api.StorageVolume, state ap
 
 // Move.
 type cmdStorageVolumeMove struct {
-	global            *cmdGlobal
-	storage           *cmdStorage
-	storageVolume     *cmdStorageVolume
-	storageVolumeCopy *cmdStorageVolumeCopy
+	global              *cmdGlobal
+	storage             *cmdStorage
+	storageVolume       *cmdStorageVolume
+	storageVolumeCopy   *cmdStorageVolumeCopy
+	storageVolumeRename *cmdStorageVolumeRename
 }
 
 func (c *cmdStorageVolumeMove) Command() *cobra.Command {
@@ -1604,6 +1610,53 @@ func (c *cmdStorageVolumeMove) Run(cmd *cobra.Command, args []string) error {
 	exit, err := c.global.CheckArgs(cmd, args, 2, 2)
 	if exit {
 		return err
+	}
+
+	// Parse remote
+	resources, err := c.global.ParseServers(args[0], args[1])
+	if err != nil {
+		return err
+	}
+
+	// Source
+	srcResource := resources[0]
+	if srcResource.name == "" {
+		return fmt.Errorf(i18n.G("Missing source volume name"))
+	}
+
+	srcRemote := srcResource.remote
+	srcPath := srcResource.name
+
+	// Get source pool and volume name
+	srcVolName, srcVolPool := c.storageVolume.parseVolumeWithPool(srcPath)
+	if srcVolPool == "" {
+		return fmt.Errorf(i18n.G("No storage pool for source volume specified"))
+	}
+
+	// Destination
+	dstResource := resources[1]
+	dstRemote := dstResource.remote
+	dstPath := dstResource.name
+
+	// Get target pool and volume name
+	dstVolName, dstVolPool := c.storageVolume.parseVolumeWithPool(dstPath)
+	if dstVolPool == "" {
+		return fmt.Errorf(i18n.G("No storage pool for target volume specified"))
+	}
+
+	// Rename volume if both remotes and pools of source and target are equal.
+	if srcRemote == dstRemote && srcVolPool == dstVolPool {
+		var args []string
+
+		if srcRemote != "" {
+			args = append(args, fmt.Sprintf("%s:%s", srcRemote, srcVolPool))
+		} else {
+			args = append(args, srcVolPool)
+		}
+
+		args = append(args, srcVolName, dstVolName)
+
+		return c.storageVolumeRename.Run(cmd, args)
 	}
 
 	return c.storageVolumeCopy.Run(cmd, args)
@@ -2251,16 +2304,16 @@ func (c *cmdStorageVolumeSnapshotList) listSnapshots(d incus.InstanceServer, poo
 	for _, snap := range snapshots {
 		var row []string
 
-		fields := strings.Split(snap.Name, shared.SnapshotDelimiter)
+		fields := strings.Split(snap.Name, instance.SnapshotDelimiter)
 		row = append(row, fields[len(fields)-1])
 
-		if shared.TimeIsSet(snap.CreatedAt) {
+		if snap.CreatedAt.Unix() != 0 {
 			row = append(row, snap.CreatedAt.Local().Format(layout))
 		} else {
 			row = append(row, " ")
 		}
 
-		if snap.ExpiresAt != nil && shared.TimeIsSet(*snap.ExpiresAt) {
+		if snap.ExpiresAt != nil && snap.ExpiresAt.Unix() != 0 {
 			row = append(row, snap.ExpiresAt.Local().Format(layout))
 		} else {
 			row = append(row, " ")
@@ -2566,7 +2619,7 @@ func (c *cmdStorageVolumeExport) Run(cmd *cobra.Command, args []string) error {
 
 	op, err := d.CreateStoragePoolVolumeBackup(name, volName, req)
 	if err != nil {
-		return fmt.Errorf("Failed to create storage volume backup: %w", err)
+		return fmt.Errorf(i18n.G("Failed to create storage volume backup: %w"), err)
 	}
 
 	// Watch the background operation
@@ -2599,12 +2652,12 @@ func (c *cmdStorageVolumeExport) Run(cmd *cobra.Command, args []string) error {
 	uStr := op.Get().Resources["backups"][0]
 	u, err := url.Parse(uStr)
 	if err != nil {
-		return fmt.Errorf("Invalid URL %q: %w", uStr, err)
+		return fmt.Errorf(i18n.G("Invalid URL %q: %w"), uStr, err)
 	}
 
 	backupName, err := url.PathUnescape(path.Base(u.EscapedPath()))
 	if err != nil {
-		return fmt.Errorf("Invalid backup name segment in path %q: %w", u.EscapedPath(), err)
+		return fmt.Errorf(i18n.G("Invalid backup name segment in path %q: %w"), u.EscapedPath(), err)
 	}
 
 	defer func() {
@@ -2645,7 +2698,7 @@ func (c *cmdStorageVolumeExport) Run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		_ = os.Remove(targetName)
 		progress.Done("")
-		return fmt.Errorf("Failed to fetch storage volume backup file: %w", err)
+		return fmt.Errorf(i18n.G("Failed to fetch storage volume backup file: %w"), err)
 	}
 
 	progress.Done(i18n.G("Backup exported successfully!"))
@@ -2728,13 +2781,13 @@ func (c *cmdStorageVolumeImport) Run(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Validate type flag
-		if !shared.StringInSlice(c.flagType, []string{"backup", "iso"}) {
-			return fmt.Errorf("Import type needs to be \"backup\" or \"iso\"")
+		if !util.ValueInSlice(c.flagType, []string{"backup", "iso"}) {
+			return fmt.Errorf(i18n.G("Import type needs to be \"backup\" or \"iso\""))
 		}
 	}
 
 	if c.flagType == "iso" && volName == "" {
-		return fmt.Errorf("Importing ISO images requires a volume name to be set")
+		return fmt.Errorf(i18n.G("Importing ISO images requires a volume name to be set"))
 	}
 
 	progress := cli.ProgressRenderer{

@@ -1,15 +1,8 @@
----
-discourse: 11801
----
-
 (network-forwards)=
 # How to configure network forwards
 
 ```{note}
 Network forwards are available for the {ref}`network-ovn` and the {ref}`network-bridge`.
-```
-
-```{youtube} https://www.youtube.com/watch?v=B-Uzo9WldMs
 ```
 
 Network forwards allow an external IP address (or specific ports on it) to be forwarded to an internal IP address (or specific ports on it) in the network that the forward belongs to.
@@ -27,7 +20,7 @@ There are two different ways how you can use network forwards in this case:
 Use the following command to create a network forward:
 
 ```bash
-lxc network forward create <network_name> <listen_address> [configuration_options...]
+incus network forward create <network_name> <listen_address> [configuration_options...]
 ```
 
 Each forward is assigned to a network.
@@ -58,7 +51,7 @@ Bridge network
   - The listen address must not overlap with a subnet that is in use with another network.
 
 OVN network
-: - Allowed listen addresses must be defined in the uplink network's `ipv{n}.routes` settings or the project's `restricted.networks.subnets` setting (if set).
+: - Allowed listen addresses must be defined in the uplink network's `ipv{n}.routes` settings or the project's {config:option}`project-restricted:restricted.networks.subnets` setting (if set).
   - The listen address must not overlap with a subnet that is in use with another network.
 
 (network-forwards-port-specifications)=
@@ -71,7 +64,7 @@ It must be within the same subnet as the network that the forward is associated 
 Use the following command to add a port specification:
 
 ```bash
-lxc network forward port add <network_name> <listen_address> <protocol> <listen_ports> <target_address> [<target_ports>]
+incus network forward port add <network_name> <listen_address> <protocol> <listen_ports> <target_address> [<target_ports>]
 ```
 
 You can specify a single listen port or a set of ports.
@@ -97,7 +90,7 @@ Property          | Type       | Required | Description
 Use the following command to edit a network forward:
 
 ```bash
-lxc network forward edit <network_name> <listen_address>
+incus network forward edit <network_name> <listen_address>
 ```
 
 This command opens the network forward in YAML format for editing.
@@ -108,5 +101,5 @@ You can edit both the general configuration and the port specifications.
 Use the following command to delete a network forward:
 
 ```bash
-lxc network forward delete <network_name> <listen_address>
+incus network forward delete <network_name> <listen_address>
 ```

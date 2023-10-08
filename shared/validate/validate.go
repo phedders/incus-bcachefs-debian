@@ -298,7 +298,7 @@ func IsNetwork(value string) error {
 	return nil
 }
 
-// IsNetworkAddressCIDR validates an IP addresss string in CIDR format.
+// IsNetworkAddressCIDR validates an IP address string in CIDR format.
 func IsNetworkAddressCIDR(value string) error {
 	_, _, err := net.ParseCIDR(value)
 	if err != nil {
@@ -354,7 +354,7 @@ func IsNetworkV4(value string) error {
 	return nil
 }
 
-// IsNetworkAddressV4 validates an IPv4 addresss string.
+// IsNetworkAddressV4 validates an IPv4 address string.
 func IsNetworkAddressV4(value string) error {
 	ip := net.ParseIP(value)
 	if ip == nil || ip.To4() == nil {
@@ -364,7 +364,7 @@ func IsNetworkAddressV4(value string) error {
 	return nil
 }
 
-// IsNetworkAddressCIDRV4 validates an IPv4 addresss string in CIDR format.
+// IsNetworkAddressCIDRV4 validates an IPv4 address string in CIDR format.
 func IsNetworkAddressCIDRV4(value string) error {
 	ip, subnet, err := net.ParseCIDR(value)
 	if err != nil {
@@ -417,7 +417,7 @@ func IsNetworkV6(value string) error {
 	return nil
 }
 
-// IsNetworkAddressV6 validates an IPv6 addresss string.
+// IsNetworkAddressV6 validates an IPv6 address string.
 func IsNetworkAddressV6(value string) error {
 	ip := net.ParseIP(value)
 	if ip == nil || ip.To4() != nil {
@@ -427,7 +427,7 @@ func IsNetworkAddressV6(value string) error {
 	return nil
 }
 
-// IsNetworkAddressCIDRV6 validates an IPv6 addresss string in CIDR format.
+// IsNetworkAddressCIDRV6 validates an IPv6 address string in CIDR format.
 func IsNetworkAddressCIDRV6(value string) error {
 	ip, subnet, err := net.ParseCIDR(value)
 	if err != nil {
@@ -732,9 +732,9 @@ func IsHostname(name string) error {
 		return fmt.Errorf(`Name must not end with "-" character`)
 	}
 
-	_, err := strconv.Atoi(string(name[0]))
+	_, err := strconv.ParseUint(name, 10, 64)
 	if err == nil {
-		return fmt.Errorf("Name must not start with a number")
+		return fmt.Errorf("Name cannot be a number")
 	}
 
 	match, err := regexp.MatchString(`^[\-a-zA-Z0-9]+$`, name)

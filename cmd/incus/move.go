@@ -5,10 +5,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	config "github.com/lxc/incus/internal/cliconfig"
 	cli "github.com/lxc/incus/internal/cmd"
 	"github.com/lxc/incus/internal/i18n"
 	"github.com/lxc/incus/shared/api"
+	config "github.com/lxc/incus/shared/cliconfig"
 )
 
 type cmdMove struct {
@@ -226,7 +226,7 @@ func (c *cmdMove) Run(cmd *cobra.Command, args []string) error {
 	del.flagForceProtected = true
 	err = del.Run(cmd, args[:1])
 	if err != nil {
-		return fmt.Errorf("Failed to delete original instance after copying it: %w", err)
+		return fmt.Errorf(i18n.G("Failed to delete original instance after copying it: %w"), err)
 	}
 
 	return nil
