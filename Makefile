@@ -4,13 +4,14 @@ POFILES=$(wildcard po/*.po)
 MOFILES=$(patsubst %.po,%.mo,$(POFILES))
 LINGUAS=$(basename $(POFILES))
 POTFILE=po/$(DOMAIN).pot
-VERSION=$(shell grep "var Version" internal/version/flex.go | cut -d'"' -f2)
+VERSION=$(or ${CUSTOM_VERSION},$(shell grep "var Version" internal/version/flex.go | cut -d'"' -f2))
 ARCHIVE=incus-$(VERSION).tar
 HASH := \#
 TAG_SQLITE3=$(shell printf "$(HASH)include <cowsql.h>\nvoid main(){cowsql_node_id n = 1;}" | $(CC) ${CGO_CFLAGS} -o /dev/null -xc - >/dev/null 2>&1 && echo "libsqlite3")
 GOPATH ?= $(shell $(GO) env GOPATH)
 CGO_LDFLAGS_ALLOW ?= (-Wl,-wrap,pthread_create)|(-Wl,-z,now)
 SPHINXENV=doc/.sphinx/venv/bin/activate
+SPHINXPIPPATH=doc/.sphinx/venv/bin/pip
 
 ifneq "$(wildcard vendor)" ""
 	RAFT_PATH=$(CURDIR)/vendor/raft
@@ -52,12 +53,6 @@ incus-migrate:
 	CGO_ENABLED=0 $(GO) install -v -tags netgo ./cmd/incus-migrate
 	@echo "Incus migration tool built successfully"
 
-.PHONY: incus-doc
-incus-doc:
-	@$(GO) version > /dev/null 2>&1 || { echo "go is not installed for incus-doc installation."; exit 1; }
-	cd incusd/config/generate && CGO_ENABLED=0 $(GO) build -o $(GOPATH)/bin/incus-doc
-	@echo "Incus documentation generator built successfully"
-
 .PHONY: deps
 deps:
 	@if [ ! -e "$(RAFT_PATH)" ]; then \
@@ -98,21 +93,23 @@ ifneq "$(INCUS_OFFLINE)" ""
 	exit 1
 endif
 	$(GO) get -t -v -d -u ./...
-	$(GO) mod tidy
+	go get github.com/mdlayher/socket@v0.4.1
+	$(GO) mod tidy --go=1.20
+
 	cd cmd/lxd-to-incus && $(GO) get -t -v -d -u ./...
-	cd cmd/lxd-to-incus && $(GO) mod tidy
+	cd cmd/lxd-to-incus && $(GO) mod tidy --go=1.20
 	@echo "Dependencies updated"
 
 .PHONY: update-protobuf
 update-protobuf:
-	protoc --go_out=. ./incusd/migration/migrate.proto
+	protoc --go_out=. ./internal/migration/migrate.proto
 
 .PHONY: update-schema
 update-schema:
-	cd incusd/db/generate && $(GO) build -o $(GOPATH)/bin/incus-generate -tags "$(TAG_SQLITE3)" $(DEBUG) && cd -
+	cd internal/server/db/generate && $(GO) build -o $(GOPATH)/bin/incus-generate -tags "$(TAG_SQLITE3)" $(DEBUG) && cd -
 	$(GO) generate ./...
-	gofmt -s -w ./incusd/db/
-	goimports -w ./incusd/db/
+	gofmt -s -w ./internal/server/db/
+	goimports -w ./internal/server/db/
 	@echo "Code generation completed"
 
 .PHONY: update-api
@@ -120,23 +117,33 @@ update-api:
 ifeq "$(INCUS_OFFLINE)" ""
 	(cd / ; $(GO) install -v -x github.com/go-swagger/go-swagger/cmd/swagger@latest)
 endif
-	swagger generate spec -o doc/rest-api.yaml -w ./incusd -m
+	swagger generate spec -o doc/rest-api.yaml -w ./cmd/incusd -m
+
+.PHONY: update-metadata
+update-metadata: build
+	@echo "Generating golang documentation metadata"
+	cd internal/server/config/generate && CGO_ENABLED=0 go build -o $(GOPATH)/bin/incus-doc
+	$(GOPATH)/bin/incus-doc . --json ./internal/server/metadata/configuration.json --txt ./doc/config_options.txt
 
 .PHONY: doc-setup
-doc-setup:
+doc-setup: client
 	@echo "Setting up documentation build environment"
 	python3 -m venv doc/.sphinx/venv
-	. $(SPHINXENV) ; pip install --upgrade -r doc/.sphinx/requirements.txt
+	. $(SPHINXENV) ; pip install --require-virtualenv --upgrade -r doc/.sphinx/requirements.txt --log doc/.sphinx/venv/pip_install.log
+	@test ! -f doc/.sphinx/venv/pip_list.txt || \
+        mv doc/.sphinx/venv/pip_list.txt doc/.sphinx/venv/pip_list.txt.bak
+	$(SPHINXPIPPATH) list --local --format=freeze > doc/.sphinx/venv/pip_list.txt
+	find doc/reference/manpages/ -name "*.md" -type f -delete
 	rm -Rf doc/html
+	rm -Rf doc/.sphinx/.doctrees
 
 .PHONY: doc
-doc: incus-doc doc-setup doc-incremental
+doc: doc-setup doc-incremental
 
 .PHONY: doc-incremental
 doc-incremental:
 	@echo "Build the documentation"
-	$(GOPATH)/bin/incus-doc ./incusd -y ./doc/config_options.yaml -t ./doc/config_options.txt
-	. $(SPHINXENV) ; sphinx-build -c doc/ -b dirhtml doc/ doc/html/ -w doc/.sphinx/warnings.txt
+	. $(SPHINXENV) ; LOCAL_SPHINX_BUILD=True sphinx-build -c doc/ -b dirhtml doc/ doc/html/ -d doc/.sphinx/.doctrees -w doc/.sphinx/warnings.txt
 
 .PHONY: doc-serve
 doc-serve:
@@ -144,15 +151,24 @@ doc-serve:
 
 .PHONY: doc-spellcheck
 doc-spellcheck: doc
-	. $(SPHINXENV) ; python3 -m pyspelling -c doc/.sphinx/.spellcheck.yaml
+	. $(SPHINXENV) ; python3 -m pyspelling -c doc/.sphinx/spellingcheck.yaml
 
 .PHONY: doc-linkcheck
 doc-linkcheck: doc-setup
-	. $(SPHINXENV) ; sphinx-build -c doc/ -b linkcheck doc/ doc/html/
+	. $(SPHINXENV) ; LOCAL_SPHINX_BUILD=True sphinx-build -c doc/ -b linkcheck doc/ doc/html/ -d doc/.sphinx/.doctrees
 
 .PHONY: doc-lint
 doc-lint:
 	doc/.sphinx/.markdownlint/doc-lint.sh
+
+.PHONY:  woke-install
+woke-install:
+	@type woke >/dev/null 2>&1 || \
+        { echo "Installing \"woke\" snap... \n"; sudo snap install woke; }
+
+.PHONY: doc-woke
+doc-woke: woke-install
+	woke *.md **/*.md -c https://github.com/canonical/Inclusive-naming/raw/main/config.yml
 
 .PHONY: debug
 debug:
@@ -249,24 +265,25 @@ update-pot:
 ifeq "$(INCUS_OFFLINE)" ""
 	(cd / ; $(GO) install -v -x github.com/snapcore/snapd/i18n/xgettext-go@2.57.1)
 endif
-	xgettext-go -o po/$(DOMAIN).pot --add-comments-tag=TRANSLATORS: --sort-output --package-name=$(DOMAIN) --msgid-bugs-address=lxc-devel@lists.linuxcontainers.org --keyword=i18n.G --keyword-plural=i18n.NG cmd/incus/*.go internal/cliconfig/*.go
+	xgettext-go -o po/$(DOMAIN).pot --add-comments-tag=TRANSLATORS: --sort-output --package-name=$(DOMAIN) --msgid-bugs-address=lxc-devel@lists.linuxcontainers.org --keyword=i18n.G --keyword-plural=i18n.NG cmd/incus/*.go shared/cliconfig/*.go
 
 .PHONY: build-mo
 build-mo: $(MOFILES)
 
 .PHONY: static-analysis
 static-analysis:
-ifeq ($(shell command -v golangci-lint 2> /dev/null),)
+ifeq ($(shell command -v golangci-lint),)
 	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$($(GO) env GOPATH)/bin
 endif
-ifeq ($(shell command -v shellcheck 2> /dev/null),)
+ifeq ($(shell command -v shellcheck),)
 	echo "Please install shellcheck"
 	exit 1
-endif
+else
 ifneq "$(shell shellcheck --version | grep version: | cut -d ' ' -f2)" "0.8.0"
 	@echo "WARN: shellcheck version is not 0.8.0"
 endif
-ifeq ($(shell command -v flake8 2> /dev/null),)
+endif
+ifeq ($(shell command -v flake8),)
 	echo "Please install flake8"
 	exit 1
 endif
@@ -276,6 +293,5 @@ endif
 	shellcheck test/extras/*.sh
 	run-parts --exit-on-error --regex '.sh' test/lint
 
-.PHONY: tags
-tags: *.go incusd/*.go shared/*.go cmd/incus/*.go
-	find . -type f -name '*.go' | xargs gotags > tags
+tags: */*.go
+	find . -type f -name '*.go' | gotags -L - -f tags

@@ -10,7 +10,7 @@ import (
 	"github.com/lxc/incus/client"
 	cli "github.com/lxc/incus/internal/cmd"
 	"github.com/lxc/incus/internal/i18n"
-	"github.com/lxc/incus/shared"
+	"github.com/lxc/incus/internal/instance"
 	"github.com/lxc/incus/shared/api"
 )
 
@@ -96,7 +96,7 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if !shared.IsSnapshot(cName) {
+	if !instance.IsSnapshot(cName) {
 		ct, etag, err := s.GetInstance(cName)
 		if err != nil {
 			return err
@@ -126,7 +126,7 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 
 			// Stop the instance.
 			req := api.InstanceStatePut{
-				Action:  string(shared.Stop),
+				Action:  string(instance.Stop),
 				Timeout: -1,
 				Force:   true,
 			}
@@ -143,7 +143,7 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 
 			// Start the instance back up on exit.
 			defer func() {
-				req.Action = string(shared.Start)
+				req.Action = string(instance.Start)
 				op, err = s.UpdateInstanceState(cName, req, "")
 				if err != nil {
 					return
@@ -209,7 +209,7 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 
 	req.Properties = properties
 
-	if shared.IsSnapshot(cName) {
+	if instance.IsSnapshot(cName) {
 		req.Source.Type = "snapshot"
 	} else if !s.HasExtension("instances") {
 		req.Source.Type = "container"
@@ -222,7 +222,7 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 	if c.flagExpiresAt != "" {
 		expiresAt, err := time.Parse(time.RFC3339, c.flagExpiresAt)
 		if err != nil {
-			return fmt.Errorf("Invalid expiration date: %w", err)
+			return fmt.Errorf(i18n.G("Invalid expiration date: %w"), err)
 		}
 
 		req.ExpiresAt = expiresAt

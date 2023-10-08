@@ -20,12 +20,12 @@ package idmap
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "../../incusd/include/incus_posix_acl_xattr.h"
-#include "../../incusd/include/memory_utils.h"
-#include "../../incusd/include/mount_utils.h"
-#include "../../incusd/include/process_utils.h"
-#include "../../incusd/include/syscall_numbers.h"
-#include "../../incusd/include/syscall_wrappers.h"
+#include "../cgo/incus_posix_acl_xattr.h"
+#include "../cgo/memory_utils.h"
+#include "../cgo/mount_utils.h"
+#include "../cgo/process_utils.h"
+#include "../cgo/syscall_numbers.h"
+#include "../cgo/syscall_wrappers.h"
 
 // Needs to be included at the end
 #include <sys/acl.h>
@@ -348,8 +348,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	_ "github.com/lxc/incus/incusd/include" // Used by cgo
-	"github.com/lxc/incus/shared"
+	_ "github.com/lxc/incus/internal/cgo" // Used by cgo
+	"github.com/lxc/incus/internal/linux"
 	"github.com/lxc/incus/shared/logger"
 )
 
@@ -371,7 +371,7 @@ func ShiftOwner(basepath string, path string, uid int, gid int) error {
 
 // GetCaps extracts the list of capabilities effective on the file
 func GetCaps(path string) ([]byte, error) {
-	xattrs, err := shared.GetAllXattr(path)
+	xattrs, err := linux.GetAllXattr(path)
 	if err != nil {
 		return nil, err
 	}
@@ -512,7 +512,7 @@ func SupportsVFS3Fscaps(prefix string) bool {
 	cmd := exec.Command(tmpfile.Name())
 	err = cmd.Run()
 	if err != nil {
-		errno, isErrno := shared.GetErrno(err)
+		errno, isErrno := linux.GetErrno(err)
 		if isErrno && (errno == unix.ERANGE || errno == unix.EOVERFLOW) {
 			return false
 		}

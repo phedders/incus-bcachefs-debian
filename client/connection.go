@@ -14,9 +14,9 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/zitadel/oidc/v2/pkg/oidc"
 
-	"github.com/lxc/incus/shared"
 	"github.com/lxc/incus/shared/logger"
 	"github.com/lxc/incus/shared/simplestreams"
+	"github.com/lxc/incus/shared/util"
 )
 
 // ConnectionArgs represents a set of common connection properties.
@@ -171,6 +171,29 @@ func ConnectIncusUnixWithContext(ctx context.Context, path string, args *Connect
 
 	ctxConnected, ctxConnectedCancel := context.WithCancel(context.Background())
 
+	// Determine the socket path
+	var projectName string
+	if path == "" {
+		path = os.Getenv("INCUS_SOCKET")
+		if path == "" {
+			incusDir := os.Getenv("INCUS_DIR")
+			if incusDir == "" {
+				incusDir = "/var/lib/incus"
+			}
+
+			path = filepath.Join(incusDir, "unix.socket")
+			userPath := filepath.Join(incusDir, "unix.socket.user")
+			if !util.PathIsWritable(path) && util.PathIsWritable(userPath) {
+				// Handle the use of incus-user.
+				path = userPath
+
+				// When using incus-user, the project list is typically restricted.
+				// So let's try to be smart about the project we're using.
+				projectName = fmt.Sprintf("user-%d", os.Geteuid())
+			}
+		}
+	}
+
 	// Initialize the client struct
 	server := ProtocolIncus{
 		ctx:                ctx,
@@ -182,19 +205,7 @@ func ConnectIncusUnixWithContext(ctx context.Context, path string, args *Connect
 		ctxConnectedCancel: ctxConnectedCancel,
 		eventConns:         make(map[string]*websocket.Conn),
 		eventListeners:     make(map[string][]*EventListener),
-	}
-
-	// Determine the socket path
-	if path == "" {
-		path = os.Getenv("INCUS_SOCKET")
-		if path == "" {
-			incusDir := os.Getenv("INCUS_DIR")
-			if incusDir == "" {
-				incusDir = "/var/lib/incus"
-			}
-
-			path = filepath.Join(incusDir, "unix.socket")
-		}
+		project:            projectName,
 	}
 
 	// Setup the HTTP client
@@ -273,7 +284,7 @@ func ConnectSimpleStreams(url string, args *ConnectionArgs) (ImageServer, error)
 
 	// Setup the cache
 	if args.CachePath != "" {
-		if !shared.PathExists(args.CachePath) {
+		if !util.PathExists(args.CachePath) {
 			return nil, fmt.Errorf("Cache directory %q doesn't exist", args.CachePath)
 		}
 
@@ -285,7 +296,7 @@ func ConnectSimpleStreams(url string, args *ConnectionArgs) (ImageServer, error)
 			cacheExpiry = time.Hour
 		}
 
-		if !shared.PathExists(cachePath) {
+		if !util.PathExists(cachePath) {
 			err := os.Mkdir(cachePath, 0755)
 			if err != nil {
 				return nil, err
@@ -325,7 +336,7 @@ func httpsIncus(ctx context.Context, requestURL string, args *ConnectionArgs) (I
 		eventListeners:     make(map[string][]*EventListener),
 	}
 
-	if shared.StringInSlice(args.AuthType, []string{"oidc"}) {
+	if util.ValueInSlice(args.AuthType, []string{"oidc"}) {
 		server.RequireAuthenticated(true)
 	}
 

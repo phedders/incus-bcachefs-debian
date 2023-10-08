@@ -15,13 +15,13 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pkg/sftp"
 
-	"github.com/lxc/incus/shared"
 	"github.com/lxc/incus/shared/api"
 	"github.com/lxc/incus/shared/cancel"
 	"github.com/lxc/incus/shared/ioprogress"
 	"github.com/lxc/incus/shared/tcp"
 	localtls "github.com/lxc/incus/shared/tls"
 	"github.com/lxc/incus/shared/units"
+	"github.com/lxc/incus/shared/util"
 	"github.com/lxc/incus/shared/ws"
 )
 
@@ -284,6 +284,11 @@ func (r *ProtocolIncus) tryRebuildInstance(instanceName string, req api.Instance
 
 // RebuildInstanceFromImage rebuilds an instance from an image.
 func (r *ProtocolIncus) RebuildInstanceFromImage(source ImageServer, image api.Image, instanceName string, req api.InstanceRebuildPost) (RemoteOperation, error) {
+	err := r.CheckExtension("instances_rebuild")
+	if err != nil {
+		return nil, err
+	}
+
 	info, err := r.getSourceImageConnectionInfo(source, image, &req.Source)
 	if err != nil {
 		return nil, err
@@ -314,6 +319,11 @@ func (r *ProtocolIncus) RebuildInstanceFromImage(source ImageServer, image api.I
 
 // RebuildInstance rebuilds an instance as empty.
 func (r *ProtocolIncus) RebuildInstance(instanceName string, instance api.InstanceRebuildPost) (op Operation, err error) {
+	err = r.CheckExtension("instances_rebuild")
+	if err != nil {
+		return nil, err
+	}
+
 	return r.rebuildInstance(instanceName, instance)
 }
 
@@ -723,7 +733,7 @@ func (r *ProtocolIncus) CopyInstance(source InstanceServer, instance api.Instanc
 			}
 		}
 
-		if shared.StringInSlice(args.Mode, []string{"push", "relay"}) {
+		if util.ValueInSlice(args.Mode, []string{"push", "relay"}) {
 			if !r.HasExtension("container_push") {
 				return nil, fmt.Errorf("The target server is missing the required \"container_push\" API extension")
 			}
@@ -1293,8 +1303,23 @@ func (r *ProtocolIncus) GetInstanceFile(instanceName string, filePath string) (i
 	var err error
 	var requestURL string
 
+	urlEncode := func(path string, query map[string]string) (string, error) {
+		u, err := url.Parse(path)
+		if err != nil {
+			return "", err
+		}
+
+		params := url.Values{}
+		for key, value := range query {
+			params.Add(key, value)
+		}
+
+		u.RawQuery = params.Encode()
+		return u.String(), nil
+	}
+
 	if r.IsAgent() {
-		requestURL, err = shared.URLEncode(
+		requestURL, err = urlEncode(
 			fmt.Sprintf("%s/1.0/files", r.httpBaseURL.String()),
 			map[string]string{"path": filePath})
 	} else {
@@ -1306,7 +1331,7 @@ func (r *ProtocolIncus) GetInstanceFile(instanceName string, filePath string) (i
 		}
 
 		// Prepare the HTTP request
-		requestURL, err = shared.URLEncode(
+		requestURL, err = urlEncode(
 			fmt.Sprintf("%s/1.0%s/%s/files", r.httpBaseURL.String(), path, url.PathEscape(instanceName)),
 			map[string]string{"path": filePath})
 	}
@@ -1340,7 +1365,7 @@ func (r *ProtocolIncus) GetInstanceFile(instanceName string, filePath string) (i
 	}
 
 	// Parse the headers
-	uid, gid, mode, fileType, _ := shared.ParseFileHeaders(resp.Header)
+	uid, gid, mode, fileType, _ := api.ParseFileHeaders(resp.Header)
 	fileResp := InstanceFileResponse{
 		UID:  uid,
 		GID:  gid,
@@ -1667,7 +1692,7 @@ func (r *ProtocolIncus) CreateInstanceSnapshot(instanceName string, snapshot api
 // CopyInstanceSnapshot copies a snapshot from a remote server into a new instance. Additional options can be passed using InstanceCopyArgs.
 func (r *ProtocolIncus) CopyInstanceSnapshot(source InstanceServer, instanceName string, snapshot api.InstanceSnapshot, args *InstanceSnapshotCopyArgs) (RemoteOperation, error) {
 	// Backward compatibility (with broken Name field)
-	fields := strings.Split(snapshot.Name, shared.SnapshotDelimiter)
+	fields := strings.Split(snapshot.Name, "/")
 	cName := instanceName
 	sName := fields[len(fields)-1]
 
@@ -1697,7 +1722,7 @@ func (r *ProtocolIncus) CopyInstanceSnapshot(source InstanceServer, instanceName
 	// Process the copy arguments
 	if args != nil {
 		// Quick checks.
-		if shared.StringInSlice(args.Mode, []string{"push", "relay"}) {
+		if util.ValueInSlice(args.Mode, []string{"push", "relay"}) {
 			if !r.HasExtension("container_push") {
 				return nil, fmt.Errorf("The target server is missing the required \"container_push\" API extension")
 			}

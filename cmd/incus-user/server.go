@@ -4,17 +4,16 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/lxc/incus/client"
-	"github.com/lxc/incus/incusd/revert"
 	"github.com/lxc/incus/internal/linux"
-	"github.com/lxc/incus/internal/util"
-	"github.com/lxc/incus/shared"
+	"github.com/lxc/incus/internal/revert"
+	internalUtil "github.com/lxc/incus/internal/util"
 	"github.com/lxc/incus/shared/api"
 	"github.com/lxc/incus/shared/subprocess"
 	localtls "github.com/lxc/incus/shared/tls"
+	"github.com/lxc/incus/shared/util"
 )
 
 func serverIsConfigured(client incus.InstanceServer) (bool, error) {
@@ -24,7 +23,7 @@ func serverIsConfigured(client incus.InstanceServer) (bool, error) {
 		return false, fmt.Errorf("Failed to list networks: %w", err)
 	}
 
-	if !shared.StringInSlice("incusbr0", networks) {
+	if !util.ValueInSlice("incusbr0", networks) {
 		// Couldn't find incusbr0.
 		return false, nil
 	}
@@ -35,7 +34,7 @@ func serverIsConfigured(client incus.InstanceServer) (bool, error) {
 		return false, fmt.Errorf("Failed to list storage pools: %w", err)
 	}
 
-	if !shared.StringInSlice("default", pools) {
+	if !util.ValueInSlice("default", pools) {
 		// No storage pool found.
 		return false, nil
 	}
@@ -50,7 +49,7 @@ func serverInitialConfiguration(client incus.InstanceServer) error {
 		return fmt.Errorf("Failed to get server info: %w", err)
 	}
 
-	availableBackends := linux.AvailableStorageDrivers(info.Environment.StorageSupportedDrivers, util.PoolTypeLocal)
+	availableBackends := linux.AvailableStorageDrivers(internalUtil.VarPath(), info.Environment.StorageSupportedDrivers, internalUtil.PoolTypeLocal)
 
 	// Load the default profile.
 	profile, profileEtag, err := client.GetProfile("default")
@@ -70,7 +69,7 @@ func serverInitialConfiguration(client incus.InstanceServer) error {
 		pool.Name = "default"
 
 		// Check if ZFS supported.
-		if shared.StringInSlice("zfs", availableBackends) {
+		if util.ValueInSlice("zfs", availableBackends) {
 			pool.Driver = "zfs"
 
 			// Check if zsys.
@@ -143,7 +142,7 @@ func serverInitialConfiguration(client incus.InstanceServer) error {
 func serverSetupUser(uid uint32) error {
 	projectName := fmt.Sprintf("user-%d", uid)
 	networkName := fmt.Sprintf("incusbr-%d", uid)
-	userPath := filepath.Join("users", fmt.Sprintf("%d", uid))
+	userPath := internalUtil.VarPath("users", fmt.Sprintf("%d", uid))
 
 	// User account.
 	out, err := subprocess.RunCommand("getent", "passwd", fmt.Sprintf("%d", uid))
@@ -169,7 +168,7 @@ func serverSetupUser(uid uint32) error {
 	revert.Add(func() { _ = os.RemoveAll(userPath) })
 
 	// Generate certificate.
-	err = localtls.FindOrGenCert(filepath.Join(userPath, "client.crt"), filepath.Join(userPath, "client.key"), true, false)
+	err = localtls.FindOrGenCert(internalUtil.VarPath("users", userPath, "client.crt"), internalUtil.VarPath("users", userPath, "client.key"), true, false)
 	if err != nil {
 		return fmt.Errorf("Failed to generate user certificate: %w", err)
 	}
@@ -188,7 +187,7 @@ func serverSetupUser(uid uint32) error {
 		return fmt.Errorf("Unable to retrieve project list: %w", err)
 	}
 
-	if !shared.StringInSlice(projectName, projects) {
+	if !util.ValueInSlice(projectName, projects) {
 		// Create the project.
 		err := client.CreateProject(api.ProjectsPost{
 			Name: projectName,
@@ -220,7 +219,7 @@ func serverSetupUser(uid uint32) error {
 	}
 
 	// Parse the certificate.
-	x509Cert, err := localtls.ReadCert(filepath.Join(userPath, "client.crt"))
+	x509Cert, err := localtls.ReadCert(internalUtil.VarPath("users", userPath, "client.crt"))
 	if err != nil {
 		return fmt.Errorf("Unable to read user certificate: %w", err)
 	}

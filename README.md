@@ -10,6 +10,7 @@ Incus allows you to easily set up a system that feels like a small private cloud
 
 You should consider using Incus if you want to containerize different environments or run virtual machines, or in general run and manage your infrastructure in a cost-effective way.
 
+You can try Incus online at: [`https://linuxcontainers.org/incus/try-it/`](https://linuxcontainers.org/incus/try-it/)
 
 <!-- Include end Incus intro -->
 
@@ -27,16 +28,17 @@ Incus will keep monitoring and importing relevant changes from LXD over time tho
 
 ## Get started
 
-This is still the very early days of this fork. No packages or even releases currently exist.
-For production use, you are likely better off sticking with Canonical's LXD for the time being until stable release of Incus exist.
+See [Getting started](https://linuxcontainers.org/incus/docs/main/getting_started/) in the Incus documentation for installation instructions and first steps.
 
+- Release announcements: [`https://discuss.linuxcontainers.org/c/news/`](https://discuss.linuxcontainers.org/c/news/)
+- Release tarballs: [`https://github.com/lxc/incus/releases/`](https://github.com/lxc/incus/releases/)
+- Documentation: [`https://linuxcontainers.org/incus/docs/main/`](https://linuxcontainers.org/incus/docs/main/)
 
 ## Status
 
 Type                | Service               | Status
 ---                 | ---                   | ---
-CI (client)         | GitHub                | [![Build Status](https://github.com/lxc/incus/workflows/Client%20build%20and%20unit%20tests/badge.svg)](https://github.com/lxc/incus/actions)
-CI (server)         | GitHub                | [![Build Status](https://github.com/lxc/incus/workflows/Tests/badge.svg)](https://github.com/lxc/incus/actions)
+Tests               | GitHub                | [![Build Status](https://github.com/lxc/incus/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/lxc/incus/actions?query=event%3Apush+branch%3Amain)
 Go documentation    | Godoc                 | [![GoDoc](https://godoc.org/github.com/lxc/incus/client?status.svg)](https://godoc.org/github.com/lxc/incus/client)
 Static analysis     | GoReport              | [![Go Report Card](https://goreportcard.com/badge/github.com/lxc/incus)](https://goreportcard.com/report/github.com/lxc/incus)
 
@@ -71,6 +73,14 @@ The following channels are available for you to interact with the Incus communit
 ### Bug reports
 
 You can file bug reports and feature requests at: [`https://github.com/lxc/incus/issues/new`](https://github.com/lxc/incus/issues/new)
+
+### Community support
+
+Community support is handling at: [`https://discuss.linuxcontainers.org`](https://discuss.linuxcontainers.org)
+
+### Commercial support
+
+Commercial support is currently available from [Zabbly](https://zabbly.com) for users of their [Debian or Ubuntu packages](https://github.com/zabbly/incus).
 
 ## Documentation
 

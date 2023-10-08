@@ -6,18 +6,18 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/lxc/incus/incusd/ucred"
-	"github.com/lxc/incus/shared"
+	"github.com/lxc/incus/internal/linux"
+	internalUtil "github.com/lxc/incus/internal/util"
 	localtls "github.com/lxc/incus/shared/tls"
+	"github.com/lxc/incus/shared/util"
 )
 
 func tlsConfig(uid uint32) (*tls.Config, error) {
 	// Load the client certificate.
-	content, err := os.ReadFile(filepath.Join("users", fmt.Sprintf("%d", uid), "client.crt"))
+	content, err := os.ReadFile(internalUtil.VarPath("users", fmt.Sprintf("%d", uid), "client.crt"))
 	if err != nil {
 		return nil, fmt.Errorf("Unable to open client certificate: %w", err)
 	}
@@ -25,7 +25,7 @@ func tlsConfig(uid uint32) (*tls.Config, error) {
 	tlsClientCert := string(content)
 
 	// Load the client key.
-	content, err = os.ReadFile(filepath.Join("users", fmt.Sprintf("%d", uid), "client.key"))
+	content, err = os.ReadFile(internalUtil.VarPath("users", fmt.Sprintf("%d", uid), "client.key"))
 	if err != nil {
 		return nil, fmt.Errorf("Unable to open client key: %w", err)
 	}
@@ -33,9 +33,9 @@ func tlsConfig(uid uint32) (*tls.Config, error) {
 	tlsClientKey := string(content)
 
 	// Load the server certificate.
-	certPath := shared.VarPath("cluster.crt")
-	if !shared.PathExists(certPath) {
-		certPath = shared.VarPath("server.crt")
+	certPath := internalUtil.VarPath("cluster.crt")
+	if !util.PathExists(certPath) {
+		certPath = internalUtil.VarPath("server.crt")
 	}
 
 	content, err = os.ReadFile(certPath)
@@ -64,7 +64,7 @@ func proxyConnection(conn *net.UnixConn) {
 	mu.Unlock()
 
 	// Get credentials.
-	creds, err := ucred.GetCred(conn)
+	creds, err := linux.GetUcred(conn)
 	if err != nil {
 		log.Errorf("Unable to get user credentials: %s", err)
 		return
@@ -81,7 +81,7 @@ func proxyConnection(conn *net.UnixConn) {
 	defer logger.Debug("Disconnected")
 
 	// Check if the user was setup.
-	if !shared.PathExists(filepath.Join("users", fmt.Sprintf("%d", creds.Uid))) {
+	if !util.PathExists(internalUtil.VarPath("users", fmt.Sprintf("%d", creds.Uid))) {
 		log.Infof("Setting up for uid %d", creds.Uid)
 		err := serverSetupUser(creds.Uid)
 		if err != nil {
@@ -91,7 +91,7 @@ func proxyConnection(conn *net.UnixConn) {
 	}
 
 	// Connect to the daemon.
-	unixAddr, err := net.ResolveUnixAddr("unix", shared.VarPath("unix.socket"))
+	unixAddr, err := net.ResolveUnixAddr("unix", internalUtil.VarPath("unix.socket"))
 	if err != nil {
 		log.Errorf("Unable to resolve the target server: %v", err)
 		return

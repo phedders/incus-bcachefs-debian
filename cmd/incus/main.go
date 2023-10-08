@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/user"
@@ -10,15 +11,18 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lxc/incus/client"
-	config "github.com/lxc/incus/internal/cliconfig"
 	cli "github.com/lxc/incus/internal/cmd"
 	"github.com/lxc/incus/internal/i18n"
+	internalUtil "github.com/lxc/incus/internal/util"
 	"github.com/lxc/incus/internal/version"
-	"github.com/lxc/incus/shared"
+	config "github.com/lxc/incus/shared/cliconfig"
 	"github.com/lxc/incus/shared/logger"
+	"github.com/lxc/incus/shared/util"
 )
 
 type cmdGlobal struct {
+	asker cli.Asker
+
 	conf     *config.Config
 	confPath string
 	cmd      *cobra.Command
@@ -86,7 +90,7 @@ For help with any of those, simply call them with --help.`))
 	app.CompletionOptions = cobra.CompletionOptions{DisableDefaultCmd: true}
 
 	// Global flags
-	globalCmd := cmdGlobal{cmd: app}
+	globalCmd := cmdGlobal{cmd: app, asker: cli.NewAsker(bufio.NewReader(os.Stdin))}
 
 	app.PersistentFlags().BoolVar(&globalCmd.flagVersion, "version", false, i18n.G("Print version number"))
 	app.PersistentFlags().BoolVarP(&globalCmd.flagHelp, "help", "h", false, i18n.G("Print help"))
@@ -112,6 +116,7 @@ For help with any of those, simply call them with --help.`))
 	// admin sub-command
 	adminCmd := cmdAdmin{global: &globalCmd}
 	app.AddCommand(adminCmd.Command())
+
 	// cluster sub-command
 	clusterCmd := cmdCluster{global: &globalCmd}
 	app.AddCommand(clusterCmd.Command())
@@ -123,6 +128,10 @@ For help with any of those, simply call them with --help.`))
 	// console sub-command
 	consoleCmd := cmdConsole{global: &globalCmd}
 	app.AddCommand(consoleCmd.Command())
+
+	// create sub-command
+	createCmd := cmdCreate{global: &globalCmd}
+	app.AddCommand(createCmd.Command())
 
 	// copy sub-command
 	copyCmd := cmdCopy{global: &globalCmd}
@@ -156,12 +165,8 @@ For help with any of those, simply call them with --help.`))
 	imageCmd := cmdImage{global: &globalCmd}
 	app.AddCommand(imageCmd.Command())
 
-	// init sub-command
-	initCmd := cmdInit{global: &globalCmd}
-	app.AddCommand(initCmd.Command())
-
 	// launch sub-command
-	launchCmd := cmdLaunch{global: &globalCmd, init: &initCmd}
+	launchCmd := cmdLaunch{global: &globalCmd, init: &createCmd}
 	app.AddCommand(launchCmd.Command())
 
 	// list sub-command
@@ -330,7 +335,7 @@ func (c *cmdGlobal) PreRun(cmd *cobra.Command, args []string) error {
 	// Load the configuration
 	if c.flagForceLocal {
 		c.conf = config.NewConfig("", true)
-	} else if shared.PathExists(c.confPath) {
+	} else if util.PathExists(c.confPath) {
 		c.conf, err = config.LoadConfig(c.confPath)
 		if err != nil {
 			return err
@@ -355,7 +360,7 @@ func (c *cmdGlobal) PreRun(cmd *cobra.Command, args []string) error {
 	// and this is the first time the client has been run by the user, then check to see
 	// if the server has been properly configured.  Don't display the message if the var path
 	// does not exist (server missing), as the user may be targeting a remote daemon.
-	if !c.flagForceLocal && shared.PathExists(shared.VarPath("")) && !shared.PathExists(c.confPath) {
+	if !c.flagForceLocal && util.PathExists(internalUtil.VarPath("")) && !util.PathExists(c.confPath) {
 		// Create the config dir so that we don't get in here again for this user.
 		err = os.MkdirAll(c.conf.ConfigDir, 0750)
 		if err != nil {
@@ -389,7 +394,7 @@ func (c *cmdGlobal) PreRun(cmd *cobra.Command, args []string) error {
 			flush = true
 		}
 
-		if !shared.StringInSlice(cmd.Name(), []string{"init", "launch"}) {
+		if !util.ValueInSlice(cmd.Name(), []string{"init", "launch"}) {
 			fmt.Fprintf(os.Stderr, i18n.G(`To start your first container, try: incus launch images:ubuntu/22.04
 Or for a virtual machine: incus launch images:ubuntu/22.04 --vm`)+"\n")
 			flush = true
@@ -419,7 +424,7 @@ Or for a virtual machine: incus launch images:ubuntu/22.04 --vm`)+"\n")
 }
 
 func (c *cmdGlobal) PostRun(cmd *cobra.Command, args []string) error {
-	if c.conf != nil && shared.PathExists(c.confPath) {
+	if c.conf != nil && util.PathExists(c.confPath) {
 		// Save OIDC tokens on exit
 		c.conf.SaveOIDCTokens()
 	}

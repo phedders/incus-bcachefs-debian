@@ -13,9 +13,9 @@ import (
 
 	cli "github.com/lxc/incus/internal/cmd"
 	"github.com/lxc/incus/internal/i18n"
-	"github.com/lxc/incus/shared"
 	"github.com/lxc/incus/shared/api"
 	"github.com/lxc/incus/shared/termios"
+	"github.com/lxc/incus/shared/util"
 )
 
 type cmdCluster struct {
@@ -548,7 +548,7 @@ Are you really sure you want to force removing %s? (yes/no): `), name)
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSuffix(input, "\n")
 
-	if !shared.StringInSlice(strings.ToLower(input), []string{i18n.G("yes")}) {
+	if !util.ValueInSlice(strings.ToLower(input), []string{i18n.G("yes")}) {
 		return fmt.Errorf(i18n.G("User aborted delete operation"))
 	}
 
@@ -641,7 +641,7 @@ func (c *cmdClusterEnable) Run(cmd *cobra.Command, args []string) error {
 	// Check if the server is available on the network.
 	server, _, err := resource.server.GetServer()
 	if err != nil {
-		return fmt.Errorf("Failed to retrieve current server config: %w", err)
+		return fmt.Errorf(i18n.G("Failed to retrieve current server config: %w"), err)
 	}
 
 	if server.Config["core.https_address"] == "" && server.Config["cluster.https_address"] == "" {
@@ -651,7 +651,7 @@ func (c *cmdClusterEnable) Run(cmd *cobra.Command, args []string) error {
 	// Check if already enabled
 	currentCluster, etag, err := resource.server.GetCluster()
 	if err != nil {
-		return fmt.Errorf("Failed to retrieve current cluster config: %w", err)
+		return fmt.Errorf(i18n.G("Failed to retrieve current cluster config: %w"), err)
 	}
 
 	if currentCluster.Enabled {
@@ -664,12 +664,12 @@ func (c *cmdClusterEnable) Run(cmd *cobra.Command, args []string) error {
 	req.Enabled = true
 	op, err := resource.server.UpdateCluster(req, etag)
 	if err != nil {
-		return fmt.Errorf("Failed to configure cluster: %w", err)
+		return fmt.Errorf(i18n.G("Failed to configure cluster: %w"), err)
 	}
 
 	err = op.Wait()
 	if err != nil {
-		return fmt.Errorf("Failed to configure cluster: %w", err)
+		return fmt.Errorf(i18n.G("Failed to configure cluster: %w"), err)
 	}
 
 	fmt.Println(i18n.G("Clustering enabled"))
@@ -752,7 +752,7 @@ func (c *cmdClusterEdit) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Spawn the editor
-	content, err := shared.TextEditor("", []byte(c.helpTemplate()+"\n\n"+string(data)))
+	content, err := textEditor("", []byte(c.helpTemplate()+"\n\n"+string(data)))
 	if err != nil {
 		return err
 	}
@@ -775,7 +775,7 @@ func (c *cmdClusterEdit) Run(cmd *cobra.Command, args []string) error {
 				return err
 			}
 
-			content, err = shared.TextEditor("", content)
+			content, err = textEditor("", content)
 			if err != nil {
 				return err
 			}
@@ -839,7 +839,7 @@ func (c *cmdClusterAdd) Run(cmd *cobra.Command, args []string) error {
 	opAPI := op.Get()
 	joinToken, err := opAPI.ToClusterJoinToken()
 	if err != nil {
-		return fmt.Errorf("Failed converting token operation to join token: %w", err)
+		return fmt.Errorf(i18n.G("Failed converting token operation to join token: %w"), err)
 	}
 
 	if !c.global.flagQuiet {
@@ -1086,11 +1086,11 @@ func (c *cmdClusterUpdateCertificate) Run(cmd *cobra.Command, args []string) err
 		return fmt.Errorf(i18n.G("Server isn't part of a cluster"))
 	}
 
-	if !shared.PathExists(certFile) {
+	if !util.PathExists(certFile) {
 		return fmt.Errorf(i18n.G("Could not find certificate file path: %s"), certFile)
 	}
 
-	if !shared.PathExists(keyFile) {
+	if !util.PathExists(keyFile) {
 		return fmt.Errorf(i18n.G("Could not find certificate key file path: %s"), keyFile)
 	}
 
@@ -1115,7 +1115,7 @@ func (c *cmdClusterUpdateCertificate) Run(cmd *cobra.Command, args []string) err
 	}
 
 	certf := conf.ServerCertPath(resource.remote)
-	if shared.PathExists(certf) {
+	if util.PathExists(certf) {
 		err = os.WriteFile(certf, cert, 0644)
 		if err != nil {
 			return fmt.Errorf(i18n.G("Could not write new remote certificate for remote '%s' with error: %v"), resource.remote, err)
@@ -1195,7 +1195,7 @@ func (c *cmdClusterEvacuateAction) Run(cmd *cobra.Command, args []string) error 
 	// Parse remote.
 	resources, err := c.global.ParseServers(args[0])
 	if err != nil {
-		return fmt.Errorf("Failed to parse servers: %w", err)
+		return fmt.Errorf(i18n.G("Failed to parse servers: %w"), err)
 	}
 
 	resource := resources[0]
@@ -1205,7 +1205,7 @@ func (c *cmdClusterEvacuateAction) Run(cmd *cobra.Command, args []string) error 
 	}
 
 	if !c.flagForce {
-		evacuate, err := cli.AskBool(fmt.Sprintf(i18n.G("Are you sure you want to %s cluster member %q? (yes/no) [default=no]: "), cmd.Name(), resource.name), "no")
+		evacuate, err := c.global.asker.AskBool(fmt.Sprintf(i18n.G("Are you sure you want to %s cluster member %q? (yes/no) [default=no]: "), cmd.Name(), resource.name), "no")
 		if err != nil {
 			return err
 		}
@@ -1222,7 +1222,7 @@ func (c *cmdClusterEvacuateAction) Run(cmd *cobra.Command, args []string) error 
 
 	op, err := resource.server.UpdateClusterMemberState(resource.name, state)
 	if err != nil {
-		return fmt.Errorf("Failed to update cluster member state: %w", err)
+		return fmt.Errorf(i18n.G("Failed to update cluster member state: %w"), err)
 	}
 
 	var format string
