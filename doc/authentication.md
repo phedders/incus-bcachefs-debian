@@ -23,7 +23,7 @@ On the next connection, a new certificate is generated.
 
 The supported protocol must be TLS 1.3 or better.
 
-It's possible to force Incus to accept TLS 1.2 by setting the `Incus_INSECURE_TLS` environment variable on both client and server.
+It's possible to force Incus to accept TLS 1.2 by setting the `INCUS_INSECURE_TLS` environment variable on both client and server.
 However this isn't a supported setup and should only ever be used when forced to use an outdated corporate proxy.
 
 All communications must use perfect forward secrecy, and ciphers must be limited to strong elliptic curve ones (such as ECDHE-RSA or ECDHE-ECDSA).
@@ -37,7 +37,7 @@ any backward compatibility to broken protocol or ciphers.
 (authentication-trusted-clients)=
 ### Trusted TLS clients
 
-You can obtain the list of TLS certificates trusted by a Incus server with [`incus config trust list`](incus_config_trust_list.md).
+You can obtain the list of TLS certificates trusted by an Incus server with [`incus config trust list`](incus_config_trust_list.md).
 
 Trusted clients can be added in either of the following ways:
 
@@ -51,32 +51,26 @@ The workflow to authenticate with the server is similar to that of SSH, where an
 1. The server attempts to authenticate the client:
 
    - If the client certificate is in the server's trust store, the connection is granted.
-   - If the client certificate is not in the server's trust store, the server prompts the user for a token or the trust password.
-     If the provided token or trust password matches, the client certificate is added to the server's trust store and the connection is granted.
+   - If the client certificate is not in the server's trust store, the server prompts the user for a token.
+     If the provided token matches, the client certificate is added to the server's trust store and the connection is granted.
      Otherwise, the connection is rejected.
 
+It is possible to restrict a TLS client's access to Incus via {ref}`authorization-tls`.
 To revoke trust to a client, remove its certificate from the server with [`incus config trust remove <fingerprint>`](incus_config_trust_remove.md).
-
-It's possible to restrict a TLS client to one or multiple projects.
-In this case, the client will also be prevented from performing global configuration changes or altering the configuration (limits, restrictions) of the projects it's allowed access to.
-
-To restrict access, use [`incus config trust edit <fingerprint>`](incus_config_trust_edit.md).
-Set the `restricted` key to `true` and specify a list of projects to restrict the client to.
-If the list of projects is empty, the client will not be allowed access to any of them.
 
 (authentication-add-certs)=
 #### Adding trusted certificates to the server
 
 The preferred way to add trusted clients is to directly add their certificates to the trust store on the server.
-To do so, copy the client certificate to the server and register it using [`incus config trust add <file>`](incus_config_trust_add.md).
+To do so, copy the client certificate to the server and register it using [`incus config trust add-certificate <file>`](incus_config_trust_add-certificate.md).
 
 (authentication-token)=
 #### Adding client certificates using tokens
 
-You can also add new clients by using tokens. This is a safer way than using the trust password, because tokens expire after a configurable time ({config:option}`server-core:core.remote_token_expiry`) or once they've been used.
+You can also add new clients by using tokens. Tokens expire after a configurable time ({config:option}`server-core:core.remote_token_expiry`) or once they've been used.
 
 To use this method, generate a token for each client by calling [`incus config trust add`](incus_config_trust_add.md), which will prompt for the client name.
-The clients can then add their certificates to the server's trust store by providing the generated token when prompted for the trust password.
+The clients can then add their certificates to the server's trust store by providing the generated token when prompted.
 
 <!-- Include start NAT authentication -->
 
@@ -84,8 +78,6 @@ The clients can then add their certificates to the server's trust store by provi
 If your Incus server is behind NAT, you must specify its external public address when adding it as a remote for a client:
 
     incus remote add <name> <IP_address>
-
-When you are prompted for the admin password, specify the generated token.
 
 When generating the token on the server, Incus includes a list of IP addresses that the client can use to access the server.
 However, if the server is behind NAT, these addresses might be local addresses that the client cannot connect to.
@@ -109,7 +101,7 @@ To enable PKI mode, complete the following steps:
 1. Place the certificates issued by the CA on the clients and the server, replacing the automatically generated ones.
 1. Restart the server.
 
-In that mode, any connection to a Incus daemon will be done using the
+In that mode, any connection to an Incus daemon will be done using the
 pre-seeded CA certificate.
 
 If the server certificate isn't signed by the CA, the connection will simply go through the normal authentication mechanism.
@@ -123,17 +115,22 @@ Note that the generated certificates are not automatically trusted. You must sti
 Incus supports using [OpenID Connect](https://openid.net/connect/) to authenticate users through an {abbr}`OIDC (OpenID Connect)` Identity Provider.
 
 ```{note}
-OpenID Connect authentication is currently under development.
-Starting with Incus 5.13, authentication through OpenID Connect is supported, but there is no user role handling in place so far.
+Authentication through OpenID Connect is supported, but there is no user role handling in place so far.
 Any user that authenticates through the configured OIDC Identity Provider gets full access to Incus.
 ```
 
 To configure Incus to use OIDC authentication, set the [`oidc.*`](server-options-oidc) server configuration options.
 Your OIDC provider must be configured to enable the [Device Authorization Grant](https://oauth.net/2/device-flow/) type.
 
-To add a remote pointing to a Incus server configured with OIDC authentication, run [`incus remote add <remote_name> <remote_address>`](incus_remote_add.md).
+To add a remote pointing to an Incus server configured with OIDC authentication, run [`incus remote add <remote_name> <remote_address>`](incus_remote_add.md).
 You are then prompted to authenticate through your web browser, where you must confirm the device code that Incus uses.
 The Incus client then retrieves and stores the access and refresh tokens and provides those to Incus for all interactions.
+
+```{important}
+Any user that authenticates through the configured OIDC Identity Provider gets full access to Incus.
+To restrict user access, you must also configure {ref}`authorization`.
+Currently, the only authorization method that is compatible with OIDC is {ref}`authorization-openfga`.
+```
 
 (authentication-server-certificate)=
 ## TLS server certificate

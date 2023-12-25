@@ -9,16 +9,15 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/lxc/incus/internal/idmap"
 	"github.com/lxc/incus/internal/server/db"
 	"github.com/lxc/incus/internal/server/db/cluster"
 	deviceConfig "github.com/lxc/incus/internal/server/device/config"
 	"github.com/lxc/incus/internal/server/instance"
 	"github.com/lxc/incus/internal/server/instance/instancetype"
-	"github.com/lxc/incus/internal/server/project"
 	storagePools "github.com/lxc/incus/internal/server/storage"
 	internalUtil "github.com/lxc/incus/internal/util"
 	"github.com/lxc/incus/shared/api"
+	"github.com/lxc/incus/shared/idmap"
 )
 
 type containerTestSuite struct {
@@ -117,7 +116,7 @@ func (suite *containerTestSuite) TestContainer_ProfilesOverwriteDefaultNic() {
 		Name: "testFoo",
 	}
 
-	_, err := suite.d.State().DB.Cluster.CreateNetwork(project.Default, "unknownbr0", "", db.NetworkTypeBridge, nil)
+	_, err := suite.d.State().DB.Cluster.CreateNetwork(api.ProjectDefaultName, "unknownbr0", "", db.NetworkTypeBridge, nil)
 	suite.Req.Nil(err)
 
 	c, op, _, err := instance.CreateInternal(suite.d.State(), args, true)
@@ -152,7 +151,7 @@ func (suite *containerTestSuite) TestContainer_LoadFromDB() {
 
 	state := suite.d.State()
 
-	_, err := state.DB.Cluster.CreateNetwork(project.Default, "unknownbr0", "", db.NetworkTypeBridge, nil)
+	_, err := state.DB.Cluster.CreateNetwork(api.ProjectDefaultName, "unknownbr0", "", db.NetworkTypeBridge, nil)
 	suite.Req.Nil(err)
 
 	// Create the container

@@ -12,6 +12,7 @@ import (
 
 	"github.com/lxc/incus/internal/revert"
 	"github.com/lxc/incus/internal/server/backup"
+	"github.com/lxc/incus/internal/server/certificate"
 	"github.com/lxc/incus/internal/server/cluster"
 	"github.com/lxc/incus/internal/server/db"
 	dbCluster "github.com/lxc/incus/internal/server/db/cluster"
@@ -79,6 +80,7 @@ var patches = []patch{
 	{name: "zfs_set_content_type_user_property", stage: patchPostDaemonStorage, run: patchZfsSetContentTypeUserProperty},
 	{name: "snapshots_rename", stage: patchPreDaemonStorage, run: patchSnapshotsRename},
 	{name: "storage_zfs_unset_invalid_block_settings", stage: patchPostDaemonStorage, run: patchStorageZfsUnsetInvalidBlockSettings},
+	{name: "storage_zfs_unset_invalid_block_settings_v2", stage: patchPostDaemonStorage, run: patchStorageZfsUnsetInvalidBlockSettingsV2},
 }
 
 type patch struct {
@@ -179,17 +181,13 @@ func patchRemoveWarningsWithEmptyNode(name string, d *Daemon) error {
 }
 
 func patchClusteringServerCertTrust(name string, d *Daemon) error {
-	clustered, err := cluster.Enabled(d.db.Node)
-	if err != nil {
-		return err
-	}
-
-	if !clustered {
+	if !d.serverClustered {
 		return nil
 	}
 
 	var serverName string
-	err = d.db.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+	err := d.db.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+		var err error
 		serverName, err = tx.GetLocalNodeName(ctx)
 		return err
 	})
@@ -228,7 +226,7 @@ func patchClusteringServerCertTrust(name string, d *Daemon) error {
 		trustedServerCerts := make(map[string]*dbCluster.Certificate)
 
 		for _, c := range dbCerts {
-			if c.Type == dbCluster.CertificateTypeServer {
+			if c.Type == certificate.TypeServer {
 				trustedServerCerts[c.Name] = &c
 			}
 		}
@@ -701,8 +699,8 @@ func patchClusteringDropDatabaseRole(name string, d *Daemon) error {
 
 // patchNetworkClearBridgeVolatileHwaddr removes the unsupported `volatile.bridge.hwaddr` config key from networks.
 func patchNetworkClearBridgeVolatileHwaddr(name string, d *Daemon) error {
-	// Use project.Default, as bridge networks don't support projects.
-	projectName := project.Default
+	// Use api.ProjectDefaultName, as bridge networks don't support projects.
+	projectName := api.ProjectDefaultName
 
 	// Get the list of networks.
 	networks, err := d.db.Cluster.GetNetworks(projectName)
@@ -744,6 +742,30 @@ func patchStorageRenameCustomISOBlockVolumes(name string, d *Daemon) error {
 		return fmt.Errorf("Failed getting storage pool names: %w", err)
 	}
 
+	// Only apply patch on leader.
+	var localConfig *node.Config
+	isLeader := false
+
+	err = d.db.Node.Transaction(s.ShutdownCtx, func(ctx context.Context, tx *db.NodeTx) error {
+		localConfig, err = node.ConfigLoad(ctx, tx)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	leaderAddress, err := d.gateway.LeaderAddress()
+	if err != nil {
+		// If we're not clustered, we're the leader.
+		if errors.Is(err, cluster.ErrNodeIsNotClustered) {
+			isLeader = true
+		} else {
+			return err
+		}
+	} else if localConfig.ClusterAddress() == leaderAddress {
+		isLeader = true
+	}
+
 	volTypeCustom := db.StoragePoolVolumeTypeCustom
 	customPoolVolumes := make(map[string][]*db.StorageVolume, 0)
 
@@ -781,7 +803,17 @@ func patchStorageRenameCustomISOBlockVolumes(name string, d *Daemon) error {
 			return fmt.Errorf("Failed loading pool %q: %w", poolName, err)
 		}
 
+		// Ensure the renaming is done only on the cluster leader for remote storage pools.
+		if p.Driver().Info().Remote && !isLeader {
+			continue
+		}
+
 		for _, vol := range volumes {
+			// In a non-clusted environment ServerName will be empty.
+			if s.ServerName != "" && vol.Location != s.ServerName {
+				continue
+			}
+
 			// Exclude non-ISO custom volumes.
 			if vol.ContentType != db.StoragePoolVolumeContentTypeNameISO {
 				continue
@@ -857,6 +889,11 @@ func patchZfsSetContentTypeUserProperty(name string, d *Daemon) error {
 		}
 
 		for _, vol := range volumes {
+			// In a non-clusted environment ServerName will be empty.
+			if s.ServerName != "" && vol.Location != s.ServerName {
+				continue
+			}
+
 			zfsPoolName := p.Driver().Config()["zfs.pool_name"]
 			if zfsPoolName != "" {
 				poolName = zfsPoolName
@@ -944,7 +981,8 @@ func patchStorageZfsUnsetInvalidBlockSettings(_ string, d *Daemon) error {
 
 	for pool, volumes := range poolVolumes {
 		for _, vol := range volumes {
-			if vol.Location != s.ServerName {
+			// In a non-clusted environment ServerName will be empty.
+			if s.ServerName != "" && vol.Location != s.ServerName {
 				continue
 			}
 
@@ -954,8 +992,128 @@ func patchStorageZfsUnsetInvalidBlockSettings(_ string, d *Daemon) error {
 				continue
 			}
 
-			delete(config, "block.filesystem")
-			delete(config, "block.mount_options")
+			update := false
+			for _, k := range []string{"block.filesystem", "block.mount_options"} {
+				_, found := config[k]
+				if found {
+					delete(config, k)
+					update = true
+				}
+			}
+
+			if !update {
+				continue
+			}
+
+			if vol.Type == db.StoragePoolVolumeTypeNameVM {
+				volType = volTypeVM
+			} else if vol.Type == db.StoragePoolVolumeTypeNameCustom {
+				volType = volTypeCustom
+			} else {
+				// Should not happen.
+				continue
+			}
+
+			err = s.DB.Cluster.UpdateStoragePoolVolume(vol.Project, vol.Name, volType, pool, vol.Description, config)
+			if err != nil {
+				return fmt.Errorf("Failed updating volume %q in project %q on pool %q: %w", vol.Name, vol.Project, poolIDNameMap[pool], err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// patchStorageZfsUnsetInvalidBlockSettingsV2 removes invalid block settings from volumes.
+// This patch fixes the previous one.
+// - Handle non-clusted environments correctly.
+// - Always remove block.* settings from VMs.
+func patchStorageZfsUnsetInvalidBlockSettingsV2(_ string, d *Daemon) error {
+	s := d.State()
+
+	// Get all storage pool names.
+	pools, err := s.DB.Cluster.GetStoragePoolNames()
+	if err != nil {
+		// Skip the rest of the patch if no storage pools were found.
+		if api.StatusErrorCheck(err, http.StatusNotFound) {
+			return nil
+		}
+
+		return fmt.Errorf("Failed getting storage pool names: %w", err)
+	}
+
+	volTypeCustom := db.StoragePoolVolumeTypeCustom
+	volTypeVM := db.StoragePoolVolumeTypeVM
+
+	poolIDNameMap := make(map[int64]string, 0)
+	poolVolumes := make(map[int64][]*db.StorageVolume, 0)
+
+	err = s.DB.Cluster.Transaction(s.ShutdownCtx, func(ctx context.Context, tx *db.ClusterTx) error {
+		for _, pool := range pools {
+			// Get storage pool ID.
+			poolID, err := tx.GetStoragePoolID(ctx, pool)
+			if err != nil {
+				return fmt.Errorf("Failed getting storage pool ID of pool %q: %w", pool, err)
+			}
+
+			driverName, err := tx.GetStoragePoolDriver(ctx, poolID)
+			if err != nil {
+				return fmt.Errorf("Failed getting storage pool driver of pool %q: %w", pool, err)
+			}
+
+			if driverName != "zfs" {
+				continue
+			}
+
+			// Get the pool's custom storage volumes.
+			volumes, err := tx.GetStoragePoolVolumes(ctx, poolID, false, db.StorageVolumeFilter{Type: &volTypeCustom}, db.StorageVolumeFilter{Type: &volTypeVM})
+			if err != nil {
+				return fmt.Errorf("Failed getting custom storage volumes of pool %q: %w", pool, err)
+			}
+
+			if poolVolumes[poolID] == nil {
+				poolVolumes[poolID] = []*db.StorageVolume{}
+			}
+
+			poolIDNameMap[poolID] = pool
+			poolVolumes[poolID] = append(poolVolumes[poolID], volumes...)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	var volType int
+
+	for pool, volumes := range poolVolumes {
+		for _, vol := range volumes {
+			// In a non-clusted environment ServerName will be empty.
+			if s.ServerName != "" && vol.Location != s.ServerName {
+				continue
+			}
+
+			config := vol.Config
+
+			// Only check zfs.block_mode for custom volumes. VMs should never have any block.* settings
+			// regardless of the zfs.block_mode setting.
+			if util.IsTrue(config["zfs.block_mode"]) && vol.Type == db.StoragePoolVolumeTypeNameCustom {
+				continue
+			}
+
+			update := false
+			for _, k := range []string{"block.filesystem", "block.mount_options"} {
+				_, found := config[k]
+				if found {
+					delete(config, k)
+					update = true
+				}
+			}
+
+			if !update {
+				continue
+			}
 
 			if vol.Type == db.StoragePoolVolumeTypeNameVM {
 				volType = volTypeVM

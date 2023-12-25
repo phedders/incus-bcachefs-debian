@@ -27,8 +27,7 @@ import (
 	"github.com/lxc/incus/internal/server/instance/instancetype"
 	"github.com/lxc/incus/internal/server/ip"
 	"github.com/lxc/incus/internal/server/network"
-	"github.com/lxc/incus/internal/server/network/openvswitch"
-	"github.com/lxc/incus/internal/server/project"
+	"github.com/lxc/incus/internal/server/network/ovs"
 	"github.com/lxc/incus/internal/server/resources"
 	localUtil "github.com/lxc/incus/internal/server/util"
 	internalUtil "github.com/lxc/incus/internal/util"
@@ -209,9 +208,9 @@ func (d *nicBridged) validateConfig(instConf instance.ConfigReader) error {
 			}
 		}
 
-		// Load managed network. project.Default is used here as bridge networks don't support projects.
+		// Load managed network. api.ProjectDefaultName is used here as bridge networks don't support projects.
 		var err error
-		d.network, err = network.LoadByName(d.state, project.Default, d.config["network"])
+		d.network, err = network.LoadByName(d.state, api.ProjectDefaultName, d.config["network"])
 		if err != nil {
 			return fmt.Errorf("Error loading network config for %q: %w", d.config["network"], err)
 		}
@@ -237,8 +236,8 @@ func (d *nicBridged) validateConfig(instConf instance.ConfigReader) error {
 		requiredFields = append(requiredFields, "parent")
 
 		// Check if parent is a managed network.
-		// project.Default is used here as bridge networks don't support projects.
-		d.network, _ = network.LoadByName(d.state, project.Default, d.config["parent"])
+		// api.ProjectDefaultName is used here as bridge networks don't support projects.
+		d.network, _ = network.LoadByName(d.state, api.ProjectDefaultName, d.config["parent"])
 		if d.network != nil {
 			// Validate NIC settings with managed network.
 			err := checkWithManagedNetwork(d.network)
@@ -368,7 +367,7 @@ func (d *nicBridged) checkAddressConflict() error {
 	}
 
 	// Bridge networks are always in the default project.
-	return network.UsedByInstanceDevices(d.state, project.Default, networkName, "bridge", func(inst db.InstanceArgs, nicName string, nicConfig map[string]string) error {
+	return network.UsedByInstanceDevices(d.state, api.ProjectDefaultName, networkName, "bridge", func(inst db.InstanceArgs, nicName string, nicConfig map[string]string) error {
 		// Skip our own device. This avoids triggering duplicate device errors during
 		// updates or when making temporary copies of our instance during migrations.
 		sameLogicalInstance := instance.IsSameLogicalInstance(d.inst, &inst)
@@ -1530,7 +1529,10 @@ func (d *nicBridged) setupNativeBridgePortVLANs(hostName string) error {
 
 // setupOVSBridgePortVLANs configures the bridge port with the specified VLAN settings on the openvswitch bridge.
 func (d *nicBridged) setupOVSBridgePortVLANs(hostName string) error {
-	ovs := openvswitch.NewOVS()
+	vswitch, err := ovs.NewVSwitch()
+	if err != nil {
+		return fmt.Errorf("Failed to connect to OVS: %w", err)
+	}
 
 	// Set port on bridge to specified untagged PVID.
 	if d.config["vlan"] != "" {
@@ -1543,7 +1545,7 @@ func (d *nicBridged) setupOVSBridgePortVLANs(hostName string) error {
 		// Order is important here, as vlan_mode is set to "access", assuming that vlan.tagged is not used.
 		// If vlan.tagged is specified, then we expect it to also change the vlan_mode as needed.
 		if d.config["vlan"] != "none" {
-			err := ovs.BridgePortSet(hostName, "vlan_mode=access", fmt.Sprintf("tag=%s", d.config["vlan"]))
+			err := vswitch.BridgePortSet(hostName, "vlan_mode=access", fmt.Sprintf("tag=%s", d.config["vlan"]))
 			if err != nil {
 				return err
 			}
@@ -1573,7 +1575,7 @@ func (d *nicBridged) setupOVSBridgePortVLANs(hostName string) error {
 		// Also set the vlan_mode as needed from above.
 		// Must come after the PortSet command used for setting "vlan" mode above so that the correct
 		// vlan_mode is retained.
-		err = ovs.BridgePortSet(hostName, fmt.Sprintf("vlan_mode=%s", vlanMode), fmt.Sprintf("trunks=%s", strings.Join(vlanIDs, ",")))
+		err = vswitch.BridgePortSet(hostName, fmt.Sprintf("vlan_mode=%s", vlanMode), fmt.Sprintf("trunks=%s", strings.Join(vlanIDs, ",")))
 		if err != nil {
 			return err
 		}

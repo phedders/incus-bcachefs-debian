@@ -11,6 +11,7 @@ import (
 	"github.com/lxc/incus/internal/linux"
 	"github.com/lxc/incus/internal/migration"
 	"github.com/lxc/incus/internal/revert"
+	deviceConfig "github.com/lxc/incus/internal/server/device/config"
 	localMigration "github.com/lxc/incus/internal/server/migration"
 	"github.com/lxc/incus/internal/server/operations"
 	internalUtil "github.com/lxc/incus/internal/util"
@@ -119,18 +120,19 @@ func (d *zfs) load() error {
 // Info returns info about the driver and its environment.
 func (d *zfs) Info() Info {
 	info := Info{
-		Name:              "zfs",
-		Version:           zfsVersion,
-		OptimizedImages:   true,
-		OptimizedBackups:  true,
-		PreservesInodes:   true,
-		Remote:            d.isRemote(),
-		VolumeTypes:       []VolumeType{VolumeTypeBucket, VolumeTypeCustom, VolumeTypeImage, VolumeTypeContainer, VolumeTypeVM},
-		BlockBacking:      util.IsTrue(d.config["volume.zfs.block_mode"]),
-		RunningCopyFreeze: false,
-		DirectIO:          zfsDirectIO,
-		MountedRoot:       false,
-		Buckets:           true,
+		Name:                         "zfs",
+		Version:                      zfsVersion,
+		DefaultVMBlockFilesystemSize: deviceConfig.DefaultVMBlockFilesystemSize,
+		OptimizedImages:              true,
+		OptimizedBackups:             true,
+		PreservesInodes:              true,
+		Remote:                       d.isRemote(),
+		VolumeTypes:                  []VolumeType{VolumeTypeBucket, VolumeTypeCustom, VolumeTypeImage, VolumeTypeContainer, VolumeTypeVM},
+		BlockBacking:                 util.IsTrue(d.config["volume.zfs.block_mode"]),
+		RunningCopyFreeze:            false,
+		DirectIO:                     zfsDirectIO,
+		MountedRoot:                  false,
+		Buckets:                      true,
 	}
 
 	return info
@@ -688,19 +690,19 @@ func (d *zfs) patchDropBlockVolumeFilesystemExtension() error {
 	}
 
 	for _, volume := range strings.Split(out, "\n") {
-		fields := strings.SplitN(volume, "/", 3)
+		fields := strings.SplitN(volume, fmt.Sprintf("%s/images/", poolName), 2)
 
-		if len(fields) != 3 {
+		if len(fields) != 2 || fields[1] == "" {
 			continue
 		}
 
 		// Ignore non-block images, and images without filesystem extension
-		if !strings.HasSuffix(fields[2], ".block") || !strings.Contains(fields[2], "_") {
+		if !strings.HasSuffix(fields[1], ".block") || !strings.Contains(fields[1], "_") {
 			continue
 		}
 
 		// Rename zfs dataset. Snapshots will automatically be renamed.
-		newName := fmt.Sprintf("%s/images/%s.block", poolName, strings.Split(fields[2], "_")[0])
+		newName := fmt.Sprintf("%s/images/%s.block", poolName, strings.Split(fields[1], "_")[0])
 
 		_, err = subprocess.RunCommand("zfs", "rename", volume, newName)
 		if err != nil {

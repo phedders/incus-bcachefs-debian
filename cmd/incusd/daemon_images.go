@@ -50,7 +50,7 @@ type ImageDownloadArgs struct {
 }
 
 // imageOperationLock acquires a lock for operating on an image and returns the unlock function.
-func imageOperationLock(fingerprint string) locking.UnlockFunc {
+func imageOperationLock(fingerprint string) (locking.UnlockFunc, error) {
 	l := logger.AddContext(logger.Ctx{"fingerprint": fingerprint})
 	l.Debug("Acquiring lock for image")
 	defer l.Debug("Lock acquired for image")
@@ -66,13 +66,13 @@ func ImageDownload(r *http.Request, s *state.State, op *operations.Operation, ar
 	var remote incus.ImageServer
 	var info *api.Image
 
-	// Default protocol is Incus. Copy so that local modifications aren't propgated to args.
+	// Default protocol is Incus. Copy so that local modifications aren't propagated to args.
 	protocol := args.Protocol
 	if protocol == "" {
 		protocol = "incus"
 	}
 
-	// Copy so that local modifications aren't propgated to args.
+	// Copy so that local modifications aren't propagated to args.
 	alias := args.Alias
 
 	// Default the fingerprint to the alias string we received
@@ -126,7 +126,11 @@ func ImageDownload(r *http.Request, s *state.State, op *operations.Operation, ar
 	}
 
 	// Ensure we are the only ones operating on this image.
-	unlock := imageOperationLock(fp)
+	unlock, err := imageOperationLock(fp)
+	if err != nil {
+		return nil, err
+	}
+
 	defer unlock()
 
 	// If auto-update is on and we're being given the image by
@@ -570,6 +574,12 @@ func ImageDownload(r *http.Request, s *state.State, op *operations.Operation, ar
 		requestor = op.Requestor()
 	} else if r != nil {
 		requestor = request.CreateRequestor(r)
+	}
+
+	// Add the image to the authorizer.
+	err = s.Authorizer.AddImage(s.ShutdownCtx, args.ProjectName, info.Fingerprint)
+	if err != nil {
+		logger.Error("Failed to add image to authorizer", logger.Ctx{"fingerprint": info.Fingerprint, "project": args.ProjectName, "error": err})
 	}
 
 	s.Events.SendLifecycle(args.ProjectName, lifecycle.ImageCreated.Event(info.Fingerprint, args.ProjectName, requestor, logger.Ctx{"type": info.Type}))

@@ -124,8 +124,7 @@ Use the existing OSD erasure-coded pool `ecpool` and the OSD replicated pool `rp
 ````{group-tab} CephFS
 
 ```{note}
-When using the CephFS driver, you must create a CephFS file system beforehand.
-This file system consists of two OSD storage pools, one for the actual data and one for the file metadata.
+Each CephFS file system consists of two OSD storage pools, one for the actual data and one for the file metadata.
 ```
 
 Use the existing CephFS file system `my-filesystem` for `pool1`:
@@ -135,6 +134,10 @@ Use the existing CephFS file system `my-filesystem` for `pool1`:
 Use the sub-directory `my-directory` from the `my-filesystem` file system for `pool2`:
 
     incus storage create pool2 cephfs source=my-filesystem/my-directory
+
+Create a CephFS file system `my-filesystem` with a data pool called `my-data` and a metadata pool called `my-metadata` for `pool3`:
+
+    incus storage create pool3 cephfs source=my-filesystem cephfs.create_missing=true cephfs.data_pool=my-data cephfs.meta_pool=my-metadata
 
 ````
 ````{group-tab} Ceph Object
@@ -152,7 +155,7 @@ Use the existing Ceph Object Gateway `https://www.example.com/radosgw` to create
 (storage-pools-cluster)=
 ### Create a storage pool in a cluster
 
-If you are running a Incus cluster and want to add a storage pool, you must create the storage pool for each cluster member separately.
+If you are running an Incus cluster and want to add a storage pool, you must create the storage pool for each cluster member separately.
 The reason for this is that the configuration, for example, the storage location or the size of the pool, might be different between cluster members.
 
 Therefore, you must first create a pending storage pool on each member with the `--target=<cluster_member>` flag and the appropriate configuration for the member.

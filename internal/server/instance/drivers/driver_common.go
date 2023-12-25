@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 
 	internalInstance "github.com/lxc/incus/internal/instance"
 	"github.com/lxc/incus/internal/revert"
@@ -761,8 +761,8 @@ func (d *common) updateProgress(progress string) {
 // unpopulated then the insert querty is retried until it succeeds or a retry limit is reached.
 // If the insert succeeds or the key is found to have been populated then the value of the key is returned.
 func (d *common) insertConfigkey(key string, value string) (string, error) {
-	err := query.Retry(func() error {
-		err := query.Transaction(context.TODO(), d.state.DB.Cluster.DB(), func(ctx context.Context, tx *sql.Tx) error {
+	err := query.Retry(context.TODO(), func(ctx context.Context) error {
+		err := query.Transaction(ctx, d.state.DB.Cluster.DB(), func(ctx context.Context, tx *sql.Tx) error {
 			return db.CreateInstanceConfig(tx, d.id, map[string]string{key: value})
 		})
 		if err != nil {
@@ -1025,7 +1025,7 @@ func (d *common) getRootDiskDevice() (string, map[string]string, error) {
 
 // resetInstanceID generates a new UUID and puts it in volatile.
 func (d *common) resetInstanceID() error {
-	err := d.VolatileSet(map[string]string{"volatile.cloud-init.instance-id": uuid.New()})
+	err := d.VolatileSet(map[string]string{"volatile.cloud-init.instance-id": uuid.New().String()})
 	if err != nil {
 		return fmt.Errorf("Failed to set volatile.cloud-init.instance-id: %w", err)
 	}
@@ -1400,7 +1400,7 @@ func (d *common) devicesRemove(inst instance.Instance) {
 }
 
 // updateBackupFileLock acquires the update backup file lock that protects concurrent access to actions that will call UpdateBackupFile() as part of their operation.
-func (d *common) updateBackupFileLock(ctx context.Context) locking.UnlockFunc {
+func (d *common) updateBackupFileLock(ctx context.Context) (locking.UnlockFunc, error) {
 	parentName, _, _ := api.GetParentAndSnapshotName(d.Name())
 	return locking.Lock(ctx, fmt.Sprintf("instance_updatebackupfile_%s_%s", d.Project().Name, parentName))
 }

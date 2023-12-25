@@ -731,7 +731,7 @@
 							"defaultdesc": "`false`",
 							"liveupdate": "yes",
 							"longdesc": "",
-							"shortdesc": "Whether to mount `shiftfs` on top of file systems handled through mount syscall interception",
+							"shortdesc": "Whether to use idmapped mounts for syscall interception",
 							"type": "bool"
 						}
 					},
@@ -903,7 +903,7 @@
 						"volatile.apply_nvram": {
 							"longdesc": "",
 							"shortdesc": "Whether to regenerate VM NVRAM the next time the instance starts",
-							"type": "string"
+							"type": "bool"
 						}
 					},
 					{
@@ -1398,7 +1398,7 @@
 							"defaultdesc": "`https://acme-v02.api.letsencrypt.org/directory`",
 							"longdesc": "",
 							"scope": "global",
-							"shortdesc": "Agree to ACME terms of service",
+							"shortdesc": "URL to the directory resource of the ACME service",
 							"type": "string"
 						}
 					},
@@ -1538,6 +1538,7 @@
 					},
 					{
 						"core.https_allowed_credentials": {
+							"defaultdesc": "`false`",
 							"longdesc": "If enabled, the `Access-Control-Allow-Credentials` HTTP header value is set to `true`.",
 							"scope": "global",
 							"shortdesc": "Whether to set `Access-Control-Allow-Credentials`",
@@ -1645,6 +1646,7 @@
 					},
 					{
 						"core.syslog_socket": {
+							"defaultdesc": "`false`",
 							"longdesc": "Set this option to `true` to enable the syslog unixgram socket to receive log messages from external processes.",
 							"scope": "local",
 							"shortdesc": "Whether to enable the syslog unixgram socket listener",
@@ -1653,6 +1655,7 @@
 					},
 					{
 						"core.trust_ca_certificates": {
+							"defaultdesc": "`false`",
 							"longdesc": "",
 							"scope": "global",
 							"shortdesc": "Whether to automatically trust clients signed by the CA",
@@ -1799,6 +1802,33 @@
 						}
 					},
 					{
+						"network.ovn.ca_cert": {
+							"defaultdesc": "Content of `/etc/ovn/ovn-central.crt` if present",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "OVN SSL certificate authority",
+							"type": "string"
+						}
+					},
+					{
+						"network.ovn.client_cert": {
+							"defaultdesc": "Content of `/etc/ovn/cert_host` if present",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "OVN SSL client certificate",
+							"type": "string"
+						}
+					},
+					{
+						"network.ovn.client_key": {
+							"defaultdesc": "Content of `/etc/ovn/key_host` if present",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "OVN SSL client key",
+							"type": "string"
+						}
+					},
+					{
 						"network.ovn.integration_bridge": {
 							"defaultdesc": "`br-int`",
 							"longdesc": "",
@@ -1857,6 +1887,42 @@
 							"longdesc": "",
 							"scope": "global",
 							"shortdesc": "OpenID Connect Discovery URL for the provider",
+							"type": "string"
+						}
+					}
+				]
+			},
+			"openfga": {
+				"keys": [
+					{
+						"openfga.api.token": {
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "API token of the OpenFGA server",
+							"type": "string"
+						}
+					},
+					{
+						"openfga.api.url": {
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "URL of the OpenFGA server",
+							"type": "string"
+						}
+					},
+					{
+						"openfga.store.id": {
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "ID of the OpenFGA permission store",
+							"type": "string"
+						}
+					},
+					{
+						"openfga.store.model_id": {
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "ID of the OpenFGA authorization model",
 							"type": "string"
 						}
 					}

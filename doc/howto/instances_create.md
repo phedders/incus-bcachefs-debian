@@ -18,7 +18,7 @@ Image
   Unless the image is available locally, you must specify the name of the image server and the name of the image (for example, `images:ubuntu/22.04` for the official 22.04 Ubuntu image).
 
 Instance name
-: Instance names must be unique within a Incus deployment (also within a cluster).
+: Instance names must be unique within an Incus deployment (also within a cluster).
   See {ref}`instance-properties` for additional requirements.
 
 Flags
@@ -26,7 +26,7 @@ Flags
   The most common flags are:
 
   - `--config` to specify a configuration option for the new instance
-  - `--device` to override {ref}`device options <devices>` for a device provided through a profile
+  - `--device` to override {ref}`device options <devices>` for a device provided through a profile, or to specify an {ref}`initial configuration for the root disk device <devices-disk-initial-config>`
   - `--profile` to specify a {ref}`profile <profiles>` to use for the new instance
   - `--network` or `--storage` to make the new instance use a specific network or storage pool
   - `--target` to create the instance on a specific cluster member
@@ -109,11 +109,11 @@ In this scenario, use the following command to create an empty VM:
 
 The second step is to import an ISO image that can later be attached to the VM as a storage volume:
 
-    incus storage volume import <path-to-image.iso> iso-volume --type=iso
+    incus storage volume import <pool> <path-to-image.iso> iso-volume --type=iso
 
 Lastly, you need to attach the custom ISO volume to the VM using the following command:
 
-    incus config device add iso-vm iso-volume disk pool=default source=iso-volume boot.priority=10
+    incus config device add iso-vm iso-volume disk pool=<pool> source=iso-volume boot.priority=10
 
 The `boot.priority` configuration key ensures that the VM will boot from the ISO first.
 Start the VM and connect to the console as there might be a menu you need to interact with:
@@ -126,6 +126,6 @@ Once you're done in the serial console, you need to disconnect from the console 
 
 You should now see the installer. After the installation is done, you need to detach the custom ISO volume:
 
-    incus storage volume detach default iso-volume iso-vm
+    incus storage volume detach <pool> iso-volume iso-vm
 
 Now the VM can be rebooted, and it will boot from disk.

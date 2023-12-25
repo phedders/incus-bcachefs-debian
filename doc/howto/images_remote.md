@@ -40,7 +40,7 @@ The URL must use HTTPS.
 ### Add a remote Incus server
 
 <!-- Include start add remotes -->
-To add a Incus server as a remote, enter the following command:
+To add an Incus server as a remote, enter the following command:
 
     incus remote add <remote_name> <IP|FQDN|URL> [flags]
 
@@ -51,7 +51,7 @@ For example, enter the following command to add a remote through an IP address:
 
     incus remote add my-remote 192.0.2.10
 
-You are prompted to confirm the remote server fingerprint and then asked for the password or token, depending on the authentication method used by the remote.
+You are prompted to confirm the remote server fingerprint and then asked for the token.
 <!-- Include end add remotes -->
 
 ## Reference an image

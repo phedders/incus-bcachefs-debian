@@ -13,6 +13,7 @@ import (
 	"github.com/cowsql/go-cowsql/app"
 	"github.com/cowsql/go-cowsql/client"
 
+	"github.com/lxc/incus/internal/server/certificate"
 	"github.com/lxc/incus/internal/server/db"
 	"github.com/lxc/incus/internal/server/db/cluster"
 	"github.com/lxc/incus/internal/server/node"
@@ -23,6 +24,11 @@ import (
 	localtls "github.com/lxc/incus/shared/tls"
 	"github.com/lxc/incus/shared/util"
 )
+
+// clusterBusyError is returned by dqlite if attempting attempting to join a cluster at the same time as a role-change.
+// This error tells us we can retry and probably join the cluster or fail due to something else.
+// The error code here is SQLITE_BUSY.
+var clusterBusyError = fmt.Errorf("A configuration change is already in progress (5)")
 
 // Bootstrap turns a non-clustered server into the first (and leader)
 // member of a new cluster.
@@ -182,7 +188,7 @@ func EnsureServerCertificateTrusted(serverName string, serverCert *localtls.Cert
 
 	dbCert := cluster.Certificate{
 		Fingerprint: fingerprint,
-		Type:        cluster.CertificateTypeServer, // Server type for intra-member communication.
+		Type:        certificate.TypeServer, // Server type for intra-member communication.
 		Name:        serverName,
 		Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverCertx509.Raw})),
 	}
@@ -192,11 +198,11 @@ func EnsureServerCertificateTrusted(serverName string, serverCert *localtls.Cert
 	ctx := context.Background()
 	existingCert, _ := cluster.GetCertificate(ctx, tx.Tx(), dbCert.Fingerprint)
 	if existingCert != nil {
-		if existingCert.Name != dbCert.Name && existingCert.Type == cluster.CertificateTypeServer {
+		if existingCert.Name != dbCert.Name && existingCert.Type == certificate.TypeServer {
 			// Don't alter an existing server certificate that has our fingerprint but not our name.
 			// Something is wrong as this shouldn't happen.
 			return fmt.Errorf("Existing server certificate with different name %q already in trust store", existingCert.Name)
-		} else if existingCert.Name != dbCert.Name && existingCert.Type != cluster.CertificateTypeServer {
+		} else if existingCert.Name != dbCert.Name && existingCert.Type != certificate.TypeServer {
 			// Ensure that if a client certificate already exists that matches our fingerprint, that it
 			// has the correct name and type for cluster operation, to allow us to associate member
 			// server names to certificate names.
@@ -431,9 +437,27 @@ func Join(state *state.State, gateway *Gateway, networkCert *localtls.CertInfo, 
 	logger.Info("Adding node to cluster", logger.Ctx{"id": info.ID, "local": info.Address, "role": info.Role})
 	ctx, cancel = context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	err = client.Add(ctx, info.NodeInfo)
-	if err != nil {
-		return fmt.Errorf("Failed to join cluster: %w", err)
+
+	// Repeatedly try to join in case the cluster is busy with a role-change.
+	joined := false
+	for !joined {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("Failed to join cluster: %w", ctx.Err())
+		default:
+			err = client.Add(ctx, info.NodeInfo)
+			if err != nil && err.Error() == clusterBusyError.Error() {
+				// If the cluster is busy with a role change, sleep a second and then keep trying to join.
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			if err != nil {
+				return fmt.Errorf("Failed to join cluster: %w", err)
+			}
+
+			joined = true
+		}
 	}
 
 	// Make sure we can actually connect to the cluster database through
@@ -1058,7 +1082,7 @@ func Purge(c *db.Cluster, name string) error {
 			return fmt.Errorf("Failed to remove member %q: %w", name, err)
 		}
 
-		err = cluster.DeleteCertificates(context.Background(), tx.Tx(), name, cluster.CertificateTypeServer)
+		err = cluster.DeleteCertificates(context.Background(), tx.Tx(), name, certificate.TypeServer)
 		if err != nil {
 			return fmt.Errorf("Failed to remove member %q certificate from trust store: %w", name, err)
 		}

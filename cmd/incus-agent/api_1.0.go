@@ -35,6 +35,7 @@ var api10 = []APIEndpoint{
 	operationsCmd,
 	operationCmd,
 	operationWebsocket,
+	operationWait,
 	sftpCmd,
 	stateCmd,
 }
@@ -46,7 +47,7 @@ func api10Get(d *Daemon, r *http.Request) response.Response {
 		APIVersion:    version.APIVersion,
 		Public:        false,
 		Auth:          "trusted",
-		AuthMethods:   []string{"tls"},
+		AuthMethods:   []string{api.AuthenticationMethodTLS},
 	}
 
 	uname, err := linux.Uname()
@@ -170,7 +171,11 @@ func stopDevIncusServer(d *Daemon) error {
 	d.DevIncusRunning = false
 	d.DevIncusMu.Unlock()
 
-	return servers["DevIncus"].Close()
+	if servers["DevIncus"] != nil {
+		return servers["DevIncus"].Close()
+	}
+
+	return nil
 }
 
 func getClient(CID uint32, port int, serverCertificate string) (*http.Client, error) {
@@ -193,8 +198,13 @@ func getClient(CID uint32, port int, serverCertificate string) (*http.Client, er
 }
 
 func startHTTPServer(d *Daemon, debug bool) error {
-	// Setup the listener on VM's context ID for inbound connections from the host.
-	l, err := vsock.Listen(ports.HTTPSDefaultPort, nil)
+	const CIDAny uint32 = 4294967295 // Equivalent to VMADDR_CID_ANY.
+
+	// Setup the listener on wildcard CID for inbound connections from Incus.
+	// We use the VMADDR_CID_ANY CID so that if the VM's CID changes in the future the listener still works.
+	// A CID change can occur when restoring a stateful VM that was previously using one CID but is
+	// subsequently restored using a different one.
+	l, err := vsock.ListenContextID(CIDAny, ports.HTTPSDefaultPort, nil)
 	if err != nil {
 		return fmt.Errorf("Failed to listen on vsock: %w", err)
 	}

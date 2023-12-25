@@ -11,9 +11,12 @@ type Source interface {
 	Purge() error
 	Connect() (lxd.InstanceServer, error)
 	Paths() (*DaemonPaths, error)
+	Name() string
 }
 
 var sources = []Source{
 	&srcSnap{},
 	&srcDeb{},
+	&srcCOPR{},
+	&srcManual{},
 }

@@ -28,7 +28,7 @@ import (
 	firewallDrivers "github.com/lxc/incus/internal/server/firewall/drivers"
 	"github.com/lxc/incus/internal/server/ip"
 	"github.com/lxc/incus/internal/server/network/acl"
-	"github.com/lxc/incus/internal/server/network/openvswitch"
+	"github.com/lxc/incus/internal/server/network/ovs"
 	"github.com/lxc/incus/internal/server/project"
 	localUtil "github.com/lxc/incus/internal/server/util"
 	"github.com/lxc/incus/internal/server/warnings"
@@ -581,19 +581,19 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 	// Create the bridge interface if doesn't exist.
 	if !n.isRunning() {
 		if n.config["bridge.driver"] == "openvswitch" {
-			ovs := openvswitch.NewOVS()
-			if !ovs.Installed() {
+			vswitch, err := ovs.NewVSwitch()
+			if err != nil || !vswitch.Installed() {
 				return fmt.Errorf("Open vSwitch isn't installed on this system")
 			}
 
 			// Add and configure the interface in one operation to reduce the number of executions and
 			// to avoid systemd-udevd from applying the default MACAddressPolicy=persistent policy.
-			err := ovs.BridgeAdd(n.name, false, bridge.Address, bridge.MTU)
+			err = vswitch.BridgeAdd(n.name, false, bridge.Address, bridge.MTU)
 			if err != nil {
 				return err
 			}
 
-			revert.Add(func() { _ = ovs.BridgeDelete(n.name) })
+			revert.Add(func() { _ = vswitch.BridgeDelete(n.name) })
 		} else {
 			// Add and configure the interface in one operation to reduce the number of executions and
 			// to avoid systemd-udevd from applying the default MACAddressPolicy=persistent policy.
@@ -1052,13 +1052,21 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 				return err
 			}
 
-			// First set accept_ra to 2 for everything.
+			// First set accept_ra to 2 for all interfaces (if not disabled).
+			// This ensures that the host can still receive IPv6 router advertisements even with
+			// forwarding enabled (which enable below), as the default is to ignore router adverts
+			// when forward is enabled, and this could render the host unreachable if it uses
+			// SLAAC generated IPs.
 			for _, entry := range entries {
+				// Check that IPv6 router advertisement acceptance is enabled currently.
+				// If its set to 0 then we don't want to enable, and if its already set to 2 then
+				// we don't need to do anything.
 				content, err := os.ReadFile(fmt.Sprintf("/proc/sys/net/ipv6/conf/%s/accept_ra", entry.Name()))
 				if err == nil && string(content) != "1\n" {
 					continue
 				}
 
+				// If IPv6 router acceptance is enabled (set to 1) then we now set it to 2.
 				err = localUtil.SysctlSet(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", entry.Name()), "2")
 				if err != nil && !os.IsNotExist(err) {
 					return err
@@ -1432,8 +1440,12 @@ func (n *bridge) Stop() error {
 
 	// Destroy the bridge interface
 	if n.config["bridge.driver"] == "openvswitch" {
-		ovs := openvswitch.NewOVS()
-		err := ovs.BridgeDelete(n.name)
+		vswitch, err := ovs.NewVSwitch()
+		if err != nil {
+			return err
+		}
+
+		err = vswitch.BridgeDelete(n.name)
 		if err != nil {
 			return err
 		}
@@ -1856,7 +1868,7 @@ func (n *bridge) bridgedNICExternalRoutes(bridgeProjectNetworks map[string][]*ap
 		// Get the instance's effective network project name.
 		instNetworkProject := project.NetworkProjectFromRecord(&p)
 
-		if instNetworkProject != project.Default {
+		if instNetworkProject != api.ProjectDefaultName {
 			return nil // Managed bridge networks can only exist in default project.
 		}
 
@@ -1972,7 +1984,7 @@ func (n *bridge) getExternalSubnetInUse() ([]externalSubnetUsage, error) {
 
 			proxySubnet, err := ParseIPToNet(proxyListenAddr.Address)
 			if err != nil {
-				return err
+				continue // If proxy listen isn't a valid IP it can't conflict.
 			}
 
 			externalSubnets = append(externalSubnets, externalSubnetUsage{
@@ -2107,7 +2119,7 @@ func (n *bridge) ForwardCreate(forward api.NetworkForwardsPost, clientType reque
 					// Get the instance's effective network project name.
 					instNetworkProject := project.NetworkProjectFromRecord(&p)
 
-					if instNetworkProject != project.Default {
+					if instNetworkProject != api.ProjectDefaultName {
 						return nil // Managed bridge networks can only exist in default project.
 					}
 
