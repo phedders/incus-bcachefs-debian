@@ -21,11 +21,11 @@ package main
 #include <sys/xattr.h>
 #include <unistd.h>
 
-#include "../../internal/cgo/macro.h"
-#include "../../internal/cgo/memory_utils.h"
-#include "../../internal/cgo/mount_utils.h"
-#include "../../internal/cgo/syscall_numbers.h"
-#include "../../internal/cgo/syscall_wrappers.h"
+#include "../../shared/cgo/macro.h"
+#include "../../shared/cgo/memory_utils.h"
+#include "../../shared/cgo/mount_utils.h"
+#include "../../shared/cgo/syscall_numbers.h"
+#include "../../shared/cgo/syscall_wrappers.h"
 
 extern char* advance_arg(bool required);
 extern void attach_userns_fd(int ns_fd);
@@ -410,9 +410,31 @@ static void mount_emulate(void)
 			_exit(EXIT_FAILURE);
 	} else if (strcmp(shift, "idmapped") == 0) {
 		int fd_tree;
+		int fs_fd = -EBADF;
 
-		fd_tree = mount_detach_idmap(source, fd_userns);
+		struct lxc_mount_attr attr = {
+		    .attr_set		= MOUNT_ATTR_IDMAP,
+		};
+
+		fs_fd = incus_fsopen(fstype, FSOPEN_CLOEXEC);
+		if (fs_fd < 0)
+			die("error: failed to create detached idmapped mount: fsopen");
+
+		ret = incus_fsconfig(fs_fd, FSCONFIG_SET_STRING, "source", source, 0);
+		if (ret < 0)
+			die("error: failed to create detached idmapped mount: fsconfig");
+
+		ret = incus_fsconfig(fs_fd, FSCONFIG_CMD_CREATE, NULL, NULL, 0);
+		if (ret < 0)
+			die("error: failed to create detached idmapped mount: fsconfig");
+
+		fd_tree = incus_fsmount(fs_fd, FSMOUNT_CLOEXEC, flags);
 		if (fd_tree < 0)
+			die("error: failed to create detached idmapped mount: fsmount");
+
+		attr.userns_fd = fd_userns;
+		ret = incus_mount_setattr(fd_tree, "", AT_EMPTY_PATH, &attr, sizeof(attr));
+		if (ret < 0)
 			die("error: failed to create detached idmapped mount");
 
 		ret = setns(fd_mntns, CLONE_NEWNS);
@@ -534,7 +556,7 @@ import (
 	"github.com/spf13/cobra"
 
 	// Used by cgo
-	_ "github.com/lxc/incus/internal/cgo"
+	_ "github.com/lxc/incus/shared/cgo"
 )
 
 type cmdForksyscall struct {

@@ -16,6 +16,7 @@ import (
 	"github.com/lxc/incus/internal/server/instance"
 	"github.com/lxc/incus/internal/server/instance/instancetype"
 	"github.com/lxc/incus/internal/server/operations"
+	"github.com/lxc/incus/internal/server/request"
 	"github.com/lxc/incus/internal/server/response"
 	"github.com/lxc/incus/internal/version"
 	"github.com/lxc/incus/shared/api"
@@ -59,7 +60,7 @@ import (
 func instanceRebuildPost(d *Daemon, r *http.Request) response.Response {
 	s := d.State()
 
-	targetProjectName := projectParam(r)
+	targetProjectName := request.ProjectParam(r)
 
 	name, err := url.PathUnescape(mux.Vars(r)["name"])
 	if err != nil {
@@ -68,6 +69,21 @@ func instanceRebuildPost(d *Daemon, r *http.Request) response.Response {
 
 	if internalInstance.IsSnapshot(name) {
 		return response.BadRequest(fmt.Errorf("Invalid instance name"))
+	}
+
+	instanceType, err := urlInstanceTypeDetect(r)
+	if err != nil {
+		return response.SmartError(err)
+	}
+
+	// Handle requests targeted to a container on a different node
+	resp, err := forwardedResponseIfInstanceIsRemote(s, r, targetProjectName, name, instanceType)
+	if err != nil {
+		return response.SmartError(err)
+	}
+
+	if resp != nil {
+		return resp
 	}
 
 	// Parse the request

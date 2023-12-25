@@ -40,16 +40,16 @@ For unprivileged containers, you need to make sure that the user in the containe
 Otherwise, all files will show up as the overflow UID/GID (`65536:65536`) and access to anything that's not world-readable will fail.
 Use either of the following methods to grant the required permissions:
 
-- Pass `shift=true` to the [`incus config device add`](incus_config_device_add.md) call. This depends on the kernel and file system supporting either idmapped mounts or shiftfs (see [`incus info`](incus_info.md)).
+- Pass `shift=true` to the [`incus config device add`](incus_config_device_add.md) call. This depends on the kernel and file system supporting either idmapped mounts (see [`incus info`](incus_info.md)).
 - Add a `raw.idmap` entry (see [Idmaps for user namespace](userns-idmap.md)).
 - Place recursive POSIX ACLs on your home directory.
 
 Privileged containers do not have this issue because all UID/GID in the container are the same as outside.
 But that's also the cause of most of the security issues with such privileged containers.
 
-## How can I run Docker inside a Incus container?
+## How can I run Docker inside an Incus container?
 
-To run Docker inside a Incus container, set the {config:option}`instance-security:security.nesting` property of the container to `true`:
+To run Docker inside an Incus container, set the {config:option}`instance-security:security.nesting` property of the container to `true`:
 
     incus config set <container> security.nesting true
 
@@ -74,7 +74,7 @@ Various configuration files are stored in that directory, for example:
 ## Why can I not ping my Incus instance from another host?
 
 Many switches do not allow MAC address changes, and will either drop traffic with an incorrect MAC or disable the port totally.
-If you can ping a Incus instance from the host, but are not able to ping it from a different host, this could be the cause.
+If you can ping an Incus instance from the host, but are not able to ping it from a different host, this could be the cause.
 
 The way to diagnose this problem is to run a `tcpdump` on the uplink and you will see either ``ARP Who has `xx.xx.xx.xx` tell `yy.yy.yy.yy` ``, with you sending responses but them not getting acknowledged, or ICMP packets going in and out successfully, but never being received by the other host.
 

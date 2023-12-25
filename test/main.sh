@@ -93,6 +93,7 @@ cleanup() {
     echo "==> Cleaning up"
 
     umount -l "${TEST_DIR}/dev"
+    shutdown_openfga
     cleanup_incus "$TEST_DIR"
   fi
 
@@ -199,6 +200,8 @@ if [ "${1:-"all"}" != "cluster" ]; then
     run_test test_database_no_disk_space "database out of disk space"
     run_test test_sql "SQL"
     run_test test_tls_restrictions "TLS restrictions"
+    run_test test_oidc "OpenID Connect"
+    run_test test_openfga "OpenFGA"
     run_test test_certificate_edit "Certificate edit"
     run_test test_basic_usage "basic usage"
     run_test test_remote_url "remote url handling"
@@ -238,6 +241,7 @@ if [ "${1:-"all"}" != "standalone" ]; then
     run_test test_clustering_groups "clustering groups"
     run_test test_clustering_events "clustering events"
     run_test test_clustering_uuid "clustering uuid"
+    run_test test_clustering_openfga "clustering OpenFGA"
 fi
 
 if [ "${1:-"all"}" != "cluster" ]; then
@@ -274,6 +278,7 @@ if [ "${1:-"all"}" != "cluster" ]; then
     run_test test_container_devices_unix_char "container devices - unix-char"
     run_test test_container_devices_unix_block "container devices - unix-block"
     run_test test_container_devices_tpm "container devices - tpm"
+    run_test test_container_move "container server-side move"
     run_test test_container_syscall_interception "container syscall interception"
     run_test test_security "security features"
     run_test test_security_protection "container protection"
@@ -339,6 +344,7 @@ if [ "${1:-"all"}" != "cluster" ]; then
     run_test test_backup_export "backup export"
     run_test test_backup_rename "backup rename"
     run_test test_backup_volume_export "backup volume export"
+    run_test test_backup_export_import_instance_only "backup export and import instance only"
     run_test test_backup_volume_rename_delete "backup volume rename and delete"
     run_test test_backup_different_instance_uuid "backup instance and check instance UUIDs"
     run_test test_backup_volume_expiry "backup volume expiry"
@@ -354,6 +360,7 @@ if [ "${1:-"all"}" != "cluster" ]; then
     run_test test_metrics "Metrics"
     run_test test_storage_volume_recover "Recover storage volumes"
     run_test test_syslog_socket "Syslog socket"
+    run_test test_incus_user "incus-user"
 fi
 
 # shellcheck disable=SC2034

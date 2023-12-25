@@ -28,6 +28,7 @@ import (
 	"github.com/lxc/incus/internal/server/instance"
 	"github.com/lxc/incus/internal/server/instance/instancetype"
 	"github.com/lxc/incus/internal/server/operations"
+	"github.com/lxc/incus/internal/server/request"
 	"github.com/lxc/incus/internal/server/response"
 	"github.com/lxc/incus/internal/server/state"
 	internalUtil "github.com/lxc/incus/internal/util"
@@ -254,13 +255,13 @@ func (s *execWs) Do(op *operations.Operation) error {
 		stderr = ttys[execWSStderr]
 	}
 
-	waitAttachedChildIsDead := cancel.New(context.Background())
+	waitAttachedChildIsDead, markAttachedChildIsDead := context.WithCancel(context.Background())
 	var wgEOF sync.WaitGroup
 
 	// Define a function to clean up TTYs and sockets when done.
 	finisher := func(cmdResult int, cmdErr error) error {
-		// Close this before closing the control connection so control handler can detect command ending.
-		waitAttachedChildIsDead.Cancel()
+		// Cancel this before closing the control connection so control handler can detect command ending.
+		markAttachedChildIsDead()
 
 		for _, tty := range ttys {
 			_ = tty.Close()
@@ -406,33 +407,39 @@ func (s *execWs) Do(op *operations.Operation) error {
 		go func() {
 			defer wgEOF.Done()
 
+			var readErr, writeErr error
 			l.Debug("Exec mirror websocket started", logger.Ctx{"number": 0})
-			defer l.Debug("Exec mirror websocket finished", logger.Ctx{"number": 0})
+			defer func() {
+				l.Debug("Exec mirror websocket finished", logger.Ctx{"number": 0, "readErr": readErr, "writeErr": writeErr})
+			}()
 
 			s.connsLock.Lock()
 			conn := s.conns[0]
 			s.connsLock.Unlock()
 
-			var readDone, writeDone chan struct{}
+			var readDone, writeDone chan error
 			if s.instance.Type() == instancetype.Container {
 				// For containers, we are running the command via the locally managed PTY and so
 				// need to use the same PTY handle for both read and write.
-				readDone, writeDone = ws.Mirror(context.Background(), conn, ptys[0])
+				readDone, writeDone = ws.Mirror(conn, linux.NewExecWrapper(waitAttachedChildIsDead, ptys[0]))
 			} else {
-				readDone = ws.MirrorRead(context.Background(), conn, ptys[execWSStdout])
-				writeDone = ws.MirrorWrite(context.Background(), conn, ttys[execWSStdin])
+				readDone = ws.MirrorRead(conn, ptys[execWSStdout])
+				writeDone = ws.MirrorWrite(conn, ttys[execWSStdin])
 			}
 
-			<-readDone
-			<-writeDone
+			readErr = <-readDone
+			writeErr = <-writeDone
 			_ = conn.Close()
 		}()
 	} else {
 		wgEOF.Add(len(ttys) - 1)
 		for i := 0; i < len(ttys); i++ {
 			go func(i int) {
+				var err error
 				l.Debug("Exec mirror websocket started", logger.Ctx{"number": i})
-				defer l.Debug("Exec mirror websocket finished", logger.Ctx{"number": i})
+				defer func() {
+					l.Debug("Exec mirror websocket finished", logger.Ctx{"number": i, "err": err})
+				}()
 
 				s.connsLock.Lock()
 				conn := s.conns[i]
@@ -462,10 +469,10 @@ func (s *execWs) Do(op *operations.Operation) error {
 				}
 
 				if i == execWSStdin {
-					<-ws.MirrorWrite(context.Background(), conn, ttys[i])
+					err = <-ws.MirrorWrite(conn, ttys[i])
 					_ = ttys[i].Close()
 				} else {
-					<-ws.MirrorRead(context.Background(), conn, ptys[i])
+					err = <-ws.MirrorRead(conn, linux.NewExecWrapper(waitAttachedChildIsDead, ptys[i]))
 					_ = ptys[i].Close()
 					wgEOF.Done()
 				}
@@ -525,7 +532,7 @@ func instanceExecPost(d *Daemon, r *http.Request) response.Response {
 		return response.SmartError(err)
 	}
 
-	projectName := projectParam(r)
+	projectName := request.ProjectParam(r)
 	name, err := url.PathUnescape(mux.Vars(r)["name"])
 	if err != nil {
 		return response.SmartError(err)

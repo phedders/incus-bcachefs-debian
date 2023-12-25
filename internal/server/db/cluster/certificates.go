@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/lxc/incus/internal/server/certificate"
 	"github.com/lxc/incus/internal/server/db/query"
 	"github.com/lxc/incus/shared/api"
 )
@@ -39,10 +40,11 @@ import (
 type Certificate struct {
 	ID          int
 	Fingerprint string `db:"primary=yes"`
-	Type        CertificateType
+	Type        certificate.Type
 	Name        string
 	Certificate string
 	Restricted  bool
+	Description string
 }
 
 // CertificateFilter specifies potential query parameter fields.
@@ -50,43 +52,17 @@ type CertificateFilter struct {
 	ID          *int
 	Fingerprint *string
 	Name        *string
-	Type        *CertificateType
-}
-
-// CertificateType indicates the type of the certificate.
-type CertificateType int
-
-// CertificateTypeClient indicates a client certificate type.
-const CertificateTypeClient = CertificateType(1)
-
-// CertificateTypeServer indicates a server certificate type.
-const CertificateTypeServer = CertificateType(2)
-
-// CertificateTypeMetrics indicates a metrics certificate type.
-const CertificateTypeMetrics = CertificateType(3)
-
-// CertificateAPITypeToDBType converts an API type to the equivalent DB type.
-func CertificateAPITypeToDBType(apiType string) (CertificateType, error) {
-	switch apiType {
-	case api.CertificateTypeClient:
-		return CertificateTypeClient, nil
-	case api.CertificateTypeServer:
-		return CertificateTypeServer, nil
-	case api.CertificateTypeMetrics:
-		return CertificateTypeMetrics, nil
-	}
-
-	return -1, fmt.Errorf("Invalid certificate type")
+	Type        *certificate.Type
 }
 
 // ToAPIType returns the API equivalent type.
 func (cert *Certificate) ToAPIType() string {
 	switch cert.Type {
-	case CertificateTypeClient:
+	case certificate.TypeClient:
 		return api.CertificateTypeClient
-	case CertificateTypeServer:
+	case certificate.TypeServer:
 		return api.CertificateTypeServer
-	case CertificateTypeMetrics:
+	case certificate.TypeMetrics:
 		return api.CertificateTypeMetrics
 	}
 
@@ -102,6 +78,7 @@ func (cert *Certificate) ToAPI(ctx context.Context, tx *sql.Tx) (*api.Certificat
 	resp.Name = cert.Name
 	resp.Restricted = cert.Restricted
 	resp.Type = cert.ToAPIType()
+	resp.Description = cert.Description
 
 	projects, err := GetCertificateProjects(ctx, tx, cert.ID)
 	if err != nil {

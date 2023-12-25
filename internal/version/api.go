@@ -380,6 +380,14 @@ var APIExtensions = []string{
 	"event_lifecycle_name_and_project",
 	"instances_nic_limits_priority",
 	"disk_initial_volume_configuration",
+	"operation_wait",
+	"image_restriction_privileged",
+	"cluster_internal_custom_volume_copy",
+	"disk_io_bus",
+	"storage_cephfs_create_missing",
+	"instance_move_config",
+	"ovn_ssl_config",
+	"certificate_description",
 }
 
 // APIExtensionsCount returns the number of available API extensions.

@@ -25,16 +25,15 @@ import (
 
 	"github.com/checkpoint-restore/go-criu/v6/crit"
 	"github.com/flosch/pongo2"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	liblxc "github.com/lxc/go-lxc"
-	"github.com/pborman/uuid"
 	"github.com/pkg/sftp"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/lxc/incus/internal/idmap"
 	internalInstance "github.com/lxc/incus/internal/instance"
 	"github.com/lxc/incus/internal/instancewriter"
 	internalIO "github.com/lxc/incus/internal/io"
@@ -72,6 +71,7 @@ import (
 	localUtil "github.com/lxc/incus/internal/server/util"
 	internalUtil "github.com/lxc/incus/internal/util"
 	"github.com/lxc/incus/shared/api"
+	"github.com/lxc/incus/shared/idmap"
 	"github.com/lxc/incus/shared/logger"
 	"github.com/lxc/incus/shared/osarch"
 	"github.com/lxc/incus/shared/subprocess"
@@ -332,6 +332,14 @@ func lxcCreate(s *state.State, args db.InstanceArgs, p api.Project) (instance.In
 	if d.isSnapshot {
 		d.state.Events.SendLifecycle(d.project.Name, lifecycle.InstanceSnapshotCreated.Event(d, nil))
 	} else {
+		// Add instance to authorizer.
+		err = d.state.Authorizer.AddInstance(d.state.ShutdownCtx, d.project.Name, d.Name())
+		if err != nil {
+			logger.Error("Failed to add instance to authorizer", logger.Ctx{"instanceName": d.Name(), "projectName": d.project.Name, "error": err})
+		}
+
+		revert.Add(func() { d.state.Authorizer.DeleteInstance(d.state.ShutdownCtx, d.project.Name, d.Name()) })
+
 		d.state.Events.SendLifecycle(d.project.Name, lifecycle.InstanceCreated.Event(d, map[string]any{
 			"type":         api.InstanceTypeContainer,
 			"storage-pool": d.storagePool.Name(),
@@ -1148,15 +1156,22 @@ func (d *lxc) initLXC(config bool) (*liblxc.Container, error) {
 					return nil, err
 				}
 			} else {
-				if d.state.OS.CGInfo.Supports(cgroup.MemorySwap, cg) && util.IsFalse(memorySwap) {
+				if d.state.OS.CGInfo.Supports(cgroup.MemorySwap, cg) {
 					err = cg.SetMemoryLimit(valueInt)
 					if err != nil {
 						return nil, err
 					}
 
-					err = cg.SetMemorySwapLimit(0)
-					if err != nil {
-						return nil, err
+					if util.IsFalse(memorySwap) {
+						err = cg.SetMemorySwapLimit(0)
+						if err != nil {
+							return nil, err
+						}
+					} else {
+						err = cg.SetMemorySwapLimit(valueInt)
+						if err != nil {
+							return nil, err
+						}
 					}
 				} else {
 					err = cg.SetMemoryLimit(valueInt)
@@ -1522,7 +1537,7 @@ func (d *lxc) deviceAddCgroupRules(cgroups []deviceConfig.RunConfigItem) error {
 		// Add the new device cgroup rule.
 		err := d.CGroupSet(rule.Key, rule.Value)
 		if err != nil {
-			return fmt.Errorf("Failed to add cgroup rule for device")
+			return fmt.Errorf("Failed to add cgroup rule for device: %w", err)
 		}
 	}
 
@@ -1745,7 +1760,10 @@ func (d *lxc) deviceHandleMounts(mounts []deviceConfig.MountEntryItem) error {
 // DeviceEventHandler actions the results of a RunConfig after an event has occurred on a device.
 func (d *lxc) DeviceEventHandler(runConf *deviceConfig.RunConfig) error {
 	// Device events can only be processed when the container is running.
-	if !d.IsRunning() {
+	// We use InitPID here rather than IsRunning because this task can be triggered during the
+	// container startup process, which is during the time that the start lock is held, which causes
+	// IsRunning to return false (because the container hasn't fully started yet).
+	if d.InitPID() <= 0 {
 		return nil
 	}
 
@@ -1916,6 +1934,11 @@ func (d *lxc) startCommon() (string, []func() error, error) {
 		return "", nil, fmt.Errorf("The image used by this instance requires a CGroupV1 host system")
 	}
 
+	// Ensure privileged is turned off for images that cannot work privileged
+	if util.IsFalse(d.localConfig["image.requirements.privileged"]) && util.IsTrue(d.expandedConfig["security.privileged"]) {
+		return "", nil, fmt.Errorf("The image used by this instance is incompatible with privileged containers. Please unset security.privileged on the instance")
+	}
+
 	// Load any required kernel modules
 	kernelModules := d.expandedConfig["linux.kernel_modules"]
 	if kernelModules != "" {
@@ -2016,7 +2039,7 @@ func (d *lxc) startCommon() (string, []func() error, error) {
 	// Generate UUID if not present (do this before UpdateBackupFile() call).
 	instUUID := d.localConfig["volatile.uuid"]
 	if instUUID == "" {
-		instUUID = uuid.New()
+		instUUID = uuid.New().String()
 		volatileSet["volatile.uuid"] = instUUID
 	}
 
@@ -2320,7 +2343,11 @@ func (d *lxc) detachInterfaceRename(netns string, ifName string, hostName string
 
 // Start starts the instance.
 func (d *lxc) Start(stateful bool) error {
-	unlock := d.updateBackupFileLock(context.Background())
+	unlock, err := d.updateBackupFileLock(context.Background())
+	if err != nil {
+		return err
+	}
+
 	defer unlock()
 
 	d.logger.Debug("Start started", logger.Ctx{"stateful": stateful})
@@ -2329,7 +2356,7 @@ func (d *lxc) Start(stateful bool) error {
 	// Check that we are startable before creating an operation lock.
 	// Must happen before creating operation Start lock to avoid the status check returning Stopped due to the
 	// existence of a Start operation lock.
-	err := d.validateStartup(stateful, d.statusCode())
+	err = d.validateStartup(stateful, d.statusCode())
 	if err != nil {
 		return err
 	}
@@ -3403,7 +3430,11 @@ func (d *lxc) snapshot(name string, expiry time.Time, stateful bool) error {
 
 // Snapshot takes a new snapshot.
 func (d *lxc) Snapshot(name string, expiry time.Time, stateful bool) error {
-	unlock := d.updateBackupFileLock(context.Background())
+	unlock, err := d.updateBackupFileLock(context.Background())
+	if err != nil {
+		return err
+	}
+
 	defer unlock()
 
 	return d.snapshot(name, expiry, stateful)
@@ -3626,7 +3657,11 @@ func (d *lxc) cleanup() {
 
 // Delete deletes the instance.
 func (d *lxc) Delete(force bool) error {
-	unlock := d.updateBackupFileLock(context.Background())
+	unlock, err := d.updateBackupFileLock(context.Background())
+	if err != nil {
+		return err
+	}
+
 	defer unlock()
 
 	// Setup a new operation.
@@ -3762,6 +3797,11 @@ func (d *lxc) delete(force bool) error {
 	if d.isSnapshot {
 		d.state.Events.SendLifecycle(d.project.Name, lifecycle.InstanceSnapshotDeleted.Event(d, nil))
 	} else {
+		err = d.state.Authorizer.DeleteInstance(d.state.ShutdownCtx, d.project.Name, d.Name())
+		if err != nil {
+			logger.Error("Failed to remove instance from authorizer", logger.Ctx{"name": d.Name(), "project": d.project.Name, "error": err})
+		}
+
 		d.state.Events.SendLifecycle(d.project.Name, lifecycle.InstanceDeleted.Event(d, nil))
 	}
 
@@ -3770,7 +3810,11 @@ func (d *lxc) delete(force bool) error {
 
 // Rename renames the instance. Accepts an argument to enable applying deferred TemplateTriggerRename.
 func (d *lxc) Rename(newName string, applyTemplateTrigger bool) error {
-	unlock := d.updateBackupFileLock(context.Background())
+	unlock, err := d.updateBackupFileLock(context.Background())
+	if err != nil {
+		return err
+	}
+
 	defer unlock()
 
 	oldName := d.Name()
@@ -3783,7 +3827,7 @@ func (d *lxc) Rename(newName string, applyTemplateTrigger bool) error {
 	d.logger.Info("Renaming instance", ctxMap)
 
 	// Quick checks.
-	err := instance.ValidName(newName, d.IsSnapshot())
+	err = instance.ValidName(newName, d.IsSnapshot())
 	if err != nil {
 		return err
 	}
@@ -3924,6 +3968,11 @@ func (d *lxc) Rename(newName string, applyTemplateTrigger bool) error {
 	if d.isSnapshot {
 		d.state.Events.SendLifecycle(d.project.Name, lifecycle.InstanceSnapshotRenamed.Event(d, map[string]any{"old_name": oldName}))
 	} else {
+		err = d.state.Authorizer.RenameInstance(d.state.ShutdownCtx, d.project.Name, oldName, newName)
+		if err != nil {
+			logger.Error("Failed to rename instance in authorizer", logger.Ctx{"old_name": oldName, "new_name": newName, "project": d.project.Name, "error": err})
+		}
+
 		d.state.Events.SendLifecycle(d.project.Name, lifecycle.InstanceRenamed.Event(d, map[string]any{"old_name": oldName}))
 	}
 
@@ -3939,8 +3988,12 @@ func (d *lxc) CGroupSet(key string, value string) error {
 		return err
 	}
 
-	// Make sure the container is running
-	if !d.IsRunning() {
+	// Make sure the container is running.
+	// We use InitPID here rather than IsRunning because this task can be triggered during the container's
+	// startup process, which is during the time that the start lock is held, which causes IsRunning to
+	// return false (because the container hasn't fully started yet) but it is sufficiently started to
+	// have its cgroup disk limits set.
+	if d.InitPID() <= 0 {
 		return fmt.Errorf("Can't set cgroups on a stopped container")
 	}
 
@@ -3954,7 +4007,11 @@ func (d *lxc) CGroupSet(key string, value string) error {
 
 // Update applies updated config.
 func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
-	unlock := d.updateBackupFileLock(context.Background())
+	unlock, err := d.updateBackupFileLock(context.Background())
+	if err != nil {
+		return err
+	}
+
 	defer unlock()
 
 	// Setup a new operation
@@ -3967,7 +4024,7 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 
 	// Set sane defaults for unset keys
 	if args.Project == "" {
-		args.Project = project.Default
+		args.Project = api.ProjectDefaultName
 	}
 
 	if args.Architecture == 0 {
@@ -4480,17 +4537,25 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 						return err
 					}
 				} else {
-					if d.state.OS.CGInfo.Supports(cgroup.MemorySwap, cg) && util.IsFalse(memorySwap) {
+					if d.state.OS.CGInfo.Supports(cgroup.MemorySwap, cg) {
 						err = cg.SetMemoryLimit(memoryInt)
 						if err != nil {
 							revertMemory()
 							return err
 						}
 
-						err = cg.SetMemorySwapLimit(0)
-						if err != nil {
-							revertMemory()
-							return err
+						if util.IsFalse(memorySwap) {
+							err = cg.SetMemorySwapLimit(0)
+							if err != nil {
+								revertMemory()
+								return err
+							}
+						} else {
+							err = cg.SetMemorySwapLimit(memoryInt)
+							if err != nil {
+								revertMemory()
+								return err
+							}
 						}
 					} else {
 						err = cg.SetMemoryLimit(memoryInt)
@@ -6594,11 +6659,15 @@ func (d *lxc) inheritInitPidFd() (int, *os.File) {
 // FileSFTPConn returns a connection to the forkfile handler.
 func (d *lxc) FileSFTPConn() (net.Conn, error) {
 	// Lock to avoid concurrent spawning.
-	spawnUnlock := locking.Lock(context.TODO(), fmt.Sprintf("forkfile_%d", d.id))
+	spawnUnlock, err := locking.Lock(context.TODO(), fmt.Sprintf("forkfile_%d", d.id))
+	if err != nil {
+		return nil, err
+	}
+
 	defer spawnUnlock()
 
 	// Create any missing directories in case the instance has never been started before.
-	err := os.MkdirAll(d.LogPath(), 0700)
+	err = os.MkdirAll(d.LogPath(), 0700)
 	if err != nil {
 		return nil, err
 	}
@@ -6655,7 +6724,12 @@ func (d *lxc) FileSFTPConn() (net.Conn, error) {
 	chReady := make(chan error)
 	go func() {
 		// Lock to avoid concurrent running forkfile.
-		runUnlock := locking.Lock(context.TODO(), d.forkfileRunningLockName())
+		runUnlock, err := locking.Lock(context.TODO(), d.forkfileRunningLockName())
+		if err != nil {
+			chReady <- err
+			return
+		}
+
 		defer runUnlock()
 
 		// Mount the filesystem if needed.
@@ -6826,7 +6900,14 @@ func (d *lxc) FileSFTP() (*sftp.Client, error) {
 func (d *lxc) stopForkfile(force bool) {
 	// Make sure that when the function exits, no forkfile is running by acquiring the lock (which indicates
 	// that forkfile isn't running and holding the lock) and then releasing it.
-	defer func() { locking.Lock(context.TODO(), d.forkfileRunningLockName())() }()
+	defer func() {
+		unlock, err := locking.Lock(context.TODO(), d.forkfileRunningLockName())
+		if err != nil {
+			return
+		}
+
+		unlock()
+	}()
 
 	content, err := os.ReadFile(filepath.Join(d.LogPath(), "forkfile.pid"))
 	if err != nil {
@@ -8084,7 +8165,7 @@ func (d *lxc) UpdateBackupFile() error {
 		return err
 	}
 
-	return pool.UpdateInstanceBackupFile(d, nil)
+	return pool.UpdateInstanceBackupFile(d, true, nil)
 }
 
 // Info returns "lxc" and the currently loaded version of LXC.
@@ -8272,7 +8353,7 @@ func (d *lxc) getFSStats() (*metrics.MetricSet, error) {
 		FSType     string
 	}
 
-	out := metrics.NewMetricSet(map[string]string{"project": d.project.Name, "name": d.name})
+	out := metrics.NewMetricSet(nil)
 
 	mounts, err := os.ReadFile("/proc/mounts")
 	if err != nil {

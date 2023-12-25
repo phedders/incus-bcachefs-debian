@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/lxc/incus/internal/idmap"
 	"github.com/lxc/incus/internal/instance"
 	"github.com/lxc/incus/internal/server/auth"
 	"github.com/lxc/incus/internal/server/db"
@@ -17,6 +15,7 @@ import (
 	deviceconfig "github.com/lxc/incus/internal/server/device/config"
 	"github.com/lxc/incus/internal/server/instance/instancetype"
 	"github.com/lxc/incus/shared/api"
+	"github.com/lxc/incus/shared/idmap"
 	"github.com/lxc/incus/shared/units"
 	"github.com/lxc/incus/shared/util"
 	"github.com/lxc/incus/shared/validate"
@@ -1172,8 +1171,8 @@ func fetchProject(tx *db.ClusterTx, projectName string, skipIfNoLimits bool) (*p
 	// If the project has the profiles feature enabled, we use its own
 	// profiles to expand the instances configs, otherwise we use the
 	// profiles from the default project.
-	defaultProject := Default
-	if projectName == Default || util.IsTrue(project.Config["features.profiles"]) {
+	defaultProject := api.ProjectDefaultName
+	if projectName == api.ProjectDefaultName || util.IsTrue(project.Config["features.profiles"]) {
 		profilesFilter.Project = &projectName
 	} else {
 		profilesFilter.Project = &defaultProject
@@ -1252,7 +1251,7 @@ func expandInstancesConfigAndDevices(instances []api.Instance, profiles []api.Pr
 }
 
 // Sum of the effective values for the given limits across all project
-// enties (instances and custom volumes).
+// entities (instances and custom volumes).
 func getTotalsAcrossProjectEntities(info *projectInfo, keys []string, skipUnset bool) (map[string]int64, error) {
 	totals := map[string]int64{}
 
@@ -1330,6 +1329,8 @@ func getInstanceLimits(inst api.Instance, keys []string, skipUnset bool) (map[st
 			if inst.Type == instancetype.VM.String() {
 				sizeStateValue, ok := device["size.state"]
 				if !ok {
+					// TODO: In case the VMs storage drivers config drive size isn't the default,
+					// the limits accounting will be incorrect.
 					sizeStateValue = deviceconfig.DefaultVMBlockFilesystemSize
 				}
 
@@ -1420,30 +1421,36 @@ var aggregateLimitConfigValuePrinters = map[string]func(int64) string{
 
 // FilterUsedBy filters a UsedBy list based on project access.
 func FilterUsedBy(authorizer auth.Authorizer, r *http.Request, entries []string) []string {
-	// Shortcut for admins and environments without access control.
-	if authorizer.UserIsAdmin(r) {
-		return entries
-	}
-
 	// Filter the entries.
 	usedBy := []string{}
 	for _, entry := range entries {
-		projectName := Default
-
-		// Try to parse the query part of the URL.
-		u, err := url.Parse(entry)
+		entityType, projectName, location, pathArgs, err := cluster.URLToEntityType(entry)
 		if err != nil {
-			// Skip URLs we can't parse.
 			continue
 		}
 
-		// Check if project= is specified in the URL.
-		val := u.Query().Get("project")
-		if val != "" {
-			projectName = val
+		var object auth.Object
+		switch entityType {
+		case cluster.TypeImage:
+			object = auth.ObjectImage(projectName, pathArgs[0])
+		case cluster.TypeInstance:
+			object = auth.ObjectInstance(projectName, pathArgs[0])
+		case cluster.TypeNetwork:
+			object = auth.ObjectNetwork(projectName, pathArgs[0])
+		case cluster.TypeProfile:
+			object = auth.ObjectProfile(projectName, pathArgs[0])
+		case cluster.TypeStoragePool:
+			object = auth.ObjectStoragePool(pathArgs[0])
+		case cluster.TypeStorageVolume:
+			object = auth.ObjectStorageVolume(projectName, pathArgs[0], pathArgs[1], pathArgs[2], location)
+		case cluster.TypeStorageBucket:
+			object = auth.ObjectStorageBucket(projectName, pathArgs[0], pathArgs[1], location)
+		default:
+			continue
 		}
 
-		if !authorizer.UserHasPermission(r, projectName, "") {
+		err = authorizer.CheckPermission(r.Context(), r, object, auth.EntitlementCanView)
+		if err != nil {
 			continue
 		}
 
@@ -1473,13 +1480,14 @@ func projectHasRestriction(project *api.Project, restrictionKey string, blockVal
 
 // CheckClusterTargetRestriction check if user is allowed to use cluster member targeting.
 func CheckClusterTargetRestriction(authorizer auth.Authorizer, r *http.Request, project *api.Project, targetFlag string) error {
-	// Allow server administrators to move instances around even when restricted (node evacuation, ...)
-	if authorizer.UserIsAdmin(r) {
-		return nil
-	}
-
 	if projectHasRestriction(project, "restricted.cluster.target", "block") && targetFlag != "" {
-		return fmt.Errorf("This project doesn't allow cluster member targeting")
+		// Allow server administrators to move instances around even when restricted (node evacuation, ...)
+		err := authorizer.CheckPermission(r.Context(), r, auth.ObjectServer(), auth.EntitlementCanOverrideClusterTargetRestriction)
+		if err != nil && api.StatusErrorCheck(err, http.StatusForbidden) {
+			return api.StatusErrorf(http.StatusForbidden, "This project doesn't allow cluster member targeting")
+		} else if err != nil {
+			return err
+		}
 	}
 
 	return nil

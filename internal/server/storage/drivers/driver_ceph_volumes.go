@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 
 	"github.com/lxc/incus/internal/instancewriter"
@@ -96,7 +96,7 @@ func (d *ceph) CreateVolume(vol Volume, filler *VolumeFiller, op *operations.Ope
 			// be restored in the future and a new cached image volume will be created instead.
 			if volSizeBytes != poolVolSizeBytes {
 				d.logger.Debug("Renaming deleted cached image volume so that regeneration is used", logger.Ctx{"fingerprint": vol.Name()})
-				randomVol := NewVolume(d, d.name, deletedVol.volType, deletedVol.contentType, strings.Replace(uuid.New(), "-", "", -1), deletedVol.config, deletedVol.poolConfig)
+				randomVol := NewVolume(d, d.name, deletedVol.volType, deletedVol.contentType, strings.Replace(uuid.New().String(), "-", "", -1), deletedVol.config, deletedVol.poolConfig)
 				err = renameVolume(d.getRBDVolumeName(deletedVol, "", false, true), d.getRBDVolumeName(randomVol, "", false, true))
 				if err != nil {
 					return err
@@ -364,6 +364,19 @@ func (d *ceph) CreateVolumeFromCopy(vol Volume, srcVol Volume, copySnapshots boo
 		return nil
 	}
 
+	// For VMs, also copy the filesystem volume.
+	if vol.IsVMBlock() {
+		srcFSVol := srcVol.NewVMBlockFilesystemVolume()
+		fsVol := vol.NewVMBlockFilesystemVolume()
+		err := d.CreateVolumeFromCopy(fsVol, srcFSVol, copySnapshots, false, op)
+		if err != nil {
+			return err
+		}
+
+		// Delete on revert.
+		revert.Add(func() { _ = d.DeleteVolume(fsVol, op) })
+	}
+
 	// Retrieve snapshots on the source.
 	snapshots := []string{}
 	if !srcVol.IsSnapshot() && copySnapshots {
@@ -402,7 +415,7 @@ func (d *ceph) CreateVolumeFromCopy(vol Volume, srcVol Volume, copySnapshots boo
 			snapshotName := "readonly"
 
 			if srcVol.volType != VolumeTypeImage {
-				snapshotName = fmt.Sprintf("zombie_snapshot_%s", uuid.New())
+				snapshotName = fmt.Sprintf("zombie_snapshot_%s", uuid.New().String())
 
 				if srcVol.IsSnapshot() {
 					srcParentName, srcSnapOnlyName, _ := api.GetParentAndSnapshotName(srcVol.name)
@@ -431,16 +444,6 @@ func (d *ceph) CreateVolumeFromCopy(vol Volume, srcVol Volume, copySnapshots boo
 			}
 
 			revert.Add(func() { _ = d.DeleteVolume(vol, op) })
-		}
-
-		// For VMs, also copy the filesystem volume.
-		if vol.IsVMBlock() {
-			srcFSVol := srcVol.NewVMBlockFilesystemVolume()
-			fsVol := vol.NewVMBlockFilesystemVolume()
-			err := d.CreateVolumeFromCopy(fsVol, srcFSVol, false, false, op)
-			if err != nil {
-				return err
-			}
 		}
 
 		err = postCreateTasks(vol)
@@ -1167,7 +1170,11 @@ func (d *ceph) ListVolumes() ([]Volume, error) {
 
 // MountVolume mounts a volume and increments ref counter. Please call UnmountVolume() when done with the volume.
 func (d *ceph) MountVolume(vol Volume, op *operations.Operation) error {
-	unlock := vol.MountLock()
+	unlock, err := vol.MountLock()
+	if err != nil {
+		return err
+	}
+
 	defer unlock()
 
 	revert := revert.New()
@@ -1227,10 +1234,13 @@ func (d *ceph) MountVolume(vol Volume, op *operations.Operation) error {
 // UnmountVolume simulates unmounting a volume.
 // keepBlockDev indicates if backing block device should be not be unmapped if volume is unmounted.
 func (d *ceph) UnmountVolume(vol Volume, keepBlockDev bool, op *operations.Operation) (bool, error) {
-	unlock := vol.MountLock()
+	unlock, err := vol.MountLock()
+	if err != nil {
+		return false, err
+	}
+
 	defer unlock()
 
-	var err error
 	ourUnmount := false
 	mountPath := vol.MountPath()
 
@@ -1428,7 +1438,7 @@ func (d *ceph) MigrateVolume(vol Volume, conn io.ReadWriteCloser, volSrcArgs *lo
 		wrapper = localMigration.ProgressTracker(op, "fs_progress", vol.name)
 	}
 
-	runningSnapName := fmt.Sprintf("migration-send-%s", uuid.New())
+	runningSnapName := fmt.Sprintf("migration-send-%s", uuid.New().String())
 
 	err := d.rbdCreateVolumeSnapshot(vol, runningSnapName)
 	if err != nil {
@@ -1565,7 +1575,11 @@ func (d *ceph) DeleteVolumeSnapshot(snapVol Volume, op *operations.Operation) er
 
 // MountVolumeSnapshot simulates mounting a volume snapshot.
 func (d *ceph) MountVolumeSnapshot(snapVol Volume, op *operations.Operation) error {
-	unlock := snapVol.MountLock()
+	unlock, err := snapVol.MountLock()
+	if err != nil {
+		return err
+	}
+
 	defer unlock()
 
 	revert := revert.New()
@@ -1658,10 +1672,13 @@ func (d *ceph) MountVolumeSnapshot(snapVol Volume, op *operations.Operation) err
 
 // UnmountVolume simulates unmounting a volume snapshot.
 func (d *ceph) UnmountVolumeSnapshot(snapVol Volume, op *operations.Operation) (bool, error) {
-	unlock := snapVol.MountLock()
+	unlock, err := snapVol.MountLock()
+	if err != nil {
+		return false, err
+	}
+
 	defer unlock()
 
-	var err error
 	ourUnmount := false
 	mountPath := snapVol.MountPath()
 	refCount := snapVol.MountRefCountDecrement()

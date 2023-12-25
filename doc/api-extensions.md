@@ -73,7 +73,7 @@ And adds support for the following HTTP header on PUT requests:
 
 * If-Match (ETag value retrieved through previous GET)
 
-This makes it possible to GET a Incus object, modify it and PUT it without
+This makes it possible to GET an Incus object, modify it and PUT it without
 risking to hit a race condition where Incus or another client modified the
 object in the meantime.
 
@@ -214,7 +214,7 @@ Rules necessary for `dnsmasq` to work (DHCP/DNS) will always be applied if
 
 ## `network_routes`
 
-Introduces `ipv4.routes` and `ipv6.routes` which allow routing additional subnets to a Incus bridge.
+Introduces `ipv4.routes` and `ipv6.routes` which allow routing additional subnets to an Incus bridge.
 
 ## `storage`
 
@@ -408,7 +408,7 @@ and `xfs`.
 
 ## `resources`
 
-This adds support for querying a Incus daemon for the system resources it has
+This adds support for querying an Incus daemon for the system resources it has
 available.
 
 ## `kernel_limits`
@@ -465,7 +465,7 @@ This makes it possible to retrieve symlinks using the file API.
 ## `network_leases`
 
 Adds a new `/1.0/networks/NAME/leases` API endpoint to query the lease database on
-bridges which run a Incus-managed DHCP server.
+bridges which run an Incus-managed DHCP server.
 
 ## `unix_device_hotplug`
 
@@ -820,7 +820,7 @@ This effectively gives us:
 * `volatile.idmap.next` => Next on-disk idmap
 
 This is required to implement environments where the on-disk map isn't
-changed but the kernel map is (e.g. `shiftfs`).
+changed but the kernel map is (e.g. `idmapped mounts`).
 
 ## `event_location`
 
@@ -909,7 +909,7 @@ elevated permissions.
 
 ## `container_disk_shift`
 
-Adds the `shift` property on `disk` devices which controls the use of the `shiftfs` overlay.
+Adds the `shift` property on `disk` devices which controls the use of the `idmapped mounts` overlay.
 
 ## `storage_shifted`
 
@@ -919,7 +919,7 @@ Setting it to `true` will allow multiple isolated containers to attach the
 same storage volume while keeping the file system writable from all of
 them.
 
-This makes use of `shiftfs` as an overlay file system.
+This makes use of `idmapped mounts` as an overlay file system.
 
 ## `resources_infiniband`
 
@@ -1004,7 +1004,7 @@ redirect file-system mounts to their fuse implementation. To this end, set e.g.
 
 ## `container_disk_ceph`
 
-This allows for existing a Ceph RBD or CephFS to be directly connected to a Incus container.
+This allows for existing a Ceph RBD or CephFS to be directly connected to an Incus container.
 
 ## `virtual-machines`
 
@@ -2222,7 +2222,7 @@ This adds the possibility to import ISO images as custom storage volumes.
 This adds the `--type` flag to [`incus storage volume import`](incus_storage_volume_import.md).
 
 ## `network_allocations`
-This adds the possibility to list a Incus deployment's network allocations.
+This adds the possibility to list an Incus deployment's network allocations.
 
 Through the [`incus network list-allocations`](incus_network_list-allocations.md) command and the `--project <PROJECT> | --all-projects` flags,
 you can list all the used IP addresses, hardware addresses (for instances), resource URIs and whether it uses NAT for
@@ -2265,3 +2265,38 @@ during instance initialization using the `--device` flag.
 
 Note that these configuration are applied only at the time of instance creation and subsequent modifications have
 no effect on existing devices.
+
+## `operation_wait`
+
+This API extension indicates that the `/1.0/operations/{id}/wait` endpoint exists on the server. This indicates to the client
+that the endpoint can be used to wait for an operation to complete rather than waiting for an operation event via the
+`/1.0/events` endpoint.
+
+## `image_restriction_privileged`
+
+This extension adds a new image restriction, `requirements.privileged` which when `false` indicates that an image cannot be run in a privileged container.
+
+## `cluster_internal_custom_volume_copy`
+
+This extension adds support for copying and moving custom storage volumes within a cluster with a single API call.
+Calling `POST /1.0/storage-pools/<pool>/custom?target=<target>` will copy the custom volume specified in the `source` part of the request.
+Calling `POST /1.0/storage-pools/<pool>/custom/<volume>?target=<target>` will move the custom volume from the source, specified in the `source` part of the request, to the target.
+
+## `disk_io_bus`
+This introduces a new `io.bus` property to disk devices which can be used to override the bus the disk is attached to.
+
+## `storage_cephfs_create_missing`
+This introduces the configuration keys `cephfs.create_missing`, `cephfs.osd_pg_num`, `cephfs.meta_pool` and `cephfs.osd_pool` to be used when adding a `cephfs` storage pool to instruct Incus to create the necessary entities for the storage pool, if they do not exist.
+
+## `instance_move_config`
+
+This API extension provides the ability to use flags `--profile`, `--no-profile`, `--device`, and `--config`
+when moving an instance between projects and/or storage pools.
+
+## `ovn_ssl_config`
+This introduces new server configuration keys to provide the SSL CA and client key pair to access the OVN databases.
+The new configuration keys are `network.ovn.ca_cert`, `network.ovn.client_cert` and `network.ovn.client_key`.
+
+## `certificate_description`
+
+Adds a `description` field to certificate.

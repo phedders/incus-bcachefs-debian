@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/minio/madmin-go"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/pborman/uuid"
 
 	internalIO "github.com/lxc/incus/internal/io"
 	"github.com/lxc/incus/internal/server/locking"
@@ -30,7 +30,7 @@ import (
 )
 
 // minioHost is the host address that the local MinIO processes will listen on.
-const minioHost = "[::1]"
+const minioHost = "127.0.0.1"
 
 // minioLockPrefix is the prefix used for per-bucket MinIO spawn lock.
 const minioLockPrefix = "minio_"
@@ -93,7 +93,11 @@ func (p *Process) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	spawnUnlock := locking.Lock(context.TODO(), fmt.Sprintf("%s%s", minioLockPrefix, p.bucketName))
+	spawnUnlock, err := locking.Lock(context.TODO(), fmt.Sprintf("%s%s", minioLockPrefix, p.bucketName))
+	if err != nil {
+		return err
+	}
+
 	defer spawnUnlock()
 
 	defer p.cancel.Cancel()
@@ -162,7 +166,11 @@ func EnsureRunning(s *state.State, bucketVol storageDrivers.Volume) (*Process, e
 	bucketName := bucketVol.Name()
 
 	// Prevent concurrent spawning of same bucket.
-	spawnUnlock := locking.Lock(context.TODO(), fmt.Sprintf("%s%s", minioLockPrefix, bucketName))
+	spawnUnlock, err := locking.Lock(context.TODO(), fmt.Sprintf("%s%s", minioLockPrefix, bucketName))
+	if err != nil {
+		return nil, err
+	}
+
 	defer spawnUnlock()
 
 	// Check if there is an existing running minio process for the bucket, and if so return it.
@@ -195,8 +203,8 @@ func EnsureRunning(s *state.State, bucketVol storageDrivers.Volume) (*Process, e
 		bucketName:   bucketName,
 		transactions: 1,
 		url:          api.NewURL().Scheme("http").Host(fmt.Sprintf("%s:%d", minioHost, listenPort)).URL,
-		username:     minioAdminUser, // Persistent admin user required to keep config between restarts.
-		password:     uuid.New(),     // Random admin password for service.
+		username:     minioAdminUser,      // Persistent admin user required to keep config between restarts.
+		password:     uuid.New().String(), // Random admin password for service.
 		cancel:       cancel.New(context.Background()),
 	}
 
@@ -347,9 +355,13 @@ func EnsureRunning(s *state.State, bucketVol storageDrivers.Volume) (*Process, e
 }
 
 // Get returns an existing MinIO process if it exists.
-func Get(bucketName string) *Process {
+func Get(bucketName string) (*Process, error) {
 	// Wait for any ongoing spawn of the bucket process to finish.
-	spawnUnlock := locking.Lock(context.TODO(), fmt.Sprintf("%s%s", minioLockPrefix, bucketName))
+	spawnUnlock, err := locking.Lock(context.TODO(), fmt.Sprintf("%s%s", minioLockPrefix, bucketName))
+	if err != nil {
+		return nil, err
+	}
+
 	defer spawnUnlock()
 
 	// Check if there is an existing running minio process for the bucket, and if so return it.
@@ -362,10 +374,10 @@ func Get(bucketName string) *Process {
 		minioProc.transactions++
 		minios[bucketName] = minioProc
 
-		return minioProc
+		return minioProc, nil
 	}
 
-	return nil
+	return nil, nil
 }
 
 // StopAll stops all MinIO processes cleanly.

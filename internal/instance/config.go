@@ -784,7 +784,7 @@ var InstanceConfigKeysContainer = map[string]func(value string) error{
 	//  defaultdesc: `false`
 	//  liveupdate: yes
 	//  condition: container
-	//  shortdesc: Whether to mount `shiftfs` on top of file systems handled through mount syscall interception
+	//  shortdesc: Whether to use idmapped mounts for syscall interception
 	"security.syscalls.intercept.mount.shift": validate.Optional(validate.IsBool),
 
 	// gendoc:generate(entity=instance, group=security, key=security.syscalls.intercept.sched_setcheduler)
@@ -981,7 +981,7 @@ var InstanceConfigKeysVM = map[string]func(value string) error{
 	// gendoc:generate(entity=instance, group=volatile, key=volatile.apply_nvram)
 	//
 	// ---
-	//  type: string
+	//  type: bool
 	//  shortdesc: Whether to regenerate VM NVRAM the next time the instance starts
 	"volatile.apply_nvram": validate.Optional(validate.IsBool),
 

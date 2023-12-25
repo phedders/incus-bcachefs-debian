@@ -11,13 +11,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
 
 	"github.com/lxc/incus/client"
 	internalInstance "github.com/lxc/incus/internal/instance"
+	"github.com/lxc/incus/internal/server/auth"
+	"github.com/lxc/incus/internal/server/certificate"
 	"github.com/lxc/incus/internal/server/cluster"
 	clusterRequest "github.com/lxc/incus/internal/server/cluster/request"
 	"github.com/lxc/incus/internal/server/db"
@@ -25,7 +26,6 @@ import (
 	"github.com/lxc/incus/internal/server/db/operationtype"
 	"github.com/lxc/incus/internal/server/lifecycle"
 	"github.com/lxc/incus/internal/server/operations"
-	"github.com/lxc/incus/internal/server/project"
 	"github.com/lxc/incus/internal/server/request"
 	"github.com/lxc/incus/internal/server/response"
 	"github.com/lxc/incus/internal/server/state"
@@ -37,12 +37,6 @@ import (
 	localtls "github.com/lxc/incus/shared/tls"
 )
 
-type certificateCache struct {
-	Certificates map[dbCluster.CertificateType]map[string]x509.Certificate
-	Projects     map[string][]string
-	Lock         sync.Mutex
-}
-
 var certificatesCmd = APIEndpoint{
 	Path: "certificates",
 
@@ -53,8 +47,8 @@ var certificatesCmd = APIEndpoint{
 var certificateCmd = APIEndpoint{
 	Path: "certificates/{fingerprint}",
 
-	Delete: APIEndpointAction{Handler: certificateDelete},
-	Get:    APIEndpointAction{Handler: certificateGet, AccessHandler: allowAuthenticated},
+	Delete: APIEndpointAction{Handler: certificateDelete, AccessHandler: allowAuthenticated},
+	Get:    APIEndpointAction{Handler: certificateGet, AccessHandler: allowPermission(auth.ObjectTypeCertificate, auth.EntitlementCanView, "fingerprint")},
 	Patch:  APIEndpointAction{Handler: certificatePatch, AccessHandler: allowAuthenticated},
 	Put:    APIEndpointAction{Handler: certificatePut, AccessHandler: allowAuthenticated},
 }
@@ -141,6 +135,12 @@ var certificateCmd = APIEndpoint{
 //	    $ref: "#/responses/InternalServerError"
 func certificatesGet(d *Daemon, r *http.Request) response.Response {
 	recursion := localUtil.IsRecursionRequest(r)
+	s := d.State()
+
+	userHasPermission, err := s.Authorizer.GetPermissionChecker(r.Context(), r, auth.EntitlementCanView, auth.ObjectTypeCertificate)
+	if err != nil {
+		return response.SmartError(err)
+	}
 
 	if recursion {
 		var certResponses []api.Certificate
@@ -154,6 +154,10 @@ func certificatesGet(d *Daemon, r *http.Request) response.Response {
 
 			certResponses = make([]api.Certificate, 0, len(baseCerts))
 			for _, baseCert := range baseCerts {
+				if !userHasPermission(auth.ObjectCertificate(baseCert.Fingerprint)) {
+					continue
+				}
+
 				apiCert, err := baseCert.ToAPI(ctx, tx.Tx())
 				if err != nil {
 					return err
@@ -176,8 +180,13 @@ func certificatesGet(d *Daemon, r *http.Request) response.Response {
 	trustedCertificates := d.getTrustedCertificates()
 	for _, certs := range trustedCertificates {
 		for _, cert := range certs {
-			fingerprint := fmt.Sprintf("/%s/certificates/%s", version.APIVersion, localtls.CertFingerprint(&cert))
-			body = append(body, fingerprint)
+			fingerprint := localtls.CertFingerprint(&cert)
+			if !userHasPermission(auth.ObjectCertificate(fingerprint)) {
+				continue
+			}
+
+			certificateURL := fmt.Sprintf("/%s/certificates/%s", version.APIVersion, fingerprint)
+			body = append(body, certificateURL)
 		}
 	}
 
@@ -189,7 +198,7 @@ func updateCertificateCache(d *Daemon) {
 
 	logger.Debug("Refreshing trusted certificate cache")
 
-	newCerts := map[dbCluster.CertificateType]map[string]x509.Certificate{}
+	newCerts := map[certificate.Type]map[string]x509.Certificate{}
 	newProjects := map[string][]string{}
 
 	var certs []*api.Certificate
@@ -241,7 +250,7 @@ func updateCertificateCache(d *Daemon) {
 		}
 
 		// Add server certs to list of certificates to store in local database to allow cluster restart.
-		if dbCert.Type == dbCluster.CertificateTypeServer {
+		if dbCert.Type == certificate.TypeServer {
 			localCerts = append(localCerts, dbCert)
 		}
 	}
@@ -256,17 +265,14 @@ func updateCertificateCache(d *Daemon) {
 		// continue functioning, and hopefully the write will succeed on next update.
 	}
 
-	d.clientCerts.Lock.Lock()
-	d.clientCerts.Certificates = newCerts
-	d.clientCerts.Projects = newProjects
-	d.clientCerts.Lock.Unlock()
+	d.clientCerts.SetCertificatesAndProjects(newCerts, newProjects)
 }
 
 // updateCertificateCacheFromLocal loads trusted server certificates from local database into memory.
 func updateCertificateCacheFromLocal(d *Daemon) error {
 	logger.Debug("Refreshing local trusted certificate cache")
 
-	newCerts := map[dbCluster.CertificateType]map[string]x509.Certificate{}
+	newCerts := map[certificate.Type]map[string]x509.Certificate{}
 
 	var dbCerts []dbCluster.Certificate
 	var err error
@@ -300,9 +306,7 @@ func updateCertificateCacheFromLocal(d *Daemon) error {
 		newCerts[dbCert.Type][localtls.CertFingerprint(cert)] = *cert
 	}
 
-	d.clientCerts.Lock.Lock()
-	d.clientCerts.Certificates = newCerts
-	d.clientCerts.Lock.Unlock()
+	d.clientCerts.SetCertificates(newCerts)
 
 	return nil
 }
@@ -375,7 +379,7 @@ func clusterMemberJoinTokenValid(s *state.State, r *http.Request, projectName st
 // certificateTokenValid searches for certificate token that matches the add token provided.
 // Returns matching operation if found and cancels the operation, otherwise returns nil.
 func certificateTokenValid(s *state.State, r *http.Request, addToken *api.CertificateAddToken) (*api.Operation, error) {
-	ops, err := operationsGetByType(s, r, project.Default, operationtype.CertificateAddToken)
+	ops, err := operationsGetByType(s, r, api.ProjectDefaultName, operationtype.CertificateAddToken)
 	if err != nil {
 		return nil, fmt.Errorf("Failed getting certificate token operations: %w", err)
 	}
@@ -399,7 +403,7 @@ func certificateTokenValid(s *state.State, r *http.Request, addToken *api.Certif
 
 	if foundOp != nil {
 		// Token is single-use, so cancel it now.
-		err = operationCancel(s, r, project.Default, foundOp)
+		err = operationCancel(s, r, api.ProjectDefaultName, foundOp)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to cancel operation %q: %w", foundOp.ID, err)
 		}
@@ -525,7 +529,15 @@ func certificatesPost(d *Daemon, r *http.Request) response.Response {
 	}
 
 	// Handle requests by non-admin users.
-	if !s.Authorizer.UserIsAdmin(r) {
+	var userCanCreateCertificates bool
+	err = s.Authorizer.CheckPermission(r.Context(), r, auth.ObjectServer(), auth.EntitlementCanCreateCertificates)
+	if err == nil {
+		userCanCreateCertificates = true
+	} else if !api.StatusErrorCheck(err, http.StatusForbidden) {
+		return response.SmartError(err)
+	}
+
+	if !trusted || !userCanCreateCertificates {
 		// Non-admin cannot issue tokens.
 		if req.Token {
 			return response.Forbidden(nil)
@@ -540,7 +552,7 @@ func certificatesPost(d *Daemon, r *http.Request) response.Response {
 		joinToken, err := internalUtil.JoinTokenDecode(req.TrustToken)
 		if err == nil {
 			// If so then check there is a matching join operation.
-			joinOp, err := clusterMemberJoinTokenValid(s, r, project.Default, joinToken)
+			joinOp, err := clusterMemberJoinTokenValid(s, r, api.ProjectDefaultName, joinToken)
 			if err != nil {
 				return response.InternalError(fmt.Errorf("Failed during search for join token operation: %w", err))
 			}
@@ -582,7 +594,7 @@ func certificatesPost(d *Daemon, r *http.Request) response.Response {
 		}
 	}
 
-	dbReqType, err := dbCluster.CertificateAPITypeToDBType(req.Type)
+	dbReqType, err := certificate.FromAPIType(req.Type)
 	if err != nil {
 		return response.BadRequest(err)
 	}
@@ -647,7 +659,7 @@ func certificatesPost(d *Daemon, r *http.Request) response.Response {
 			meta["expiresAt"] = expiresAt
 		}
 
-		op, err := operations.OperationCreate(s, project.Default, operations.OperationClassToken, operationtype.CertificateAddToken, nil, meta, nil, nil, nil, r)
+		op, err := operations.OperationCreate(s, api.ProjectDefaultName, operations.OperationClassToken, operationtype.CertificateAddToken, nil, meta, nil, nil, nil, r)
 		if err != nil {
 			return response.InternalError(err)
 		}
@@ -707,6 +719,7 @@ func certificatesPost(d *Daemon, r *http.Request) response.Response {
 				Name:        name,
 				Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})),
 				Restricted:  req.Restricted,
+				Description: req.Description,
 			}
 
 			_, err := dbCluster.CreateCertificateWithProjects(ctx, tx.Tx(), dbCert, req.Projects)
@@ -736,13 +749,19 @@ func certificatesPost(d *Daemon, r *http.Request) response.Response {
 		if err != nil {
 			return response.SmartError(err)
 		}
+
+		// Add the certificate resource to the authorizer.
+		err = s.Authorizer.AddCertificate(r.Context(), fingerprint)
+		if err != nil {
+			logger.Error("Failed to add certificate to authorizer", logger.Ctx{"fingerprint": fingerprint, "error": err})
+		}
 	}
 
 	// Reload the cache.
 	s.UpdateCertificateCache()
 
 	lc := lifecycle.CertificateCreated.Event(fingerprint, request.CreateRequestor(r), nil)
-	s.Events.SendLifecycle(project.Default, lc)
+	s.Events.SendLifecycle(api.ProjectDefaultName, lc)
 
 	return response.SyncResponseLocation(true, nil, lc.Source)
 }
@@ -945,7 +964,7 @@ func doCertificateUpdate(d *Daemon, dbInfo api.Certificate, req api.CertificateP
 	s := d.State()
 
 	if clientType == clusterRequest.ClientTypeNormal {
-		reqDBType, err := dbCluster.CertificateAPITypeToDBType(req.Type)
+		reqDBType, err := certificate.FromAPIType(req.Type)
 		if err != nil {
 			return response.BadRequest(err)
 		}
@@ -957,13 +976,22 @@ func doCertificateUpdate(d *Daemon, dbInfo api.Certificate, req api.CertificateP
 			Restricted:  req.Restricted,
 			Name:        req.Name,
 			Type:        reqDBType,
+			Description: req.Description,
+		}
+
+		var userCanEditCertificate bool
+		err = s.Authorizer.CheckPermission(r.Context(), r, auth.ObjectCertificate(dbInfo.Fingerprint), auth.EntitlementCanEdit)
+		if err == nil {
+			userCanEditCertificate = true
+		} else if !api.StatusErrorCheck(err, http.StatusForbidden) {
+			return response.SmartError(err)
 		}
 
 		// Non-admins are able to change their own certificate but no other fields.
 		// In order to prevent possible future security issues, the certificate information is
 		// reset in case a non-admin user is performing the update.
 		certProjects := req.Projects
-		if !s.Authorizer.UserIsAdmin(r) {
+		if !userCanEditCertificate {
 			if r.TLS == nil {
 				response.Forbidden(fmt.Errorf("Cannot update certificate information"))
 			}
@@ -986,6 +1014,7 @@ func doCertificateUpdate(d *Daemon, dbInfo api.Certificate, req api.CertificateP
 				Restricted:  dbInfo.Restricted,
 				Name:        dbInfo.Name,
 				Type:        reqDBType,
+				Description: req.Description,
 			}
 
 			certProjects = dbInfo.Projects
@@ -1060,7 +1089,7 @@ func doCertificateUpdate(d *Daemon, dbInfo api.Certificate, req api.CertificateP
 	// Reload the cache.
 	s.UpdateCertificateCache()
 
-	s.Events.SendLifecycle(project.Default, lifecycle.CertificateUpdated.Event(dbInfo.Fingerprint, request.CreateRequestor(r), nil))
+	s.Events.SendLifecycle(api.ProjectDefaultName, lifecycle.CertificateUpdated.Event(dbInfo.Fingerprint, request.CreateRequestor(r), nil))
 
 	return response.EmptySyncResponse
 }
@@ -1107,8 +1136,16 @@ func certificateDelete(d *Daemon, r *http.Request) response.Response {
 			return response.SmartError(err)
 		}
 
+		var userCanEditCertificate bool
+		err = s.Authorizer.CheckPermission(r.Context(), r, auth.ObjectCertificate(certInfo.Fingerprint), auth.EntitlementCanEdit)
+		if err == nil {
+			userCanEditCertificate = true
+		} else if api.StatusErrorCheck(err, http.StatusForbidden) {
+			return response.SmartError(err)
+		}
+
 		// Non-admins are able to delete only their own certificate.
-		if !s.Authorizer.UserIsAdmin(r) {
+		if !userCanEditCertificate {
 			if r.TLS == nil {
 				response.Forbidden(fmt.Errorf("Cannot delete certificate"))
 			}
@@ -1159,12 +1196,18 @@ func certificateDelete(d *Daemon, r *http.Request) response.Response {
 		if err != nil {
 			return response.SmartError(err)
 		}
+
+		// Remove the certificate from the authorizer.
+		err = s.Authorizer.DeleteCertificate(r.Context(), certInfo.Fingerprint)
+		if err != nil {
+			logger.Error("Failed to remove certificate from authorizer", logger.Ctx{"fingerprint": certInfo.Fingerprint, "error": err})
+		}
 	}
 
 	// Reload the cache.
 	s.UpdateCertificateCache()
 
-	s.Events.SendLifecycle(project.Default, lifecycle.CertificateDeleted.Event(fingerprint, request.CreateRequestor(r), nil))
+	s.Events.SendLifecycle(api.ProjectDefaultName, lifecycle.CertificateDeleted.Event(fingerprint, request.CreateRequestor(r), nil))
 
 	return response.EmptySyncResponse
 }

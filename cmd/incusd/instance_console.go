@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,6 +25,7 @@ import (
 	"github.com/lxc/incus/internal/server/instance"
 	"github.com/lxc/incus/internal/server/instance/instancetype"
 	"github.com/lxc/incus/internal/server/operations"
+	"github.com/lxc/incus/internal/server/request"
 	"github.com/lxc/incus/internal/server/response"
 	internalUtil "github.com/lxc/incus/internal/util"
 	"github.com/lxc/incus/internal/version"
@@ -174,7 +174,7 @@ func (s *consoleWs) connectVGA(op *operations.Operation, r *http.Request, w http
 			defer l.Debug("Finished mirroring websocket to console")
 
 			l.Debug("Started mirroring websocket")
-			readDone, writeDone := ws.Mirror(context.Background(), conn, console)
+			readDone, writeDone := ws.Mirror(conn, console)
 
 			<-readDone
 			l.Debug("Finished mirroring console to websocket")
@@ -292,7 +292,7 @@ func (s *consoleWs) doConsole(op *operations.Operation) error {
 		defer l.Debug("Finished mirroring websocket to console")
 
 		l.Debug("Started mirroring websocket")
-		readDone, writeDone := ws.Mirror(context.Background(), conn, console)
+		readDone, writeDone := ws.Mirror(conn, console)
 
 		<-readDone
 		l.Debug("Finished mirroring console to websocket")
@@ -426,7 +426,7 @@ func instanceConsolePost(d *Daemon, r *http.Request) response.Response {
 		return response.SmartError(err)
 	}
 
-	projectName := projectParam(r)
+	projectName := request.ProjectParam(r)
 	name, err := url.PathUnescape(mux.Vars(r)["name"])
 	if err != nil {
 		return response.SmartError(err)
@@ -568,7 +568,7 @@ func instanceConsoleLogGet(d *Daemon, r *http.Request) response.Response {
 		return response.SmartError(err)
 	}
 
-	projectName := projectParam(r)
+	projectName := request.ProjectParam(r)
 	name, err := url.PathUnescape(mux.Vars(r)["name"])
 	if err != nil {
 		return response.SmartError(err)
@@ -681,7 +681,7 @@ func instanceConsoleLogDelete(d *Daemon, r *http.Request) response.Response {
 		return response.BadRequest(fmt.Errorf("Invalid instance name"))
 	}
 
-	projectName := projectParam(r)
+	projectName := request.ProjectParam(r)
 
 	inst, err := instance.LoadByProjectAndName(d.State(), projectName, name)
 	if err != nil {

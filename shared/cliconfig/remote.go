@@ -4,7 +4,9 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 	"strings"
@@ -12,18 +14,20 @@ import (
 	"github.com/zitadel/oidc/v2/pkg/oidc"
 
 	"github.com/lxc/incus/client"
+	"github.com/lxc/incus/shared/api"
 	"github.com/lxc/incus/shared/util"
 )
 
 // Remote holds details for communication with a remote daemon.
 type Remote struct {
-	Addr     string `yaml:"addr"`
-	AuthType string `yaml:"auth_type,omitempty"`
-	Project  string `yaml:"project,omitempty"`
-	Protocol string `yaml:"protocol,omitempty"`
-	Public   bool   `yaml:"public"`
-	Global   bool   `yaml:"-"`
-	Static   bool   `yaml:"-"`
+	Addr      string `yaml:"addr"`
+	AuthType  string `yaml:"auth_type,omitempty"`
+	KeepAlive int    `yaml:"keepalive,omitempty"`
+	Project   string `yaml:"project,omitempty"`
+	Protocol  string `yaml:"protocol,omitempty"`
+	Public    bool   `yaml:"public"`
+	Global    bool   `yaml:"-"`
+	Static    bool   `yaml:"-"`
 }
 
 // ParseRemote splits remote and object.
@@ -74,6 +78,12 @@ func (c *Config) GetInstanceServer(name string) (incus.InstanceServer, error) {
 	if strings.HasPrefix(remote.Addr, "unix:") {
 		d, err := incus.ConnectIncusUnix(strings.TrimPrefix(strings.TrimPrefix(remote.Addr, "unix:"), "//"), args)
 		if err != nil {
+			var netErr *net.OpError
+
+			if errors.As(err, &netErr) {
+				return nil, fmt.Errorf("The incus daemon doesn't appear to be started (socket path: %s)", netErr.Addr)
+			}
+
 			return nil, err
 		}
 
@@ -89,13 +99,25 @@ func (c *Config) GetInstanceServer(name string) (incus.InstanceServer, error) {
 	}
 
 	// HTTPs
-	if !util.ValueInSlice(remote.AuthType, []string{"oidc"}) && (args.TLSClientCert == "" || args.TLSClientKey == "") {
+	if !util.ValueInSlice(remote.AuthType, []string{api.AuthenticationMethodOIDC}) && (args.TLSClientCert == "" || args.TLSClientKey == "") {
 		return nil, fmt.Errorf("Missing TLS client certificate and key")
 	}
 
-	d, err := incus.ConnectIncus(remote.Addr, args)
-	if err != nil {
-		return nil, err
+	var d incus.InstanceServer
+	if remote.KeepAlive > 0 {
+		d, err = c.handleKeepAlive(remote, name, args)
+		if err != nil {
+			// On proxy failure, just fallback to regular client.
+			d, err = incus.ConnectIncus(remote.Addr, args)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		d, err = incus.ConnectIncus(remote.Addr, args)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if remote.Project != "" && remote.Project != "default" {
@@ -194,7 +216,7 @@ func (c *Config) getConnectionArgs(name string) (*incus.ConnectionArgs, error) {
 		AuthType:  remote.AuthType,
 	}
 
-	if args.AuthType == "oidc" {
+	if args.AuthType == api.AuthenticationMethodOIDC {
 		if c.oidcTokens == nil {
 			c.oidcTokens = map[string]*oidc.Tokens[*oidc.IDTokenClaims]{}
 		}
@@ -240,7 +262,7 @@ func (c *Config) getConnectionArgs(name string) (*incus.ConnectionArgs, error) {
 	}
 
 	// Stop here if no client certificate involved
-	if remote.Protocol == "simplestreams" || util.ValueInSlice(remote.AuthType, []string{"oidc"}) {
+	if remote.Protocol == "simplestreams" || util.ValueInSlice(remote.AuthType, []string{api.AuthenticationMethodOIDC}) {
 		return &args, nil
 	}
 

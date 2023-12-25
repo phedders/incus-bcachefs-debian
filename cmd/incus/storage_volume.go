@@ -1644,8 +1644,9 @@ func (c *cmdStorageVolumeMove) Run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf(i18n.G("No storage pool for target volume specified"))
 	}
 
-	// Rename volume if both remotes and pools of source and target are equal.
-	if srcRemote == dstRemote && srcVolPool == dstVolPool {
+	// Rename volume if both remotes and pools of source and target are equal
+	// and neither destination cluster member name nor target project are set.
+	if srcRemote == dstRemote && srcVolPool == dstVolPool && c.storageVolume.flagDestinationTarget == "" && c.storageVolumeCopy.flagTargetProject == "" {
 		var args []string
 
 		if srcRemote != "" {
@@ -2488,7 +2489,7 @@ func (c *cmdStorageVolumeSnapshotShow) Command() *cobra.Command {
 
 	Add the name of the snapshot if type is one of custom, container or virtual-machine.
 
-	lxc storage volume show default virtual-machine/data/snap0
+	incus storage volume show default virtual-machine/data/snap0
 		Will show the properties of snapshot "snap0" for a virtual machine called "data" in the "default" pool.`))
 
 	cmd.Flags().StringVar(&c.storage.flagTarget, "target", "", i18n.G("Cluster member name")+"``")

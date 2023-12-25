@@ -1,7 +1,7 @@
 (initialize)=
 # How to initialize Incus
 
-Before you can create a Incus instance, you must configure and initialize Incus.
+Before you can create an Incus instance, you must configure and initialize Incus.
 
 ## Interactive configuration
 
@@ -49,7 +49,7 @@ Remote access (see {ref}`security_remote_access` and {ref}`authentication`)
   The default answer is `no`, which means remote access is not allowed.
   If you answer `yes`, you can connect to the server over the network.
 
-  You can choose to add client certificates to the server (manually or through tokens, the recommended way) or set a trust password.
+  You can choose to add client certificates to the server (manually or through tokens).
 
 Automatic image update (see {ref}`about-images`)
 : You can download images from image servers.
@@ -120,7 +120,7 @@ Failure modes when overwriting entities are the same as for the `PUT` requests i
 
 ```{note}
 The rollback process might potentially fail, although rarely (typically due to backend bugs or limitations).
-You should therefore be careful when trying to reconfigure a Incus daemon via preseed.
+You should therefore be careful when trying to reconfigure an Incus daemon via preseed.
 ```
 
 ### Default profile
