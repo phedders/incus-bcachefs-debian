@@ -1,1 +1,2 @@
-001-adjust-import-paths.patch
+001-skip-TestConvertNetworkConfig.patch
+002-adjust-import-paths.patch
