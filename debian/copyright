@@ -3,8 +3,9 @@ Upstream-Name: incus
 Source: https://github.com/lxc/incus
 
 Files: *
-Copyright: 2014 Canonical Ltd
-Copyright: 2023 LinuxContainers
+Copyright:
+ 2014 Canonical Ltd
+ 2023 LinuxContainers
 License: Apache-2.0
 
 Files: incusd/include/incus_bpf.h
@@ -24,8 +25,9 @@ Copyright:
 License: LGPL-2.1+
 
 Files: po/*
-Copyright: 2015 LXD contributors
-Copyright: 2023 Incus contributors
+Copyright:
+ 2015 LXD contributors
+ 2023 Incus contributors
 License: Apache-2.0
 Comment: Lots of boilerplate headers, but a couple files have actual info
 
@@ -41,8 +43,9 @@ License: Apache-2.0
 Comment: A fork+minimalized version of code specifically for Incus's use; see internal/usbid/README.md for details
 
 Files: debian/*
-Copyright: 2023 Free Ekanayaka
-Copyright: 2023 Mathias Gibbens
+Copyright:
+ 2023 Free Ekanayaka
+ 2023-2024 Mathias Gibbens
 License: Apache-2.0
 Comment: Debian packaging is licensed under the same terms as upstream
 
