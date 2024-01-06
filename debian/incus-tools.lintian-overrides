@@ -1,2 +1,5 @@
 # Flagged spelling errors come from other golang packages
 incus-tools: spelling-error-in-binary
+
+# Ignore error about long field length
+incus-tools: field-too-long

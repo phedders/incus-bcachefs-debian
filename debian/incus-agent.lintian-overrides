@@ -9,3 +9,6 @@ incus-agent: package-supports-alternative-init-but-no-init.d-script
 
 # Silence an experimental tag
 incus-agent: systemd-service-file-missing-hardening-features
+
+# Ignore error about long field length
+incus-agent: field-too-long

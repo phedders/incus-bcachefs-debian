@@ -8,17 +8,17 @@ Copyright:
  2023 LinuxContainers
 License: Apache-2.0
 
-Files: incusd/include/incus_bpf.h
+Files: shared/cgo/incus_bpf.h
 Copyright: 2011-2014 PLUMgrid
 License: GPL-2.0 with Linux-syscall-note exception
 
-Files: incusd/include/incus_posix_acl_xattr.h
+Files: shared/cgo/incus_posix_acl_xattr.h
 Copyright:
  Copyright 2002 Andreas Gruenbacher
  Copyright 2016 Red Hat, Inc
 License: LGPL-2.1+ with Linux-syscall-note exception
 
-Files: incusd/include/macro.h incusd/include/compiler.h
+Files: shared/cgo/macro.h shared/cgo/compiler.h
 Copyright:
  Copyright 2018 Christian Brauner
  Copyright 2018 Canonical Ltd
