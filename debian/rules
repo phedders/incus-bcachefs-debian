@@ -6,10 +6,10 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
 # Don't build binaries we don't ship
 # NOTE -- incus-agent is listed here, as it is compiled as a statically-linked binary below
-export DH_GOLANG_EXCLUDES := deps devincus-client generate incus-agent
+export DH_GOLANG_EXCLUDES := deps dev_incus-client generate incus-agent sysinfo
 
 # Include various test-support files
-export DH_GOLANG_INSTALL_EXTRA := test/ shared/subprocess/testscript/
+export DH_GOLANG_INSTALL_EXTRA := test/ shared/subprocess/testscript/ internal/server/metadata/configuration.json
 
 %:
 	dh $@ --builddirectory=_build --buildsystem=golang --with=golang
@@ -24,8 +24,10 @@ override_dh_auto_build:
 	# Generate the man pages
 	mkdir man1/
 	TZ=UTC _build/bin/incus manpage man1/
+	TZ=UTC _build/bin/incusd manpage man1/
 	TZ=UTC help2man _build/bin/fuidshift -n "uid/gid shifter" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/fuidshift.1
 	TZ=UTC HOME="~" help2man _build/bin/lxc-to-incus -n "Convert LXC containers to Incus" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/lxc-to-incus.1
+	TZ=UTC HOME="~" help2man _build/bin/lxd-to-incus -n "Convert LXD containers to Incus" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/lxd-to-incus.1
 	TZ=UTC help2man _build/bin/incus-agent -n "Incus virtual machine guest agent" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/incus-agent.1
 	TZ=UTC help2man _build/bin/incus-benchmark -n "Incus benchmark" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/incus-benchmark.1
 	TZ=UTC help2man _build/bin/incus-migrate -n "Incus physical to instance migration tool" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/incus-migrate.1
@@ -41,7 +43,7 @@ override_dh_auto_install:
 	install -Dpm 0644 debian/incus.dnsmasq debian/tmp/etc/dnsmasq.d-available/incus
 	install -Dpm 0644 debian/incus.logrotate debian/tmp/etc/logrotate.d/incus
 	install -Dpm 0644 debian/incus.sysctl debian/tmp/etc/sysctl.d/10-incus-inotify.conf
-	install -Dpm 0644 scripts/bash/incus-client debian/tmp/usr/share/bash-completion/completions/incus
+	install -Dpm 0644 scripts/bash/incus debian/tmp/usr/share/bash-completion/completions/incus
 
 override_dh_installinit:
 	dh_installinit
