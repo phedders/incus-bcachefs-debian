@@ -6,7 +6,7 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
 # Don't build binaries we don't ship
 # NOTE -- incus-agent is listed here, as it is compiled as a statically-linked binary below
-export DH_GOLANG_EXCLUDES := deps dev_incus-client generate incus-agent sysinfo
+export DH_GOLANG_EXCLUDES := deps dev_incus-client generate incus-agent sysinfo test/mini-oidc
 
 # Include various test-support files
 export DH_GOLANG_INSTALL_EXTRA := test/ shared/subprocess/testscript/ internal/server/metadata/configuration.json
