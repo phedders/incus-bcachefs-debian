@@ -45,6 +45,13 @@ package(s) and the incus-agent package. Then, restart the Incus service. You
 will now be able to create virtual machine instances by passing the `--vm` flag
 in your creation command.
 
+Loki integration disabled
+=========================
+
+For the time being, Loki logging integration is disabled, due to the build
+dependency golang-github-grafana-dskit not being packaged. For updates on that,
+please see bug #1001989.
+
 Known issues
 ============
 
