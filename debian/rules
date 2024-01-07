@@ -6,7 +6,7 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
 # Don't build binaries we don't ship
 # NOTE -- incus-agent is listed here, as it is compiled as a statically-linked binary below
-export DH_GOLANG_EXCLUDES := deps dev_incus-client generate incus-agent sysinfo test/mini-oidc
+export DH_GOLANG_EXCLUDES := deps dev_incus-client generate sysinfo test/mini-oidc incus-agent
 
 # Include various test-support files
 export DH_GOLANG_INSTALL_EXTRA := test/ shared/subprocess/testscript/ internal/server/metadata/configuration.json
@@ -43,12 +43,11 @@ override_dh_auto_install:
 	install -Dpm 0644 debian/incus.dnsmasq debian/tmp/etc/dnsmasq.d-available/incus
 	install -Dpm 0644 debian/incus.logrotate debian/tmp/etc/logrotate.d/incus
 	install -Dpm 0644 debian/incus.sysctl debian/tmp/etc/sysctl.d/10-incus-inotify.conf
-	install -Dpm 0644 scripts/bash/incus debian/tmp/usr/share/bash-completion/completions/incus
 
 override_dh_installinit:
 	dh_installinit
 	dh_installinit --name incus-containers --no-stop-on-upgrade --no-restart-after-upgrade
 
 override_dh_installsystemd:
-	# Handle start / restart manually in lxd.postinst
+	# Handle start / restart manually in incus.postinst
 	dh_installsystemd --no-stop-on-upgrade --no-restart-after-upgrade --no-start

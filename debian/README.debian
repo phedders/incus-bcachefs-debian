@@ -11,7 +11,7 @@ intend to use the default bridge, you must first install dnsmasq-base for
 networking to work correctly.
 
 If you wish to allow non-root users to interact with Incus via the local Unix
-socket, you must add them to the lxd group:
+socket, you must add them to the incus group:
 
     sudo usermod -aG incus <username>
 

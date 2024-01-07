@@ -37,7 +37,7 @@ if [ -z "${2}" ]; then
     echo ""
     echo "Incus has been installed. You must run \`sudo incus admin init\` to"
     echo "perform the initial configuration of Incus."
-    echo "Be sure to add user(s) to the incus group, then have them "
+    echo "Be sure to add user(s) to the incus group, then have them"
     echo "logout and back in to properly setup their access."
     echo ""
 fi

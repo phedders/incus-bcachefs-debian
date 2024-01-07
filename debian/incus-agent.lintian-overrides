@@ -4,7 +4,7 @@ incus-agent: statically-linked-binary
 # Flagged spelling errors come from other golang packages
 incus-agent: spelling-error-in-binary
 
-# For now, incus-agent only installs a systemd service file (patches of course are welcome!)
+# Currently, incus-agent only installs a systemd service file (patches of course are welcome!)
 incus-agent: package-supports-alternative-init-but-no-init.d-script
 
 # Silence an experimental tag

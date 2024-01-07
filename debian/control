@@ -110,9 +110,6 @@ Description: Powerful system container and virtual machine manager - daemon
 Package: incus-client
 # The incus binary doesn't depend on liblxc1, so it can be built for any architecture
 Architecture: any
-# lxc prior to 5.0.1 shipped a file that conflicts with Incus (see #1010843, #1034971)
-Breaks: lxc (<< 1:5.0.1)
-Replaces: lxc (<< 1:5.0.1)
 Depends: ${misc:Depends},
          ${shlibs:Depends}
 Built-Using: ${misc:Built-Using}

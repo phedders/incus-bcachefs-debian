@@ -7,7 +7,7 @@ set -e
 if [ "$1" = "remove" ]; then
     # dnsmasq config handling
     if [ -L /etc/dnsmasq.d/incus ]; then
-        echo "Removing  ncus dnsmasq configuration"
+        echo "Removing incus dnsmasq configuration"
         rm -f /etc/dnsmasq.d/incus 2>/dev/null || true
 
         # Try to restart a potential system wide dnsmasq
@@ -18,7 +18,7 @@ fi
 # Purge
 if [ "$1" = "purge" ]; then
     # clean all the things
-    rm --one-file-system -Rf /var/lib/incus /var/log/incus || true
+    rm --one-file-system -Rf /var/cache/incus /var/lib/incus /var/log/incus || true
 fi
 
 exit 0

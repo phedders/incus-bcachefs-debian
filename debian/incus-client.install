@@ -1,2 +1,2 @@
 usr/bin/incus
-usr/share/bash-completion/completions/incus
+scripts/bash/incus usr/share/bash-completion/completions/

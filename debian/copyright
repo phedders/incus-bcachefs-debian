@@ -40,7 +40,7 @@ Copyright:
  Copyright 2013 Google Inc
  Copyright 2016 the gousb Authors
 License: Apache-2.0
-Comment: A fork+minimalized version of code specifically for Incus's use; see internal/usbid/README.md for details
+Comment: A fork+minimalized version of code specifically for Incus' use; see internal/usbid/README.md for details
 
 Files: debian/*
 Copyright:
