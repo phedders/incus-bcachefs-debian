@@ -1,0 +1,36 @@
+From: Mathias Gibbens <gibmat@debian.org>
+Description: Fix QEMU detection
+Forwarded: https://github.com/lxc/incus/issues/373
+diff --git a/internal/server/instance/drivers/driver_qemu.go b/internal/server/instance/drivers/driver_qemu.go
+index 3af0deb55..1e31152de 100644
+--- a/internal/server/instance/drivers/driver_qemu.go
++++ b/internal/server/instance/drivers/driver_qemu.go
+@@ -8294,7 +8294,27 @@ func (d *qemu) checkFeatures(hostArch int, qemuPath string) (map[string]any, err
+ 	}
+ 
+ 	if d.architectureSupportsUEFI(hostArch) {
+-		qemuArgs = append(qemuArgs, "-drive", fmt.Sprintf("if=pflash,format=raw,readonly=on,file=%s", filepath.Join(d.ovmfPath(), "OVMF_CODE.fd")))
++		// Determine expected firmware.
++		firmwares := ovmfGenericFirmwares
++		if util.IsTrue(d.expandedConfig["security.csm"]) {
++			firmwares = ovmfCSMFirmwares
++		} else if util.IsTrueOrEmpty(d.expandedConfig["security.secureboot"]) {
++			firmwares = ovmfSecurebootFirmwares
++		}
++
++		var ovmfCode string
++		for _, firmware := range firmwares {
++			if util.PathExists(filepath.Join(d.ovmfPath(), firmware.code)) {
++				ovmfCode = firmware.code
++				break
++			}
++		}
++
++		if ovmfCode == "" {
++			return nil, fmt.Errorf("Unable to locate matching firmware: %+v", firmwares)
++		}
++
++		qemuArgs = append(qemuArgs, "-drive", fmt.Sprintf("if=pflash,format=raw,readonly=on,file=%s", filepath.Join(d.ovmfPath(), ovmfCode)))
+ 	}
+ 
+ 	var stderr bytes.Buffer
