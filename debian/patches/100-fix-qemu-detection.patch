@@ -1,36 +1,42 @@
-From: Mathias Gibbens <gibmat@debian.org>
-Description: Fix QEMU detection
-Forwarded: https://github.com/lxc/incus/issues/373
+From a4266dcf284dc1bf5e21d49838d91b55983a5a0d Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?St=C3=A9phane=20Graber?= <stgraber@stgraber.org>
+Date: Sun, 7 Jan 2024 21:37:35 -0500
+Subject: [PATCH] incusd/instance/qemu: Don't hardcode UEFI firmware in
+ checkFeatures
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Closes #373
+
+Signed-off-by: Stéphane Graber <stgraber@stgraber.org>
+---
+ internal/server/instance/drivers/driver_qemu.go | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
 diff --git a/internal/server/instance/drivers/driver_qemu.go b/internal/server/instance/drivers/driver_qemu.go
-index 3af0deb55..1e31152de 100644
+index 242364a8ca..4a86344cd6 100644
 --- a/internal/server/instance/drivers/driver_qemu.go
 +++ b/internal/server/instance/drivers/driver_qemu.go
-@@ -8294,7 +8294,27 @@ func (d *qemu) checkFeatures(hostArch int, qemuPath string) (map[string]any, err
+@@ -8306,7 +8306,20 @@ func (d *qemu) checkFeatures(hostArch int, qemuPath string) (map[string]any, err
  	}
  
  	if d.architectureSupportsUEFI(hostArch) {
 -		qemuArgs = append(qemuArgs, "-drive", fmt.Sprintf("if=pflash,format=raw,readonly=on,file=%s", filepath.Join(d.ovmfPath(), "OVMF_CODE.fd")))
-+		// Determine expected firmware.
-+		firmwares := ovmfGenericFirmwares
-+		if util.IsTrue(d.expandedConfig["security.csm"]) {
-+			firmwares = ovmfCSMFirmwares
-+		} else if util.IsTrueOrEmpty(d.expandedConfig["security.secureboot"]) {
-+			firmwares = ovmfSecurebootFirmwares
-+		}
-+
-+		var ovmfCode string
-+		for _, firmware := range firmwares {
-+			if util.PathExists(filepath.Join(d.ovmfPath(), firmware.code)) {
-+				ovmfCode = firmware.code
++		// Try to locate a UEFI firmware.
++		var ovmfPath string
++		for _, entry := range ovmfGenericFirmwares {
++			if util.PathExists(filepath.Join(d.ovmfPath(), entry.code)) {
++				ovmfPath = filepath.Join(d.ovmfPath(), entry.code)
 +				break
 +			}
 +		}
 +
-+		if ovmfCode == "" {
-+			return nil, fmt.Errorf("Unable to locate matching firmware: %+v", firmwares)
++		if ovmfPath == "" {
++			return nil, fmt.Errorf("Unable to locate a UEFI firmware")
 +		}
 +
-+		qemuArgs = append(qemuArgs, "-drive", fmt.Sprintf("if=pflash,format=raw,readonly=on,file=%s", filepath.Join(d.ovmfPath(), ovmfCode)))
++		qemuArgs = append(qemuArgs, "-drive", fmt.Sprintf("if=pflash,format=raw,readonly=on,file=%s", ovmfPath))
  	}
  
  	var stderr bytes.Buffer
