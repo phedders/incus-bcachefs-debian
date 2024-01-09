@@ -1,11 +1,11 @@
 [Unit]
-Description=Incus - unix socket
-Documentation=man:incus(1)
+Description=Incus - Daemon (unix socket)
+Documentation=man:incusd(1)
 
 [Socket]
 FileDescriptorName=unix
 ListenStream=/var/lib/incus/unix.socket
-SocketGroup=incus
+SocketGroup=incus-admin
 SocketMode=0660
 Service=incus.service
 

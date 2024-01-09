@@ -16,7 +16,7 @@ fi
 #DEBHELPER#
 
 # Handle services start / restart manually, dh_installsystemd won't allow
-# restarting incus.service on upgrades but not incus-containers.service
+# restarting incus.service and incus-user.service on upgrades but not incus-startup.service
 if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
     if [ -d /run/systemd/system ]; then
         systemctl --system daemon-reload >/dev/null || true
@@ -25,10 +25,10 @@ if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-decon
         else
             _dh_action=start
         fi
-        deb-systemd-invoke $_dh_action 'incus.service' 'incus.socket' >/dev/null || true
+        deb-systemd-invoke $_dh_action 'incus.service' 'incus.socket' 'incus-user.service' 'incus-user.socket' >/dev/null || true
 
-        # Only start 'incus-containers', don't restart it on upgrades
-        deb-systemd-invoke start 'incus-containers.service' >/dev/null || true
+        # Only start 'incus-startup', don't restart it on upgrades
+        deb-systemd-invoke start 'incus-startup.service' >/dev/null || true
     fi
 fi
 
@@ -37,8 +37,9 @@ if [ -z "${2}" ]; then
     echo ""
     echo "Incus has been installed. You must run \`sudo incus admin init\` to"
     echo "perform the initial configuration of Incus."
-    echo "Be sure to add user(s) to the incus group, then have them"
-    echo "logout and back in to properly setup their access."
+    echo "Be sure to add user(s) to either the 'incus-admin' group for full"
+    echo "administrative access or the 'incus' group for restricted access,"
+    echo "then have them logout and back in to properly setup their access."
     echo ""
 fi
 

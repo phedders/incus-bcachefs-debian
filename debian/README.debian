@@ -39,12 +39,21 @@ socket, you must add them to the incus group:
 
     sudo usermod -aG incus <username>
 
+Access via the incus group grants restricted access to Incus, allowing members to run
+most commands, except `incus admin`. For the vast majority of use cases, this is the
+preferred setup.
+
+Alternatively, if you wish to allow non-root users full administrative access to
+Incus via the local Unix socket, you must add them to the incus-admin group:
+
+    sudo usermod -aG incus-admin <username>
+
 From the upstream documentation (https://linuxcontainers.org/incus/docs/main/security/),
-be aware that local access to Incus through the Unix socket always grants full
-access to Incus. This includes the ability to attach file system paths or devices
-to any instance as well as tweak the security features on any instance.
-Therefore, you should only give access to users who would be trusted with root
-access to the host.
+be aware that local access to Incus through the Unix socket via the incus-admin group
+always grants full access to Incus. This includes the ability to attach file system
+paths or devices to any instance as well as tweak the security features on any
+instance. Therefore, you should only give access to users who would be trusted with
+root access to the host.
 
 Storage backends
 ================
