@@ -128,6 +128,8 @@ Architecture: linux-any
 Depends: ${misc:Depends},
          ${shlibs:Depends}
 Built-Using: ${misc:Built-Using}
+# lxd-tools also ships a `fuidshift` binary; we expect src:lxd to only provide bin:golang-github-canonical-lxd-dev after the trixie release, so just use a simple Conflicts here
+Conflicts: lxd-tools
 Description: Powerful system container and virtual machine manager - extra tools
  Incus is a next generation system container and virtual machine manager.
  It offers a unified user experience around full Linux systems running
