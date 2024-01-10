@@ -23,7 +23,7 @@ add_groups()
             LAST=$(($2+$3))
             [ "$LAST" -gt "$NEXT_UID" ] && NEXT_UID=$LAST
         done < /etc/subuid
-        usermod --add-subuids ${NEXT_UID}-$(($NEXT_UID+1000000000)) root
+        usermod --add-subuids ${NEXT_UID}-$(($NEXT_UID+999999999)) root
 
         # GID allocation
         NEXT_GID=1000000
@@ -38,7 +38,7 @@ add_groups()
             LAST=$(($2+$3))
             [ "$LAST" -gt "$NEXT_GID" ] && NEXT_GID=$LAST
         done < /etc/subgid
-        usermod --add-subgids ${NEXT_GID}-$(($NEXT_GID+1000000000)) root
+        usermod --add-subgids ${NEXT_GID}-$(($NEXT_GID+999999999)) root
     fi
 
     # Add the "incus" group for restricted user access
