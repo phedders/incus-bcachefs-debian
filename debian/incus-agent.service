@@ -8,8 +8,8 @@ DefaultDependencies=no
 [Service]
 Type=notify
 WorkingDirectory=-/run/incus_agent
-ExecStartPre=/lib/systemd/incus-agent-setup
-ExecStart=/usr/bin/incus-agent
+ExecStartPre=/usr/libexec/incus/incus-agent-setup
+ExecStart=/usr/libexec/incus/incus-agent
 Restart=on-failure
 RestartSec=5s
 StartLimitInterval=60
