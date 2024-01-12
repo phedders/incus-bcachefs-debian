@@ -44,6 +44,10 @@ override_dh_auto_install:
 	install -Dpm 0644 debian/incus.logrotate debian/tmp/etc/logrotate.d/incus
 	install -Dpm 0644 debian/incus.sysctl debian/tmp/etc/sysctl.d/10-incus-inotify.conf
 
+override_dh_install:
+	dh_install
+	dh_installsysusers
+
 override_dh_installinit:
 	dh_installinit
 	dh_installinit --name incus-containers --no-stop-on-upgrade --no-restart-after-upgrade

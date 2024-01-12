@@ -78,7 +78,6 @@ XS-Go-Import-Path: github.com/lxc/incus
 
 Package: incus
 Architecture: linux-any
-Pre-Depends: ${misc:Pre-Depends}, adduser
 Depends: ${misc:Depends},
          ${shlibs:Depends},
          attr,
