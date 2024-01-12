@@ -90,7 +90,7 @@ Known issues
 
   * Incus 0.4 has a bug with uidmapping when using incus-user. Upon starting a
 container, you will receive an error "newuidmap failed to write mapping". To work
-around this, prior to starting any containers run `incus profile unset default raw.idmap`.
+around this, prior to creating any containers run `incus profile unset default raw.idmap`.
 This has been fixed in the main branch, and will be fixed in the 0.5 release.
 
   * Running Incus and Docker on the same host can cause connectivity issues. A

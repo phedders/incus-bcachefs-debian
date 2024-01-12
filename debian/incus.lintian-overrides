@@ -7,5 +7,8 @@ incus: package-supports-alternative-init-but-no-init.d-script
 # incusd binary is installed under /usr/libexec/incus/
 incus: spare-manual-page
 
+# Silence an experimental tag
+incus: systemd-service-file-missing-hardening-features
+
 # Ignore error about long field length
 incus: field-too-long
