@@ -5,6 +5,8 @@ incus (0.4-2) UNRELEASED; urgency=medium
       and loong64 build failures
     - Set minimum version of golang-github-pierrec-lz4-dev to assist with
       backporting
+  * d/rules:
+    - Set HOME environment variable for all manpage generation commands
 
  -- Mathias Gibbens <gibmat@debian.org>  Thu, 18 Jan 2024 21:47:44 +0000
 
