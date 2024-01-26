@@ -1,4 +1,4 @@
-incus (0.5-1) UNRELEASED; urgency=medium
+incus (0.5-1) unstable; urgency=medium
 
   * New upstream release:
     - Drop patches applied upstream
@@ -10,7 +10,7 @@ incus (0.5-1) UNRELEASED; urgency=medium
     - Set HOME environment variable for all manpage generation commands
   * Rename d/README.debian -> d/README.Debian
 
- -- Mathias Gibbens <gibmat@debian.org>  Fri, 26 Jan 2024 00:51:59 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 26 Jan 2024 01:06:09 +0000
 
 incus (0.4-1) unstable; urgency=medium
 
