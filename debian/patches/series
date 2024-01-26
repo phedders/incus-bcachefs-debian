@@ -1,5 +1,2 @@
 001-skip-TestConvertNetworkConfig.patch
 002-adjust-import-paths.patch
-003-remove-loki.patch
-100-fix-qemu-detection.patch
-101-fix-bash-auto-complete.patch

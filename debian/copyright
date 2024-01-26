@@ -5,7 +5,7 @@ Source: https://github.com/lxc/incus
 Files: *
 Copyright:
  2014 Canonical Ltd
- 2023 LinuxContainers
+ 2023-2024 LinuxContainers
 License: Apache-2.0
 
 Files: shared/cgo/incus_bpf.h
@@ -27,7 +27,7 @@ License: LGPL-2.1+
 Files: po/*
 Copyright:
  2015 LXD contributors
- 2023 Incus contributors
+ 2023-2024 Incus contributors
 License: Apache-2.0
 Comment: Lots of boilerplate headers, but a couple files have actual info
 
