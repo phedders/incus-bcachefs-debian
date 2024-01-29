@@ -8,19 +8,18 @@ msgstr ""
 "Project-Id-Version: lxd\n"
 "Report-Msgid-Bugs-To: lxc-devel@lists.linuxcontainers.org\n"
 "POT-Creation-Date: 2024-01-23 10:25-0500\n"
-"PO-Revision-Date: 2022-03-10 15:06+0000\n"
-"Last-Translator: Heimen Stoffels <vistausss@fastmail.com>\n"
-"Language-Team: Dutch <https://hosted.weblate.org/projects/linux-containers/"
-"lxd/nl/>\n"
+"PO-Revision-Date: 2024-01-27 21:01+0000\n"
+"Last-Translator: Dklfajsjfi49wefklsf32 <nlincus@users.noreply.hosted.weblate."
+"org>\n"
+"Language-Team: Dutch <https://hosted.weblate.org/projects/incus/cli/nl/>\n"
 "Language: nl\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 4.12-dev\n"
+"X-Generator: Weblate 5.4-dev\n"
 
 #: cmd/incus/storage_bucket.go:254 cmd/incus/storage_bucket.go:999
-#, fuzzy
 msgid ""
 "### This is a YAML representation of a storage bucket.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -32,19 +31,18 @@ msgid ""
 "### config:\n"
 "###   size: \"61203283968\""
 msgstr ""
-"### Dit is een yaml weergave van een opslag volume.\n"
+"### Dit is een YAML weergave van een opslag emmer (bucket).\n"
 "### Elke regel beginnende met een '#' zal worden genegeerd.\n"
-"### \n"
-"### Een opslag volume bestaat uit een set van configureerbare entries.\n"
 "###\n"
-"### name: vol1\n"
-"### type: custom\n"
+"### Een opslag emmer (bucket) bestaat uit een set van te configureren "
+"onderdelen.\n"
+"###\n"
+"### name: bucket1\n"
 "### used_by: []\n"
 "### config:\n"
-"###  size: \"61203283968\""
+"###   size: \"61203283968\""
 
 #: cmd/incus/storage.go:231
-#, fuzzy
 msgid ""
 "### This is a YAML representation of a storage pool.\n"
 "### Any line starting with a '#' will be ignored.\n"
@@ -60,10 +58,10 @@ msgid ""
 "###   source: default\n"
 "###   zfs.pool_name: default"
 msgstr ""
-"### Dit is a yaml weergave van een storage pool.\n"
+"### Dit is a YAML weergave van een storage pool.\n"
 "### Elke regel beginnend met een '#' wordt genegeerd\n"
 "###\n"
-"### Een storage pool bestaat uit een groep configuratie onderdelen.\n"
+"### Een storage pool bestaat uit een groep van configuratie onderdelen.\n"
 "###\n"
 "### Een voorbeeld ziet er zo uit:\n"
 "### name: default\n"
@@ -75,7 +73,6 @@ msgstr ""
 "###   zfs.pool_name: default"
 
 #: cmd/incus/storage_volume.go:850
-#, fuzzy
 msgid ""
 "### This is a YAML representation of a storage volume.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -88,47 +85,39 @@ msgid ""
 "### config:\n"
 "###   size: \"61203283968\""
 msgstr ""
-"### Dit is een yaml weergave van een opslag volume.\n"
+"### Dit is een YAML representatie van een opslag volume.\n"
 "### Elke regel beginnende met een '#' zal worden genegeerd.\n"
-"### \n"
-"### Een opslag volume bestaat uit een set van configureerbare entries.\n"
+"###\n"
+"### Een opslagvolume (storage volume) bestaat uit een set van "
+"geconfigureerde opties.\n"
 "###\n"
 "### name: vol1\n"
 "### type: custom\n"
 "### used_by: []\n"
 "### config:\n"
-"###  size: \"61203283968\""
+"###   size: \"61203283968\""
 
 #: cmd/incus/config_trust.go:283
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the certificate.\n"
 "### Any line starting with a '# will be ignored.\n"
 "###\n"
 "### Note that the fingerprint is shown but cannot be changed"
 msgstr ""
-"### Dit is een yaml weergave van de image eigenschappen.\n"
-"## Elke regel beginnende met een '# zal worden genegeerd.\n"
+"### Dit is een YAML weergave van het certificaat.\n"
+"### Elke regel beginnende met een '# zal worden genegeerd.\n"
 "###\n"
-"### Elke eigenschap is weergegeven met een enkele regel:\n"
-"### Bijvoorbeeld:\n"
-"###  description: Mijn eigen image"
+"### Merk op dat de getoonde fingerprint niet kan worden aangepast"
 
 #: cmd/incus/cluster_group.go:363
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the cluster group.\n"
 "### Any line starting with a '# will be ignored."
 msgstr ""
-"### Dit is een yaml weergave van de image eigenschappen.\n"
-"## Elke regel beginnende met een '# zal worden genegeerd.\n"
-"###\n"
-"### Elke eigenschap is weergegeven met een enkele regel:\n"
-"### Bijvoorbeeld:\n"
-"###  description: Mijn eigen image"
+"### Dit is een YAML weergave van clustergroep.\n"
+"## Elke regel beginnende met een '# zal worden genegeerd."
 
 #: cmd/incus/config.go:109
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the configuration.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -148,11 +137,11 @@ msgid ""
 "###\n"
 "### Note that the name is shown but cannot be changed"
 msgstr ""
-"### Dit is een yaml weergave van de configuratie.\n"
+"### Dit is een YAML weergave van de configuratie (configuration).\n"
 "### Elke regel beginnende met een '# zal worden genegeerd.\n"
 "###\n"
 "### Een voorbeeld configuratie ziet er als volgt uit:\n"
-"### name: container1\n"
+"### name: instance1\n"
 "### profiles:\n"
 "### - default\n"
 "### config:\n"
@@ -167,7 +156,6 @@ msgstr ""
 "### NB: de naam is weergegeven, maar kan niet worden veranderd"
 
 #: cmd/incus/image.go:381
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the image properties.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -176,15 +164,14 @@ msgid ""
 "### An example would be:\n"
 "###  description: My custom image"
 msgstr ""
-"### Dit is een yaml weergave van de image eigenschappen.\n"
+"### Dit is een YAML weergave van de virtuele disk (image) eigenschappen.\n"
 "## Elke regel beginnende met een '# zal worden genegeerd.\n"
 "###\n"
-"### Elke eigenschap is weergegeven met een enkele regel:\n"
-"### Bijvoorbeeld:\n"
+"### Elke eigenschap is weergegeven op een enkele regel:\n"
+"### Een voorbeeld hiervan is:\n"
 "###  description: Mijn eigen image"
 
 #: cmd/incus/config_metadata.go:63
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the instance metadata.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -211,22 +198,24 @@ msgstr ""
 "### Elke regel beginnende met een '# zal worden genegeerd.\n"
 "###\n"
 "### Een voorbeeld configuratie ziet er als volgt uit:\n"
-"### name: container1\n"
-"### profiles:\n"
-"### - default\n"
-"### config:\n"
-"###   volatile.eth0.hwaddr: 00:16:3e:e9:f8:7f\n"
-"### devices:\n"
-"###   homedir:\n"
-"###     path: /extra\n"
-"###     source: /home/user\n"
-"###     type: disk\n"
-"### ephemeral: false\n"
 "###\n"
-"### NB: de naam is weergegeven, maar kan niet worden veranderd"
+"### architecture: x86_64\n"
+"### creation_date: 1477146654\n"
+"### expiry_date: 0\n"
+"### properties:\n"
+"###   architecture: x86_64\n"
+"###   description: BusyBox x86_64\n"
+"###   name: busybox-x86_64\n"
+"###   os: BusyBox\n"
+"### templates:\n"
+"###   /template:\n"
+"###     when:\n"
+"###     - \"\"\n"
+"###     create_only: false\n"
+"###     template: template.tpl\n"
+"###     properties: {}"
 
 #: cmd/incus/network_acl.go:529
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the network ACL.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -253,22 +242,33 @@ msgid ""
 "### Note that only the ingress and egress rules, description and "
 "configuration keys can be changed."
 msgstr ""
-"### Dit is a yaml weergave van een storage pool.\n"
+"### Dit is a YAML weergave van een netwerk toegangscontrolelijst (ACL).\n"
 "### Elke regel beginnend met een '#' wordt genegeerd\n"
 "###\n"
-"### Een storage pool bestaat uit een groep configuratie onderdelen.\n"
+"### Een netwerk ACL bestaat uit een set van regels en configuratie "
+"instellingen.\n"
 "###\n"
 "### Een voorbeeld ziet er zo uit:\n"
-"### name: default\n"
-"### driver: zfs\n"
-"### used_by: []\n"
+"### name: allow-all-inbound\n"
+"### description: test desc\n"
+"### egress: []\n"
+"### ingress:\n"
+"### - action: allow\n"
+"###   state: enabled\n"
+"###   protocol: \"\"\n"
+"###   source: \"\"\n"
+"###   source_port: \"\"\n"
+"###   destination: \"\"\n"
+"###   destination_port: \"\"\n"
+"###   icmp_type: \"\"\n"
+"###   icmp_code: \"\"\n"
 "### config:\n"
-"###   size: \"61203283968\"\n"
-"###   source: /home/chb/mnt/lxd_test/default.img\n"
-"###   zfs.pool_name: default"
+"###  user.foo: bah\n"
+"###\n"
+"### Merk op dat alleen de inkomende en uitgaande regels, beschrijving en "
+"configuratiesleutels kunnen worden aangepast."
 
 #: cmd/incus/network_forward.go:534
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the network forward.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -291,22 +291,29 @@ msgid ""
 "###\n"
 "### Note that the listen_address and location cannot be changed."
 msgstr ""
-"### Dit is a yaml weergave van een storage pool.\n"
+"### Dit is a YAML weergave van een netwerk doorstuur-instructie (network "
+"forward)\n"
 "### Elke regel beginnend met een '#' wordt genegeerd\n"
 "###\n"
 "### Een storage pool bestaat uit een groep configuratie onderdelen.\n"
 "###\n"
 "### Een voorbeeld ziet er zo uit:\n"
-"### name: default\n"
-"### driver: zfs\n"
-"### used_by: []\n"
+"### listen_address: 192.0.2.1\n"
 "### config:\n"
-"###   size: \"61203283968\"\n"
-"###   source: /home/chb/mnt/lxd_test/default.img\n"
-"###   zfs.pool_name: default"
+"###   target_address: 198.51.100.2\n"
+"### description: test desc\n"
+"### ports:\n"
+"### - description: port forward\n"
+"###   protocol: tcp\n"
+"###   listen_port: 80,81,8080-8090\n"
+"###   target_address: 198.51.100.3\n"
+"###   target_port: 80,81,8080-8090\n"
+"### location: server01\n"
+"###\n"
+"### Merk op dat het luisteradres (listen_address) en locatie (location) niet "
+"aangepast kunnen worden."
 
 #: cmd/incus/network_load_balancer.go:536
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the network load balancer.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -329,22 +336,31 @@ msgid ""
 "###\n"
 "### Note that the listen_address and location cannot be changed."
 msgstr ""
-"### Dit is a yaml weergave van een storage pool.\n"
+"### Dit is a YAML weergave van een netwerk werkverdeler (network load "
+"balancer)\n"
 "### Elke regel beginnend met een '#' wordt genegeerd\n"
 "###\n"
-"### Een storage pool bestaat uit een groep configuratie onderdelen.\n"
+"### Een netwerk-werkverdeler (network load balancer) bestaat uit een set van "
+"bestemmingen (target backends) en netwerk doorstuur instructies (port "
+"forwards) op een bepaald luister-adress (listen address)\n"
 "###\n"
-"### Een voorbeeld ziet er zo uit:\n"
-"### name: default\n"
-"### driver: zfs\n"
-"### used_by: []\n"
+"### Een voorbeeld zou er zo uit zien:\n"
+"### listen_address: 192.0.2.1\n"
 "### config:\n"
-"###   size: \"61203283968\"\n"
-"###   source: /home/chb/mnt/lxd_test/default.img\n"
-"###   zfs.pool_name: default"
+"###   target_address: 198.51.100.2\n"
+"### description: test desc\n"
+"### ports:\n"
+"### - description: port forward\n"
+"###   protocol: tcp\n"
+"###   listen_port: 80,81,8080-8090\n"
+"###   target_address: 198.51.100.3\n"
+"###   target_port: 80,81,8080-8090\n"
+"### location: server01\n"
+"###\n"
+"### Merk op dat het luisteradres (listen_address) en locatie (location) niet "
+"kunnen worden aangepast."
 
 #: cmd/incus/network_peer.go:524
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the network peer.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -360,22 +376,22 @@ msgid ""
 "### Note that the name, target_project, target_network and status fields "
 "cannot be changed."
 msgstr ""
-"### Dit is a yaml weergave van een storage pool.\n"
+"### Dit is a YAML weergave van een netwerk spreker (network peer)\n"
 "### Elke regel beginnend met een '#' wordt genegeerd\n"
 "###\n"
-"### Een storage pool bestaat uit een groep configuratie onderdelen.\n"
+"### Een voorbeeld hiervan kan zijn:\n"
+"### description: A peering to mynet\n"
+"### config: {}\n"
+"### name: mypeer\n"
+"### target_project: default\n"
+"### target_network: mynet\n"
+"### status: Pending\n"
 "###\n"
-"### Een voorbeeld ziet er zo uit:\n"
-"### name: default\n"
-"### driver: zfs\n"
-"### used_by: []\n"
-"### config:\n"
-"###   size: \"61203283968\"\n"
-"###   source: /home/chb/mnt/lxd_test/default.img\n"
-"###   zfs.pool_name: default"
+"### Merk op dat de naam (name), bestemming (target), bestemming project "
+"(target_project), bestemming netwerk (target_network) en de status velden ("
+"status fielsds) niet kunnen worden aangepast."
 
 #: cmd/incus/network_zone.go:1065
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the network zone record.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -388,19 +404,20 @@ msgid ""
 "### config:\n"
 "###  user.foo: bah\n"
 msgstr ""
-"### Dit is een yaml weergave van een opslag volume.\n"
+"### Dit is een YAML weergave van een netwerk zone record (network zone "
+"record).\n"
 "### Elke regel beginnende met een '#' zal worden genegeerd.\n"
-"### \n"
-"### Een opslag volume bestaat uit een set van configureerbare entries.\n"
 "###\n"
-"### name: vol1\n"
-"### type: custom\n"
-"### used_by: []\n"
+"### Een netwerk zone record bestaat uit een set van regels en configuratie "
+"instellingen. \n"
+"###\n"
+"### Een voorbeeld hievan kan zijn:\n"
+"### name: foo\n"
+"### description: SPF record\n"
 "### config:\n"
-"###  size: \"61203283968\""
+"###  user.foo: bah\n"
 
 #: cmd/incus/network_zone.go:472
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the network zone.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -413,19 +430,19 @@ msgid ""
 "### config:\n"
 "###  user.foo: bah\n"
 msgstr ""
-"### Dit is een yaml weergave van een opslag volume.\n"
+"### Dit is een YAML weergave van een netwerk zone (network zone).\n"
 "### Elke regel beginnende met een '#' zal worden genegeerd.\n"
 "### \n"
-"### Een opslag volume bestaat uit een set van configureerbare entries.\n"
+"### Een netwerk zone (network zone) bestaat uit een set van regels en "
+"configuratie onderdelen.\n"
 "###\n"
-"### name: vol1\n"
-"### type: custom\n"
-"### used_by: []\n"
+"### Een voorbeeld hiervan kan zijn:\n"
+"### name: example.net\n"
+"### description: Internal domain\n"
 "### config:\n"
-"###  size: \"61203283968\""
+"###  user.foo: bah\n"
 
 #: cmd/incus/network.go:673
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the network.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -444,22 +461,24 @@ msgid ""
 "###\n"
 "### Note that only the configuration can be changed."
 msgstr ""
-"### Dit is a yaml weergave van een storage pool.\n"
+"### Dit is a YAML weergave van een netwerk (network).\n"
 "### Elke regel beginnend met een '#' wordt genegeerd\n"
 "###\n"
-"### Een storage pool bestaat uit een groep configuratie onderdelen.\n"
+"### Een netwerk bestaat uit een set aan configuratie onderdelen.\n"
 "###\n"
-"### Een voorbeeld ziet er zo uit:\n"
-"### name: default\n"
-"### driver: zfs\n"
-"### used_by: []\n"
+"### Een voorbeeld hiervan kan zijn:\n"
+"### name: mybr0\n"
 "### config:\n"
-"###   size: \"61203283968\"\n"
-"###   source: /home/chb/mnt/lxd_test/default.img\n"
-"###   zfs.pool_name: default"
+"###   ipv4.address: 10.62.42.1/24\n"
+"###   ipv4.nat: true\n"
+"###   ipv6.address: fd00:56ad:9f7a:9800::1/64\n"
+"###   ipv6.nat: true\n"
+"### managed: true\n"
+"### type: bridge\n"
+"###\n"
+"### Merk op dat alleen de configuratie kan worden aangepast."
 
 #: cmd/incus/profile.go:436
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the profile.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -479,26 +498,26 @@ msgid ""
 "###\n"
 "### Note that the name is shown but cannot be changed"
 msgstr ""
-"### Dit is een yaml weergave van de configuratie.\n"
+"### Dit is een YAML weergave van een profiel (profile).\n"
 "### Elke regel beginnende met een '# zal worden genegeerd.\n"
 "###\n"
-"### Een voorbeeld configuratie ziet er als volgt uit:\n"
-"### name: container1\n"
-"### profiles:\n"
-"### - default\n"
-"### config:\n"
-"###   volatile.eth0.hwaddr: 00:16:3e:e9:f8:7f\n"
-"### devices:\n"
-"###   homedir:\n"
-"###     path: /extra\n"
-"###     source: /home/user\n"
-"###     type: disk\n"
-"### ephemeral: false\n"
+"### Een profiel (profile) bestaat uit een set van configuratie instellingen "
+"gevolgd door een set van\n"
+"### apparaten (devices).\n"
 "###\n"
-"### NB: de naam is weergegeven, maar kan niet worden veranderd"
+"### Een voorbeeld configuratie ziet er als volgt uit:\n"
+"### name: onenic\n"
+"### config:\n"
+"###   raw.lxc: lxc.aa_profile=unconfined\n"
+"### devices:\n"
+"###   eth0:\n"
+"###     nictype: bridged\n"
+"###     parent: mybr0\n"
+"###     type: nic\n"
+"###\n"
+"### Merk op dat de getoonde naam (name) niet kan worden aangepast"
 
 #: cmd/incus/project.go:233
-#, fuzzy
 msgid ""
 "### This is a YAML representation of the project.\n"
 "### Any line starting with a '# will be ignored.\n"
@@ -518,45 +537,52 @@ msgid ""
 "###\n"
 "### Note that the name is shown but cannot be changed"
 msgstr ""
-"### Dit is a yaml weergave van een storage pool.\n"
+"### Dit is a YAML weergave van een project (project).\n"
 "### Elke regel beginnend met een '#' wordt genegeerd\n"
 "###\n"
-"### Een storage pool bestaat uit een groep configuratie onderdelen.\n"
+"### Een project (project) bestaat uit een groep van mogelijkheden en een "
+"beschijving.\n"
 "###\n"
-"### Een voorbeeld ziet er zo uit:\n"
-"### name: default\n"
-"### driver: zfs\n"
-"### used_by: []\n"
+"### Een voorbeeld hiervan kan zijn:\n"
 "### config:\n"
-"###   size: \"61203283968\"\n"
-"###   source: /home/chb/mnt/lxd_test/default.img\n"
-"###   zfs.pool_name: default"
+"###   features.images: \"true\"\n"
+"###   features.networks: \"true\"\n"
+"###   features.networks.zones: \"true\"\n"
+"###   features.profiles: \"true\"\n"
+"###   features.storage.buckets: \"true\"\n"
+"###   features.storage.volumes: \"true\"\n"
+"### description: My own project\n"
+"### name: my-project\n"
+"###\n"
+"### Merk op dat de getoonde naam (name) niet kan worden aangepast"
 
 #: cmd/incus/cluster.go:701
 msgid ""
 "### This is a yaml representation of the cluster member.\n"
 "### Any line starting with a '# will be ignored."
 msgstr ""
+"### Dit is een YAML weergave van een clusterlid (cluster member).\n"
+"### Elke regel beginnende met '#' zal worden genegeerd."
 
 #: cmd/incus/info.go:319
 #, c-format
 msgid "%d (id: %d, online: %v, NUMA node: %v)"
-msgstr ""
+msgstr "%d (id: %d, online: %v, NUMA node: %v)"
 
 #: cmd/incus/admin_init_interactive.go:644
 #, c-format
 msgid "%q is not a block device"
-msgstr ""
+msgstr "%q is geen block device"
 
 #: cmd/incus/admin_init_interactive.go:781
 #, c-format
 msgid "%q is not an IP address"
-msgstr ""
+msgstr "%q is geen IP adres"
 
 #: cmd/incus/admin_recover.go:209
 #, c-format
 msgid "%s %q on pool %q in project %q (includes %d snapshots)"
-msgstr ""
+msgstr "%s %q van pool %q in project %q (bevat %d snapshots)"
 
 #: cmd/incus/image.go:1091
 #, c-format
@@ -564,24 +590,24 @@ msgid "%s (%d more)"
 msgstr "%s (en nog %d)"
 
 #: cmd/incus/info.go:161
-#, fuzzy, c-format
+#, c-format
 msgid "%s (%s) (%d available)"
-msgstr "%s (en nog %d)"
+msgstr "%s (%s) (%d beschikbaar)"
 
 #: cmd/incus/admin_recover.go:65
 #, c-format
 msgid "%s (backend=%q, source=%q)"
-msgstr ""
+msgstr "%s (backend=%q, source=%q)"
 
 #: cmd/incus/file.go:1101
 #, c-format
 msgid "%s is not a directory"
-msgstr ""
+msgstr "%s is geen directory"
 
 #: cmd/incus/file.go:991
 #, c-format
 msgid "'%s' isn't a supported file type"
-msgstr ""
+msgstr "'%s' is geen ondersteund bestandstype"
 
 #: cmd/incus/cluster_group.go:136 cmd/incus/profile.go:226
 msgid "(none)"
@@ -590,70 +616,75 @@ msgstr "(geen)"
 #: cmd/incus/info.go:309
 #, c-format
 msgid "- Level %d (type: %s): %s"
-msgstr ""
+msgstr "- Level %d (type: %s): %s"
 
 #: cmd/incus/info.go:288
 #, c-format
 msgid "- Partition %d"
-msgstr ""
+msgstr "- Partition %d"
 
 #: cmd/incus/info.go:197
 #, c-format
 msgid "- Port %d (%s)"
-msgstr ""
+msgstr "- Port %d (%s)"
 
 #: cmd/incus/action.go:243
 msgid "--console can't be used while forcing instance shutdown"
 msgstr ""
+"--console kan niet gebruikt worden tijden een geforceerde instantie "
+"(instance) shutdown"
 
 #: cmd/incus/action.go:392
 msgid "--console can't be used with --all"
-msgstr ""
+msgstr "--console kan niet gebruikt worden samen met --all"
 
 #: cmd/incus/action.go:396
 msgid "--console only works with a single instance"
-msgstr ""
+msgstr "--console werkt alleen als het een enkele instantie (instance) betreft"
 
 #: cmd/incus/create.go:126 cmd/incus/rebuild.go:64
 msgid "--empty cannot be combined with an image name"
 msgstr ""
+"--empty kan niet gebruikt worden in combinatie met een virtuele disk (image) "
+"naam (name)"
 
 #: cmd/incus/config.go:468 cmd/incus/config.go:764
 msgid "--expanded cannot be used with a server"
-msgstr ""
+msgstr "--expanded kan niet gebruikt worden voor een server"
 
 #: cmd/incus/copy.go:155
 msgid "--instance-only can't be passed when the source is a snapshot"
 msgstr ""
+"--instance-only kan niet worden doorgegeven, als de bron een snapshot is"
 
 #: cmd/incus/admin_init_auto.go:41
 msgid "--network-port can't be used without --network-address"
-msgstr ""
+msgstr "--network-port kan niet gebruikt worden zonder --network-address"
 
 #: cmd/incus/copy.go:89
 msgid "--no-profiles cannot be used with --refresh"
-msgstr ""
+msgstr "--no-profiles kan niet gebruikt worden met --refresh"
 
 #: cmd/incus/query.go:73
 msgid "--project cannot be used with the query command"
-msgstr ""
+msgstr "--project kan niet gebruikt worden met de query command"
 
 #: cmd/incus/copy.go:166
 msgid "--refresh can only be used with instances"
-msgstr ""
+msgstr "--refresh kan alleen worden gebruikt bij geïnstantieerden (instances)"
 
 #: cmd/incus/config.go:157 cmd/incus/config.go:418 cmd/incus/config.go:583
 #: cmd/incus/config.go:790 cmd/incus/info.go:451
 msgid "--target cannot be used with instances"
-msgstr ""
+msgstr "--target kan niet gebruikt worden met: instances"
 
 #: cmd/incus/alias.go:220
 msgid "<alias>"
-msgstr ""
+msgstr "<alias>"
 
 #: cmd/incus/alias.go:59
 msgid "<alias> <target>"
-msgstr ""
+msgstr "<alias> <target>"
 
 #: cmd/incus/admin_sql.go:27
 msgid "<local|global> <query>"
@@ -699,15 +730,15 @@ msgstr ""
 
 #: cmd/incus/config_trust.go:119
 msgid "A client name must be provided"
-msgstr ""
+msgstr "Een client naam moet worden meegegeven"
 
 #: cmd/incus/cluster.go:826
 msgid "A cluster member name must be provided"
-msgstr ""
+msgstr "Een clusterlid (cluster member) naam (name) moet worden meegegeven"
 
 #: cmd/incus/network_allocations.go:25
 msgid "ADDRESS"
-msgstr ""
+msgstr "ADRES"
 
 #: cmd/incus/alias.go:148 cmd/incus/image.go:1055 cmd/incus/image_alias.go:234
 msgid "ALIAS"
@@ -715,7 +746,7 @@ msgstr "ALIAS"
 
 #: cmd/incus/image.go:1056
 msgid "ALIASES"
-msgstr ""
+msgstr "ALIASSEN"
 
 #: cmd/incus/cluster.go:186 cmd/incus/image.go:1061 cmd/incus/list.go:554
 msgid "ARCHITECTURE"
@@ -723,45 +754,46 @@ msgstr "ARCHITECTUUR"
 
 #: cmd/incus/remote.go:724
 msgid "AUTH TYPE"
-msgstr ""
+msgstr "AUTHENTICATIE TYPE"
 
 #: cmd/incus/remote.go:107
 msgid "Accept certificate"
-msgstr ""
+msgstr "Accepteer certificaat"
 
 #: cmd/incus/storage_bucket.go:851
 msgid "Access key (auto-generated if empty)"
-msgstr ""
+msgstr "Toegangssleutel (automatisch gegenereerd wanneer leeg gegeven)"
 
 #: cmd/incus/storage_bucket.go:907
 #, c-format
 msgid "Access key: %s"
-msgstr ""
+msgstr "Toegangssleutel: %s"
 
 #: cmd/incus/config.go:383
 msgid "Access the expanded configuration"
-msgstr ""
+msgstr "Toegang tot de geëxpandeerde configuratie"
 
 #: cmd/incus/warning.go:262 cmd/incus/warning.go:263
 msgid "Acknowledge warning"
-msgstr ""
+msgstr "Bevestig de waarschuwing"
 
 #: cmd/incus/query.go:77
 #, c-format
 msgid "Action %q isn't supported by this tool"
-msgstr ""
+msgstr "Actie %q is niet ondersteund door dit programma"
 
 #: cmd/incus/query.go:44
 msgid "Action (defaults to GET)"
-msgstr ""
+msgstr "Actie (standaard is: GET)"
 
 #: cmd/incus/cluster_group.go:631
 msgid "Add a cluster member to a cluster group"
 msgstr ""
+"Voeg een clusterlid (cluster member) toe aan de clustergroep (cluster group)"
 
 #: cmd/incus/network_zone.go:1238
 msgid "Add a network zone record entry"
-msgstr ""
+msgstr "Voeg een netwerk (network) zone record toe"
 
 #: cmd/incus/network_load_balancer.go:746
 msgid "Add backend to a load balancer"
@@ -773,7 +805,7 @@ msgstr ""
 
 #: cmd/incus/network_zone.go:1239
 msgid "Add entries to a network zone record"
-msgstr ""
+msgstr "Voeg een items toe aan een netwerk (network) zone record"
 
 #: cmd/incus/config_device.go:77 cmd/incus/config_device.go:78
 msgid "Add instance devices"
@@ -781,15 +813,15 @@ msgstr ""
 
 #: cmd/incus/cluster_group.go:630
 msgid "Add member to group"
-msgstr ""
+msgstr "Voeg een lid (member) toe aan een group (group)"
 
 #: cmd/incus/alias.go:60 cmd/incus/alias.go:61
 msgid "Add new aliases"
-msgstr ""
+msgstr "Voeg nieuwe aliassen toe"
 
 #: cmd/incus/remote.go:96
 msgid "Add new remote servers"
-msgstr ""
+msgstr "Voeg nieuwe remote servers toe"
 
 #: cmd/incus/remote.go:97
 msgid ""
@@ -802,10 +834,18 @@ msgid ""
 "  incus remote add some-name https://LOGIN:PASSWORD@example.com/some/path --"
 "protocol=simplestreams\n"
 msgstr ""
+"Voeg nieuwe remote servers toe\n"
+"\n"
+"URL voor remote resources moeten in de vorm HTTPS zijn (https://).\n"
+"\n"
+"Basis authenticatie kan gebruikt worden in combinatie met het \"simplestreams"
+"\" protocol:\n"
+"  incus remote add gekozen-naam https://GEBRUIKERSNAAM:PASWOORD@example.com/"
+"een/zeker/pad --protocol=simplestreams\n"
 
 #: cmd/incus/config_trust.go:89
 msgid "Add new trusted client"
-msgstr ""
+msgstr "Voeg een vertrouwde cliënt (client) toe"
 
 #: cmd/incus/config_trust.go:169
 msgid "Add new trusted client certificate"
@@ -830,33 +870,37 @@ msgstr ""
 
 #: cmd/incus/network_forward.go:743 cmd/incus/network_forward.go:744
 msgid "Add ports to a forward"
-msgstr ""
+msgstr "Voeg poorten (ports) toe aan een doorstuurregel (forward)"
 
 #: cmd/incus/network_load_balancer.go:910
 #: cmd/incus/network_load_balancer.go:911
 msgid "Add ports to a load balancer"
-msgstr ""
+msgstr "Voeg poorten (ports) toe aan een werkverdeler (load balancer)"
 
 #: cmd/incus/profile.go:103 cmd/incus/profile.go:104
 msgid "Add profiles to instances"
-msgstr ""
+msgstr "Voeg profielen (profiles) toe aan instanties (instances)"
 
 #: cmd/incus/cluster_role.go:49 cmd/incus/cluster_role.go:50
 msgid "Add roles to a cluster member"
-msgstr ""
+msgstr "Voeg rollen (roles) toe aan een clusterlid (cluster member)"
 
 #: cmd/incus/network_acl.go:764 cmd/incus/network_acl.go:765
 msgid "Add rules to an ACL"
 msgstr ""
+"Voeg regels (rules) toe aan een toegangscontrole lijst (Access Control List "
+"(ACL))"
 
 #: cmd/incus/admin_recover.go:128
 msgid ""
 "Additional storage pool configuration property (KEY=VALUE, empty when done):"
 msgstr ""
+"Aanvullende opslag (storage) poel (pool) configuratie (configuration) "
+"eigenschappen (SLEUTEL=WAARDE, laat leeg wanneer klaar):"
 
 #: cmd/incus/admin_init.go:59
 msgid "Address to bind to (default: none)"
-msgstr ""
+msgstr "Adres (Address) om aan te verbinden (bind) (standaard: geen)"
 
 #: cmd/incus/admin_init_interactive.go:787
 msgid "Address to bind to (not including port)"
@@ -865,109 +909,117 @@ msgstr ""
 #: cmd/incus/info.go:201
 #, c-format
 msgid "Address: %s"
-msgstr ""
+msgstr "Adres: %s"
 
 #: cmd/incus/storage_bucket.go:163
 #, c-format
 msgid "Admin access key: %s"
-msgstr ""
+msgstr "Beheer (Admin) toegangssleutel: %s"
 
 #: cmd/incus/storage_bucket.go:164
 #, c-format
 msgid "Admin secret key: %s"
-msgstr ""
+msgstr "Beheer (Admin) geheime toegangssleutel (secret key): %s"
 
 #: cmd/incus/alias.go:86 cmd/incus/alias.go:199
 #, c-format
 msgid "Alias %s already exists"
-msgstr ""
+msgstr "Alias %s bestaat al"
 
 #: cmd/incus/alias.go:193 cmd/incus/alias.go:248
 #, c-format
 msgid "Alias %s doesn't exist"
-msgstr ""
+msgstr "Alias %s bestaat niet"
 
 #: cmd/incus/image_alias.go:84 cmd/incus/image_alias.go:131
 #: cmd/incus/image_alias.go:279
 msgid "Alias name missing"
-msgstr ""
+msgstr "Alias naam (name) mist"
 
 #: cmd/incus/image.go:992
 #, c-format
 msgid "Alias: %s"
-msgstr ""
+msgstr "Alias: %s"
 
 #: cmd/incus/publish.go:242
 #, c-format
 msgid "Aliases already exists: %s"
-msgstr ""
+msgstr "Aliassen bestaan al: %s"
 
 #: cmd/incus/image.go:976
 msgid "Aliases:"
-msgstr ""
+msgstr "Aliassen:"
 
 #: cmd/incus/admin_init_interactive.go:222
 msgid "All existing data is lost when joining a cluster, continue?"
 msgstr ""
+"Alle huidige gegevens gaan verloren bij het lid worden (joining) van een "
+"cluster, doorgaan?"
 
 #: cmd/incus/storage_volume.go:1388 cmd/incus/storage_volume.go:2240
 msgid "All projects"
-msgstr ""
+msgstr "Alle projecten"
 
 #: cmd/incus/remote.go:187
 msgid "All server addresses are unavailable"
-msgstr ""
+msgstr "Alle server adressen zijn onbeschikbaar"
 
 #: cmd/incus/config_trust.go:180
 msgid "Alternative certificate name"
-msgstr ""
+msgstr "Alternatieve certificaat naam"
 
 #: cmd/incus/image.go:947 cmd/incus/info.go:476
 #, c-format
 msgid "Architecture: %s"
-msgstr ""
+msgstr "Architectuur: %s"
 
 #: cmd/incus/info.go:127
 #, c-format
 msgid "Architecture: %v"
-msgstr ""
+msgstr "Architectuur: %v"
 
 #: cmd/incus/admin_init_interactive.go:158
 msgid "Are you joining an existing cluster?"
-msgstr ""
+msgstr "Wilt u lid worden (joining) van een bestaand cluster?"
 
 #: cmd/incus/cluster.go:1208
 #, c-format
 msgid "Are you sure you want to %s cluster member %q? (yes/no) [default=no]: "
-msgstr ""
+msgstr "Weet je zeker dat je %s wilt clusteren met %q ? (yes/no) "
 
 #: cmd/incus/console.go:378
 msgid "As neither could be found, the raw SPICE socket can be found at:"
 msgstr ""
+"Beide konden niet worden gevonden, de directe SPICE plug (raw SPICE socket) "
+"kan hier gevonden worden:"
 
 #: cmd/incus/create.go:357 cmd/incus/rebuild.go:131
 msgid "Asked for a VM but image is of type container"
 msgstr ""
+"Gevraagd naar een virtueel machine (VM), maar het bestand (image) is van het "
+"type: container"
 
 #: cmd/incus/cluster_group.go:83 cmd/incus/cluster_group.go:84
 msgid "Assign sets of groups to cluster members"
-msgstr ""
+msgstr "Wijs collecties van groepen toe aan clusterleden (cluster members)"
 
 #: cmd/incus/profile.go:166 cmd/incus/profile.go:167
 msgid "Assign sets of profiles to instances"
 msgstr ""
+"Wijs collecties van profielen (set of profiles) toe aan instanties "
+"(instances)"
 
 #: cmd/incus/network.go:134
 msgid "Attach network interfaces to instances"
-msgstr ""
+msgstr "Toekennen van netwerk interfaces aan instanties (instances)"
 
 #: cmd/incus/network.go:231 cmd/incus/network.go:232
 msgid "Attach network interfaces to profiles"
-msgstr ""
+msgstr "Toekennen van netwerk (network) interfaces aan profielen (profiles)"
 
 #: cmd/incus/network.go:135
 msgid "Attach new network interfaces to instances"
-msgstr ""
+msgstr "Toekennen van nieuwe netwerk interfaces aan instanties (instances)"
 
 #: cmd/incus/storage_volume.go:161 cmd/incus/storage_volume.go:162
 msgid "Attach new storage volumes to instances"
@@ -1018,30 +1070,30 @@ msgstr ""
 
 #: cmd/incus/list.go:560 cmd/incus/list.go:561
 msgid "BASE IMAGE"
-msgstr ""
+msgstr "BASIS IMAGEBESTAND"
 
 #: cmd/incus/export.go:85
 #, c-format
 msgid "Backing up instance: %s"
-msgstr ""
+msgstr "Backup aan het maken van instantie (instance): %s"
 
 #: cmd/incus/storage_volume.go:2628
 #, c-format
 msgid "Backing up storage volume: %s"
-msgstr ""
+msgstr "Backup aan het maken van opslagvolume (storage volume): %s"
 
 #: cmd/incus/export.go:191 cmd/incus/storage_volume.go:2705
 msgid "Backup exported successfully!"
-msgstr ""
+msgstr "Backup is geëxporteerd met succes!"
 
 #: cmd/incus/info.go:644 cmd/incus/storage_volume.go:1319
 msgid "Backups:"
-msgstr ""
+msgstr "Backups:"
 
 #: cmd/incus/utils.go:99
 #, c-format
 msgid "Bad device override syntax, expecting <device>,<key>=<value>: %s"
-msgstr ""
+msgstr "Ongeldige device override syntax, verwacht: <device>,<key>=<value>: %s"
 
 #: cmd/incus/network.go:365 cmd/incus/network_acl.go:381
 #: cmd/incus/network_forward.go:283 cmd/incus/network_load_balancer.go:286
@@ -1049,119 +1101,121 @@ msgstr ""
 #: cmd/incus/network_zone.go:921 cmd/incus/storage_bucket.go:135
 #, c-format
 msgid "Bad key/value pair: %s"
-msgstr ""
+msgstr "Ongeldig sleutel/waarde paar: %s"
 
 #: cmd/incus/copy.go:138 cmd/incus/create.go:221 cmd/incus/move.go:358
 #: cmd/incus/project.go:129
 #, c-format
 msgid "Bad key=value pair: %q"
-msgstr ""
+msgstr "Ongeldig sleutel=waarde paar: %q"
 
 #: cmd/incus/publish.go:179 cmd/incus/storage.go:129
 #: cmd/incus/storage_volume.go:575
 #, c-format
 msgid "Bad key=value pair: %s"
-msgstr ""
+msgstr "Ongeldig sleutel=waarde paar: %s"
 
 #: cmd/incus/image.go:758
 #, c-format
 msgid "Bad property: %s"
-msgstr ""
+msgstr "Ongeldig eigenschap: %s"
 
 #: cmd/incus/network.go:951
 msgid "Bond:"
-msgstr ""
+msgstr "Samenvoeging (Bond):"
 
 #: cmd/incus/action.go:169 cmd/incus/action.go:348
 msgid "Both --all and instance name given"
-msgstr ""
+msgstr "Beide --all en instantie naam (instance name) zijn gegeven"
 
 #: cmd/incus/info.go:128
 #, c-format
 msgid "Brand: %v"
-msgstr ""
+msgstr "Merk (Brand): %v"
 
 #: cmd/incus/network.go:964
 msgid "Bridge:"
-msgstr ""
+msgstr "Brug (Bridge):"
 
 #: cmd/incus/info.go:567 cmd/incus/network.go:943
 msgid "Bytes received"
-msgstr ""
+msgstr "Bytes ontvangen (received)"
 
 #: cmd/incus/info.go:568 cmd/incus/network.go:944
 msgid "Bytes sent"
-msgstr ""
+msgstr "Bytes verzonden"
 
 #: cmd/incus/operation.go:175
 msgid "CANCELABLE"
-msgstr ""
+msgstr "ONDERBREEKBAAR"
 
 #: cmd/incus/config_trust.go:434
 msgid "COMMON NAME"
-msgstr ""
+msgstr "GEWONE NAAM"
 
 #: cmd/incus/storage_volume.go:1495
 msgid "CONTENT-TYPE"
-msgstr ""
+msgstr "INHOUDSTYPE"
 
 #: cmd/incus/warning.go:210
 msgid "COUNT"
-msgstr ""
+msgstr "SOM"
 
 #: cmd/incus/info.go:354
 #, c-format
 msgid "CPU (%s):"
-msgstr ""
+msgstr "CPU (%s):"
 
 #: cmd/incus/list.go:572
 msgid "CPU USAGE"
-msgstr ""
+msgstr "CPU GEBRUIK"
 
 #: cmd/incus/info.go:517
 msgid "CPU usage (in seconds)"
-msgstr ""
+msgstr "CPU gebruik (in seconde)"
 
 #: cmd/incus/info.go:521
 msgid "CPU usage:"
-msgstr ""
+msgstr "CPU gebruik:"
 
 #: cmd/incus/info.go:357
 #, c-format
 msgid "CPUs (%s):"
-msgstr ""
+msgstr "CPU's (%s):"
 
 #: cmd/incus/operation.go:176
 msgid "CREATED"
-msgstr ""
+msgstr "GECREËERD"
 
 #: cmd/incus/list.go:556
 msgid "CREATED AT"
-msgstr ""
+msgstr "GECREËERD OM"
 
 #: cmd/incus/info.go:130
 #, c-format
 msgid "CUDA Version: %v"
-msgstr ""
+msgstr "CUDA Versie: %v"
 
 #: cmd/incus/image.go:985
 #, c-format
 msgid "Cached: %s"
-msgstr ""
+msgstr "Cached: %s"
 
 #: cmd/incus/info.go:307
 msgid "Caches:"
-msgstr ""
+msgstr "Caches:"
 
 #: cmd/incus/admin_init_interactive.go:143
 #: cmd/incus/admin_init_interactive.go:812
 #, c-format
 msgid "Can't bind address %q: %w"
-msgstr ""
+msgstr "Kan niet binden (bind) aan adres (address) %q: %w"
 
 #: cmd/incus/move.go:116
 msgid "Can't override configuration or profiles in local rename"
 msgstr ""
+"Niet mogelijk om geforceerd (override) de configuratie of de profielen in "
+"een lokaal (local) herbenaming (rename) uit te voeren"
 
 #: cmd/incus/image.go:210
 msgid "Can't provide a name for the target image"
