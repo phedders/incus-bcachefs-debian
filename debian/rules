@@ -37,7 +37,10 @@ override_dh_auto_test:
 	CGO_LDFLAGS_ALLOW="-Wl,-z,now" dh_auto_test
 
 override_dh_auto_install:
-	dh_auto_install -- --no-source
+	DH_GOLANG_EXCLUDES="" dh_auto_install
+
+	# Don't package python script
+	find ./debian -name import-busybox -delete
 
 	# Need to rename various config files here, as dh_install cannot rename files
 	install -Dpm 0644 debian/incus.dnsmasq debian/tmp/etc/dnsmasq.d-available/incus
