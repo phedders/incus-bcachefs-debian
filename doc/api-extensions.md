@@ -1901,6 +1901,10 @@ client authentication.
 
 Adds ability to copy image to a project different from the source.
 
+## `images_all_projects`
+
+This adds support for listing images across all projects through the `all-projects` parameter on the `GET /1.0/images`API.
+
 ## `cluster_migration_inconsistent_copy`
 
 Adds `allow_inconsistent` field to `POST /1.0/instances/<name>`. Set to `true` to allow inconsistent copying between cluster
@@ -2334,3 +2338,40 @@ It supports the value `stop`, `stateful-stop` and `force-stop`.
 ## `agent_config_drive`
 
 This introduces a new `agent:config` disk `source` which can be used to expose an ISO to the VM guest containing the agent and its configuration.
+
+## `network_state_ovn_lr`
+
+Adds a new `LogicalRouter` field to the `NetworkStateOVN` struct which is part of the `GET /1.0/networks/NAME/state` API.
+
+This is used to get the OVN logical router name.
+
+## `image_template_permissions`
+
+This adds `uid`, `gid` and `mode` fields to the image metadata template entries.
+
+## `storage_bucket_backup`
+
+Add storage bucket backup support.
+
+This includes the following new endpoints (see [RESTful API](rest-api.md) for details):
+
+* `GET /1.0/storage-pools/<pool>/buckets/<bucket>/backups`
+* `POST /1.0/storage-pools/<pool>/buckets/<bucket>/backups`
+
+* `GET /1.0/storage-pools/<pool>/buckets/<bucket>/backups/<name>`
+* `POST /1.0/storage-pools/<pool>/buckets/<bucket>/backups/<name>`
+* `DELETE /1.0/storage-pools/<pool>/buckets/<bucket>/backups/<name>`
+
+* `GET /1.0/storage-pools/<pool>/buckets/<bucket>/backups/<name>/export`
+
+## `storage_lvm_cluster`
+
+This adds a new `lvmcluster` storage driver which makes use of LVM shared VG through `lvmlockd`.
+
+With this, it's possible to have a single shared LVM pool across multiple servers so long as they all see the same backing device(s).
+
+## `shared_custom_block_volumes`
+
+This adds a new configuration key `security.shared` to custom block volumes.
+If unset or `false`, the custom block volume cannot be attached to multiple instances.
+This feature was added to prevent data loss which can happen when custom block volumes are attached to multiple instances at once.

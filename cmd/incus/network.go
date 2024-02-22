@@ -331,7 +331,7 @@ incus network create bar network=baz --type ovn
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 
-		return c.global.cmpRemotes()
+		return c.global.cmpRemotes(false)
 	}
 
 	return cmd
@@ -983,6 +983,9 @@ func (c *cmdNetworkInfo) Run(cmd *cobra.Command, args []string) error {
 		fmt.Println("")
 		fmt.Println(i18n.G("OVN:"))
 		fmt.Printf("  %s: %s\n", i18n.G("Chassis"), state.OVN.Chassis)
+		if client.HasExtension("network_state_ovn_lr") {
+			fmt.Printf("  %s: %s\n", i18n.G("Logical router"), state.OVN.LogicalRouter)
+		}
 	}
 
 	return nil
@@ -1012,7 +1015,7 @@ func (c *cmdNetworkList) Command() *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 
-		return c.global.cmpRemotes()
+		return c.global.cmpRemotes(false)
 	}
 
 	return cmd
