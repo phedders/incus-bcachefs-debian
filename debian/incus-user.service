@@ -6,7 +6,7 @@ Documentation=man:incus-user(1)
 
 [Service]
 EnvironmentFile=-/etc/environment
-Environment=PATH=/usr/libexec/incus:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=/etc/default/incus
 ExecStart=/usr/libexec/incus/incus-user --group incus
 Restart=on-failure
 

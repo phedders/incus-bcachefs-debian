@@ -1,10 +1,12 @@
 incus (0.6-2) UNRELEASED; urgency=medium
 
+  * Fix incus-agent injection if $PATH is set in /etc/environment
+    (Closes: #1065174)
   * d/control:
     - Suggest bash-completion in incus-client
     - Set minimum version of golang to aid backporting
 
- -- Mathias Gibbens <gibmat@debian.org>  Fri, 01 Mar 2024 19:45:35 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Mon, 04 Mar 2024 22:33:33 +0000
 
 incus (0.6-1) unstable; urgency=medium
 

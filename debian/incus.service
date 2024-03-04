@@ -6,7 +6,7 @@ Documentation=man:incusd(1)
 
 [Service]
 EnvironmentFile=-/etc/environment
-Environment=PATH=/usr/libexec/incus:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=/etc/default/incus
 ExecStartPre=/usr/libexec/incus/incus-apparmor-load
 ExecStartPre=/bin/mkdir -p /var/log/incus/
 ExecStartPre=/bin/chown -R root:incus-admin /var/log/incus/
