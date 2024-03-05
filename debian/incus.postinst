@@ -78,7 +78,7 @@ if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-decon
 fi
 
 # Print the install message
-if [ "$1" = "configure" ]; then
+if [ "$1" = "configure" ] && [ -z "$2" ]; then
     echo ""
     echo "Incus has been installed. You must run \`sudo incus admin init\` to"
     echo "perform the initial configuration of Incus."
