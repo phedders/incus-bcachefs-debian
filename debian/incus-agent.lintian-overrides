@@ -1,6 +1,9 @@
 # Ignore error about statically-linked incus-agent binary; see README.source for details
 incus-agent: statically-linked-binary
 
+# The service file depends on activation via udev rule
+incus-agent: systemd-service-file-missing-install-key
+
 # Flagged spelling errors come from other golang packages
 incus-agent: spelling-error-in-binary
 
