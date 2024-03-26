@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,8 +14,6 @@ import (
 	httphelper "github.com/zitadel/oidc/v2/pkg/http"
 	"github.com/zitadel/oidc/v2/pkg/oidc"
 	"github.com/zitadel/oidc/v2/pkg/op"
-
-	"github.com/lxc/incus/shared/util"
 )
 
 // Verifier holds all information needed to verify an access token offline.
@@ -24,6 +23,7 @@ type Verifier struct {
 	clientID  string
 	issuer    string
 	audience  string
+	claim     string
 	cookieKey []byte
 }
 
@@ -128,6 +128,16 @@ func (o *Verifier) Auth(ctx context.Context, w http.ResponseWriter, r *http.Requ
 
 			http.SetCookie(w, &refreshCookie)
 		}
+	}
+
+	if o.claim != "" {
+		claim := claims.Claims[o.claim]
+		username, ok := claim.(string)
+		if claim == nil || !ok || username == "" {
+			return "", fmt.Errorf("OIDC user is missing required claim %q", o.claim)
+		}
+
+		return username, nil
 	}
 
 	user, ok := claims.Claims["email"]
@@ -235,7 +245,7 @@ func (o *Verifier) VerifyAccessToken(ctx context.Context, token string) (*oidc.A
 
 	// Check that the token includes the configured audience.
 	audience := claims.GetAudience()
-	if o.audience != "" && !util.ValueInSlice(o.audience, audience) {
+	if o.audience != "" && !slices.Contains(audience, o.audience) {
 		return nil, fmt.Errorf("Provided OIDC token doesn't allow the configured audience")
 	}
 
@@ -296,13 +306,13 @@ func getAccessTokenVerifier(issuer string) (op.AccessTokenVerifier, error) {
 }
 
 // NewVerifier returns a Verifier.
-func NewVerifier(issuer string, clientid string, audience string) (*Verifier, error) {
+func NewVerifier(issuer string, clientid string, audience string, claim string) (*Verifier, error) {
 	cookieKey, err := uuid.New().MarshalBinary()
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create UUID: %w", err)
 	}
 
-	verifier := &Verifier{issuer: issuer, clientID: clientid, audience: audience, cookieKey: cookieKey}
+	verifier := &Verifier{issuer: issuer, clientID: clientid, audience: audience, cookieKey: cookieKey, claim: claim}
 	verifier.accessTokenVerifier, _ = getAccessTokenVerifier(issuer)
 
 	return verifier, nil

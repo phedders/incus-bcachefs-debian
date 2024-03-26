@@ -37,6 +37,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -180,6 +181,11 @@ func deviceNetlinkListener() (chan []string, chan device.USBEvent, chan device.U
 					continue
 				}
 
+				serial, ok := props["SERIAL"]
+				if !ok {
+					continue
+				}
+
 				major, ok := props["MAJOR"]
 				if !ok {
 					continue
@@ -217,6 +223,7 @@ func deviceNetlinkListener() (chan []string, chan device.USBEvent, chan device.U
 					 */
 					zeroPad(parts[0], 4),
 					zeroPad(parts[1], 4),
+					serial,
 					major,
 					minor,
 					busnum,
@@ -328,7 +335,7 @@ func fillFixedInstances(fixedInstances map[int64][]instance.Instance, inst insta
 	// If the `targetCpuPool` has been manually specified (explicit CPU IDs/ranges specified with `limits.cpu`)
 	if len(targetCpuPool) == targetCpuNum && !loadBalancing {
 		for _, nr := range targetCpuPool {
-			if !util.ValueInSlice(nr, effectiveCpus) {
+			if !slices.Contains(effectiveCpus, nr) {
 				continue
 			}
 
@@ -446,7 +453,7 @@ func deviceTaskBalance(s *state.State) {
 	isolatedCpusInt := resources.GetCPUIsolated()
 	effectiveCpusSlice := []string{}
 	for _, id := range effectiveCpusInt {
-		if util.ValueInSlice(id, isolatedCpusInt) {
+		if slices.Contains(isolatedCpusInt, id) {
 			continue
 		}
 
@@ -479,6 +486,11 @@ func deviceTaskBalance(s *state.State) {
 	for _, cpu := range cpusTopology.Sockets {
 		for _, core := range cpu.Cores {
 			for _, thread := range core.Threads {
+				// Skip any isolated CPU thread.
+				if slices.Contains(isolatedCpusInt, thread.ID) {
+					continue
+				}
+
 				numaNodeToCPU[int64(thread.NUMANode)] = append(numaNodeToCPU[int64(thread.NUMANode)], thread.ID)
 			}
 		}
@@ -487,24 +499,39 @@ func deviceTaskBalance(s *state.State) {
 	fixedInstances := map[int64][]instance.Instance{}
 	balancedInstances := map[instance.Instance]int{}
 	for _, c := range instances {
+		var numaCpus []int64
+		var numaCpusStr []string
+
 		conf := c.ExpandedConfig()
 		cpuNodes := conf["limits.cpu.nodes"]
-		var numaCpus []int64
 		if cpuNodes != "" {
+			if cpuNodes == "balanced" {
+				cpuNodes = conf["volatile.cpu.nodes"]
+			}
+
 			numaNodeSet, err := resources.ParseNumaNodeSet(cpuNodes)
 			if err != nil {
 				logger.Error("Error parsing numa node set", logger.Ctx{"numaNodes": cpuNodes, "err": err})
-				return
+				continue
 			}
 
 			for _, numaNode := range numaNodeSet {
 				numaCpus = append(numaCpus, numaNodeToCPU[numaNode]...)
 			}
+
+			for _, numaCPU := range numaCpus {
+				numaCpusStr = append(numaCpusStr, fmt.Sprintf("%d", numaCPU))
+			}
 		}
 
 		cpulimit, ok := conf["limits.cpu"]
 		if !ok || cpulimit == "" {
-			cpulimit = effectiveCpus
+			// If restricted to specific NUMA node(s), only use their CPU threads.
+			if cpuNodes != "" {
+				cpulimit = strings.Join(numaCpusStr, ",")
+			} else {
+				cpulimit = effectiveCpus
+			}
 		}
 
 		// Check that the container is running.
@@ -532,7 +559,7 @@ func deviceTaskBalance(s *state.State) {
 				return
 			}
 
-			if len(numaCpus) > 0 {
+			if conf["limits.cpu"] != "" && len(numaCpus) > 0 {
 				logger.Warnf("The pinned CPUs: %v, override the NUMA configuration with the CPUs: %v", containerCpus, numaCpus)
 			}
 

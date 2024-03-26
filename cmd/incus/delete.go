@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -35,6 +36,10 @@ func (c *cmdDelete) Command() *cobra.Command {
 	cmd.Flags().BoolVarP(&c.flagForce, "force", "f", false, i18n.G("Force the removal of running instances"))
 	cmd.Flags().BoolVarP(&c.flagInteractive, "interactive", "i", false, i18n.G("Require user confirmation"))
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return c.global.cmpInstances(toComplete)
+	}
+
 	return cmd
 }
 
@@ -44,7 +49,7 @@ func (c *cmdDelete) promptDelete(name string) error {
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSuffix(input, "\n")
 
-	if !util.ValueInSlice(strings.ToLower(input), []string{i18n.G("yes")}) {
+	if !slices.Contains([]string{i18n.G("yes")}, strings.ToLower(input)) {
 		return fmt.Errorf(i18n.G("User aborted delete operation"))
 	}
 

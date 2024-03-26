@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/lxc/incus/internal/i18n"
 	"github.com/lxc/incus/shared/api"
 	"github.com/lxc/incus/shared/termios"
-	"github.com/lxc/incus/shared/util"
 )
 
 type cmdClusterGroup struct {
@@ -92,6 +92,18 @@ incus cluster group assign foo default
 
 	cmd.RunE = c.Run
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpClusterMembers(toComplete)
+		}
+
+		if len(args) == 1 {
+			return c.global.cmpClusterGroupNames(args[0])
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
 	return cmd
 }
 
@@ -159,6 +171,14 @@ func (c *cmdClusterGroupCreate) Command() *cobra.Command {
 
 	cmd.RunE = c.Run
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpRemotes(false)
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
 	return cmd
 }
 
@@ -216,6 +236,14 @@ func (c *cmdClusterGroupDelete) Command() *cobra.Command {
 
 	cmd.RunE = c.Run
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpClusterGroups(toComplete)
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
 	return cmd
 }
 
@@ -267,6 +295,14 @@ func (c *cmdClusterGroupEdit) Command() *cobra.Command {
 		`Edit a cluster group`))
 
 	cmd.RunE = c.Run
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpClusterGroups(toComplete)
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 
 	return cmd
 }
@@ -385,6 +421,14 @@ func (c *cmdClusterGroupList) Command() *cobra.Command {
 
 	cmd.RunE = c.Run
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpRemotes(false)
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
 	return cmd
 }
 
@@ -458,6 +502,18 @@ func (c *cmdClusterGroupRemove) Command() *cobra.Command {
 
 	cmd.RunE = c.Run
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpClusterMembers(toComplete)
+		}
+
+		if len(args) == 1 {
+			return c.global.cmpClusterGroupNames(args[0])
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
 	return cmd
 }
 
@@ -487,7 +543,7 @@ func (c *cmdClusterGroupRemove) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if !util.ValueInSlice(args[1], member.Groups) {
+	if !slices.Contains(member.Groups, args[1]) {
 		return fmt.Errorf(i18n.G("Cluster group %s isn't currently applied to %s"), args[1], resource.name)
 	}
 
@@ -530,6 +586,14 @@ func (c *cmdClusterGroupRename) Command() *cobra.Command {
 		`Rename a cluster group`))
 
 	cmd.RunE = c.Run
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpClusterGroups(toComplete)
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 
 	return cmd
 }
@@ -578,6 +642,14 @@ func (c *cmdClusterGroupShow) Command() *cobra.Command {
 		`Show cluster group configurations`))
 
 	cmd.RunE = c.Run
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpClusterGroups(toComplete)
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 
 	return cmd
 }
@@ -633,6 +705,18 @@ func (c *cmdClusterGroupAdd) Command() *cobra.Command {
 
 	cmd.RunE = c.Run
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpClusterMembers(toComplete)
+		}
+
+		if len(args) == 1 {
+			return c.global.cmpClusterGroupNames(args[0])
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
 	return cmd
 }
 
@@ -661,7 +745,7 @@ func (c *cmdClusterGroupAdd) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if util.ValueInSlice(args[1], member.Groups) {
+	if slices.Contains(member.Groups, args[1]) {
 		return fmt.Errorf(i18n.G("Cluster member %s is already in group %s"), resource.name, args[1])
 	}
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -15,7 +16,6 @@ import (
 	"github.com/lxc/incus/shared/api"
 	"github.com/lxc/incus/shared/termios"
 	"github.com/lxc/incus/shared/units"
-	"github.com/lxc/incus/shared/util"
 )
 
 type cmdNetwork struct {
@@ -103,6 +103,10 @@ func (c *cmdNetwork) Command() *cobra.Command {
 	// Forward
 	networkForwardCmd := cmdNetworkForward{global: c.global}
 	cmd.AddCommand(networkForwardCmd.Command())
+
+	// Integration
+	networkIntegrationCmd := cmdNetworkIntegration{global: c.global}
+	cmd.AddCommand(networkIntegrationCmd.Command())
 
 	// Load Balancer
 	networkLoadBalancerCmd := cmdNetworkLoadBalancer{global: c.global}
@@ -240,7 +244,7 @@ func (c *cmdNetworkAttachProfile) Command() *cobra.Command {
 		}
 
 		if len(args) == 1 {
-			return c.global.cmpProfiles(args[0])
+			return c.global.cmpProfiles(args[0], false)
 		}
 
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -1053,7 +1057,7 @@ func (c *cmdNetworkList) Run(cmd *cobra.Command, args []string) error {
 
 	data := [][]string{}
 	for _, network := range networks {
-		if util.ValueInSlice(network.Type, []string{"loopback", "unknown"}) {
+		if slices.Contains([]string{"loopback", "unknown"}, network.Type) {
 			continue
 		}
 

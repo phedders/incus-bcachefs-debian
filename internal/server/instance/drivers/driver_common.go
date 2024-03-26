@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +30,7 @@ import (
 	"github.com/lxc/incus/internal/server/locking"
 	"github.com/lxc/incus/internal/server/operations"
 	"github.com/lxc/incus/internal/server/project"
+	"github.com/lxc/incus/internal/server/resources"
 	"github.com/lxc/incus/internal/server/state"
 	storagePools "github.com/lxc/incus/internal/server/storage"
 	internalUtil "github.com/lxc/incus/internal/util"
@@ -45,6 +48,9 @@ var ErrExecCommandNotExecutable = api.StatusErrorf(http.StatusBadRequest, "Comma
 
 // ErrInstanceIsStopped indicates that the instance is stopped.
 var ErrInstanceIsStopped error = api.StatusErrorf(http.StatusBadRequest, "The instance is already stopped")
+
+// muNUMA is used to serialize NUMA node selection.
+var muNUMA sync.Mutex
 
 // deviceManager is an interface that allows managing device lifecycle.
 type deviceManager interface {
@@ -822,7 +828,7 @@ func (d *common) getStartupSnapNameAndExpiry(inst instance.Instance) (string, *t
 	}
 
 	triggers := strings.Split(schedule, ", ")
-	if !util.ValueInSlice("@startup", triggers) {
+	if !slices.Contains(triggers, "@startup") {
 		return "", nil, nil
 	}
 
@@ -855,7 +861,7 @@ func (d *common) validateStartup(stateful bool, statusCode api.StatusCode) error
 	}
 
 	// Validate architecture.
-	if !util.ValueInSlice(d.architecture, d.state.OS.Architectures) {
+	if !slices.Contains(d.state.OS.Architectures, d.architecture) {
 		return fmt.Errorf("Requested architecture isn't supported by this host")
 	}
 
@@ -934,10 +940,8 @@ func (d *common) canMigrate(inst instance.Instance) string {
 	}
 
 	// Look at attached devices.
-	volatileGet := func() map[string]string { return map[string]string{} }
-	volatileSet := func(_ map[string]string) error { return nil }
-	for deviceName, rawConfig := range d.ExpandedDevices() {
-		dev, err := device.New(inst, d.state, deviceName, rawConfig, volatileGet, volatileSet)
+	for _, entry := range d.ExpandedDevices().Sorted() {
+		dev, err := d.deviceLoad(inst, entry.Name, entry.Config)
 		if err != nil {
 			logger.Warn("Instance will not be migrated due to a device error", logger.Ctx{"project": inst.Project().Name, "instance": inst.Name(), "device": dev.Name(), "err": err})
 			return "stop"
@@ -1049,7 +1053,7 @@ func (d *common) needsNewInstanceID(changedConfig []string, oldExpandedDevices d
 		"user.user-data",
 		"user.network-config",
 	} {
-		if util.ValueInSlice(key, changedConfig) {
+		if slices.Contains(changedConfig, key) {
 			return true
 		}
 	}
@@ -1084,13 +1088,13 @@ func (d *common) needsNewInstanceID(changedConfig []string, oldExpandedDevices d
 	newNames := getNICNames(d.expandedDevices)
 
 	for _, entry := range oldNames {
-		if !util.ValueInSlice(entry, newNames) {
+		if !slices.Contains(newNames, entry) {
 			return true
 		}
 	}
 
 	for _, entry := range newNames {
-		if !util.ValueInSlice(entry, oldNames) {
+		if !slices.Contains(oldNames, entry) {
 			return true
 		}
 	}
@@ -1137,7 +1141,7 @@ func (d *common) deviceLoad(inst instance.Instance, deviceName string, rawConfig
 	var err error
 
 	// Create copy of config and load some fields from volatile if device is nic or infiniband.
-	if util.ValueInSlice(rawConfig["type"], []string{"nic", "infiniband"}) {
+	if slices.Contains([]string{"nic", "infiniband"}, rawConfig["type"]) {
 		configCopy, err = inst.FillNetworkDevice(deviceName, rawConfig)
 		if err != nil {
 			return nil, err
@@ -1440,4 +1444,80 @@ func (d *common) deleteSnapshots(deleteFunc func(snapInst instance.Instance) err
 	}
 
 	return nil
+}
+
+// setNUMANode looks at all other instances and picks the least used NUMA node.
+func (d *common) setNUMANode() error {
+	muNUMA.Lock()
+	defer muNUMA.Unlock()
+
+	// Get the CPU information.
+	cpu, err := resources.GetCPU()
+	if err != nil {
+		return err
+	}
+
+	// Get a list of NUMA nodes.
+	nodes := []uint64{}
+	for _, cpuSocket := range cpu.Sockets {
+		for _, cpuCore := range cpuSocket.Cores {
+			for _, cpuThread := range cpuCore.Threads {
+				if !slices.Contains(nodes, cpuThread.NUMANode) {
+					nodes = append(nodes, cpuThread.NUMANode)
+				}
+			}
+		}
+	}
+
+	// Shortcut on single-node systems.
+	if len(nodes) == 1 {
+		return d.VolatileSet(map[string]string{"volatile.cpu.nodes": fmt.Sprintf("%d", nodes[0])})
+	}
+
+	// Get all local instances.
+	insts, err := instance.LoadNodeAll(d.state, instancetype.Any)
+	if err != nil {
+		return err
+	}
+
+	// Record current NUMA assignment (number of instance).
+	numaUsage := map[int64]int{}
+	for _, inst := range insts {
+		conf := inst.ExpandedConfig()
+
+		// Ignore ourselves.
+		if inst.ID() == d.id {
+			continue
+		}
+
+		// Ignore instances without any NUMA pinning.
+		if conf["limits.cpu.nodes"] == "" {
+			continue
+		}
+
+		// Parse the used NUMA nodes.
+		nodes := conf["limits.cpu.nodes"]
+		if nodes == "balanced" {
+			nodes = conf["volatile.cpu.nodes"]
+		}
+
+		numaNodeSet, err := resources.ParseNumaNodeSet(nodes)
+		if err != nil {
+			continue
+		}
+
+		for _, numaNode := range numaNodeSet {
+			numaUsage[numaNode]++
+		}
+	}
+
+	// Pick least used node.
+	var node uint64
+	for _, numaNode := range nodes {
+		if numaUsage[int64(numaNode)] < numaUsage[int64(node)] {
+			node = numaNode
+		}
+	}
+
+	return d.VolatileSet(map[string]string{"volatile.cpu.nodes": fmt.Sprintf("%d", node)})
 }

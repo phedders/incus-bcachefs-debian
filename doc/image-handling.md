@@ -4,7 +4,7 @@
 Incus uses an image-based workflow.
 Each instance is based on an image, which contains a basic operating system (for example, a Linux distribution) and some Incus-related information.
 
-Images are available from remote image stores (see {ref}`remote-image-servers` for an overview), but you can also create your own images, either based on an existing instances or a rootfs image.
+Images are available from remote image stores (see {ref}`image-servers` for an overview), but you can also create your own images, either based on an existing instances or a rootfs image.
 
 You can copy images from remote servers to your local image store, or copy local images to remote servers.
 You can also use a local image to create a remote instance.
@@ -56,6 +56,8 @@ The following requirements are supported:
 
 Key                                         | Type      | Default      | Description
 :--                                         | :---      | :------      | :----------
+`requirements.cdrom_agent`                  | bool      | -            | If set to `true`, indicates that the VM requires an `agent:config` disk be added.
 `requirements.cgroup`                       | string    | -            | If set to `v1`, indicates that the image requires the host to run cgroup v1.
+`requirements.nesting`                      | bool      | -            | If set to `true`, indicates that the image cannot work without nesting enabled.
 `requirements.privileged`                   | bool      | -            | If set to `false`, indicates that the image cannot work as a privileged container.
 `requirements.secureboot`                   | bool      | -            | If set to `false`, indicates that the image cannot boot under secure boot.

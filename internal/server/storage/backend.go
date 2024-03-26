@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -3212,7 +3213,7 @@ func (b *backend) RestoreInstanceSnapshot(inst instance.Instance, src instance.I
 			// Go through all the snapshots.
 			for _, snap := range snaps {
 				_, snapName, _ := api.GetParentAndSnapshotName(snap.Name())
-				if !util.ValueInSlice(snapName, snapErr.Snapshots) {
+				if !slices.Contains(snapErr.Snapshots, snapName) {
 					continue
 				}
 
@@ -6338,7 +6339,7 @@ func (b *backend) CheckInstanceBackupFileSnapshots(backupConf *backupConfig.Conf
 
 	if len(backupConf.Snapshots) != len(driverSnapshots) {
 		if !deleteMissing {
-			return nil, fmt.Errorf("Snapshot count in backup config and storage device are different: %w", ErrBackupSnapshotsMismatch)
+			return nil, fmt.Errorf("Snapshot count in backup config (%d) and storage device (%d) are different: %w", len(backupConf.Snapshots), len(driverSnapshots), ErrBackupSnapshotsMismatch)
 		}
 	}
 
@@ -6585,7 +6586,7 @@ func (b *backend) detectUnknownInstanceVolume(vol *drivers.Volume, projectVols m
 		fullSnapshotName := drivers.GetSnapshotVolumeName(instName, snapshot.Name)
 
 		// Check if an entry for the instance already exists in the DB.
-		if util.ValueInSlice(fullSnapshotName, instSnapshots) {
+		if slices.Contains(instSnapshots, fullSnapshotName) {
 			return fmt.Errorf("Instance %q snapshot %q in project %q already has instance DB record", instName, snapshot.Name, projectName)
 		}
 
@@ -7105,6 +7106,16 @@ func (b *backend) CreateCustomVolumeFromBackup(srcBackup backup.Info, srcData io
 	volStorageName := project.StorageVolume(srcBackup.Project, srcBackup.Name)
 
 	vol := b.GetVolume(drivers.VolumeTypeCustom, drivers.ContentType(srcBackup.Config.Volume.ContentType), volStorageName, srcBackup.Config.Volume.Config)
+
+	// Check if the volume exists in database.
+	dbVol, err := VolumeDBGet(b, srcBackup.Project, srcBackup.Name, vol.Type())
+	if err != nil && !response.IsNotFoundError(err) {
+		return err
+	}
+
+	if dbVol != nil {
+		return fmt.Errorf("Volume %q already exists in pool %q", srcBackup.Name, b.name)
+	}
 
 	// Validate config and create database entry for new storage volume.
 	// Strip unsupported config keys (in case the export was made from a different type of storage pool).
