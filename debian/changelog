@@ -1,3 +1,13 @@
+incus (0.7-1) unstable; urgency=medium
+
+  * New upstream release
+    - Update Build-Depends and Depends
+    - Package incus-simplestreams in bin:incus-tools
+    - Don't build tls2jwt test binary
+  * Sync incus-agent scripts with upstream (See #1064213)
+
+ -- Mathias Gibbens <gibmat@debian.org>  Tue, 26 Mar 2024 23:03:26 +0000
+
 incus (0.6-2) unstable; urgency=medium
 
   * Fix incus-agent injection if $PATH is set in /etc/environment

@@ -16,6 +16,7 @@ Build-Depends: debhelper-compat (= 13),
                golang-github-flosch-pongo2.v4-dev,
                golang-github-fvbommel-sortorder-dev,
                golang-github-go-logr-logr-dev,
+               golang-github-golang-jwt-jwt-v5-dev,
                golang-github-golang-protobuf-1-5-dev,
                golang-github-google-gopacket-dev,
                golang-github-google-uuid-dev,
@@ -52,7 +53,7 @@ Build-Depends: debhelper-compat (= 13),
                golang-github-zitadel-oidc-dev,
                golang-gocapability-dev,
                golang-golang-x-crypto-dev,
-               golang-golang-x-oauth2-google-dev,
+               golang-golang-x-oauth2-dev,
                golang-golang-x-sync-dev,
                golang-golang-x-sys-dev,
                golang-golang-x-term-dev,
@@ -87,6 +88,7 @@ Depends: golang-github-armon-go-proxyproto-dev,
          golang-github-flosch-pongo2.v4-dev,
          golang-github-fvbommel-sortorder-dev,
          golang-github-go-logr-logr-dev,
+         golang-github-golang-jwt-jwt-v5-dev,
          golang-github-golang-protobuf-1-5-dev,
          golang-github-google-gopacket-dev,
          golang-github-google-uuid-dev,
@@ -123,7 +125,7 @@ Depends: golang-github-armon-go-proxyproto-dev,
          golang-github-zitadel-oidc-dev,
          golang-gocapability-dev,
          golang-golang-x-crypto-dev,
-         golang-golang-x-oauth2-google-dev,
+         golang-golang-x-oauth2-dev,
          golang-golang-x-sync-dev,
          golang-golang-x-sys-dev,
          golang-golang-x-term-dev,
@@ -209,6 +211,7 @@ Description: Powerful system container and virtual machine manager - extra tools
   - lxc-to-incus - A tool to migrate LXC containers to Incus
   - lxd-to-incus - A tool to migrate LXD containers to Incus
   - incus-benchmark - A benchmarking tool for Incus
+  - incus-simplestreams - Maintain an Incus-compatible simplestreams tree
 
 Package: incus-migrate
 Architecture: linux-any

@@ -6,7 +6,7 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
 # Don't build binaries we don't ship
 # NOTE -- incus-agent is listed here, as it is compiled as a statically-linked binary below
-export DH_GOLANG_EXCLUDES := deps dev_incus-client generate sysinfo test/mini-oidc incus-agent
+export DH_GOLANG_EXCLUDES := deps dev_incus-client generate sysinfo test/mini-oidc test/tls2jwt incus-agent
 
 # Include various test and other support files
 export DH_GOLANG_INSTALL_EXTRA := test/ shared/subprocess/testscript/ internal/server/instance/drivers/agent-loader/ internal/server/metadata/configuration.json
@@ -31,6 +31,7 @@ override_dh_auto_build:
 	TZ=UTC HOME="~" help2man _build/bin/incus-agent -n "Incus virtual machine guest agent" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/incus-agent.1
 	TZ=UTC HOME="~" help2man _build/bin/incus-benchmark -n "Incus benchmark" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/incus-benchmark.1
 	TZ=UTC HOME="~" help2man _build/bin/incus-migrate -n "Incus physical to instance migration tool" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/incus-migrate.1
+	TZ=UTC HOME="~" help2man _build/bin/incus-simplestreams -n "Maintain an Incus-compatible simplestreams tree" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/incus-simplestreams.1
 	TZ=UTC HOME="~" help2man _build/bin/incus-user -n "Incus user project daemon" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/incus-user.1
 
 override_dh_auto_test:
