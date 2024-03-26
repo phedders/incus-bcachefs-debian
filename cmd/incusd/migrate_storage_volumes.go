@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,7 +20,6 @@ import (
 	internalUtil "github.com/lxc/incus/internal/util"
 	"github.com/lxc/incus/shared/api"
 	"github.com/lxc/incus/shared/logger"
-	"github.com/lxc/incus/shared/util"
 )
 
 func newStorageMigrationSource(volumeOnly bool, pushTarget *api.StorageVolumePostTarget) (*migrationSourceWs, error) {
@@ -70,7 +70,7 @@ func newStorageMigrationSource(volumeOnly bool, pushTarget *api.StorageVolumePos
 func (s *migrationSourceWs) DoStorage(state *state.State, projectName string, poolName string, volName string, migrateOp *operations.Operation) error {
 	l := logger.AddContext(logger.Ctx{"project": projectName, "pool": poolName, "volume": volName, "push": s.pushOperationURL != ""})
 
-	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
+	ctx, cancel := context.WithTimeout(state.ShutdownCtx, time.Second*10)
 	defer cancel()
 
 	l.Info("Waiting for migration connections on source")
@@ -170,13 +170,13 @@ func (s *migrationSourceWs) DoStorage(state *state.State, projectName string, po
 		// Ensure that only the requested snapshots are included in the migration index header.
 		volSourceArgs.Info.Config.VolumeSnapshots = make([]*api.StorageVolumeSnapshot, 0, len(volSourceArgs.Snapshots))
 		for i := range allSnapshots {
-			if util.ValueInSlice(allSnapshots[i].Name, volSourceArgs.Snapshots) {
+			if slices.Contains(volSourceArgs.Snapshots, allSnapshots[i].Name) {
 				volSourceArgs.Info.Config.VolumeSnapshots = append(volSourceArgs.Info.Config.VolumeSnapshots, allSnapshots[i])
 			}
 		}
 	}
 
-	fsConn, err := s.conns[api.SecretNameFilesystem].WebsocketIO(context.TODO())
+	fsConn, err := s.conns[api.SecretNameFilesystem].WebsocketIO(state.ShutdownCtx)
 	if err != nil {
 		return err
 	}
@@ -243,7 +243,7 @@ func newStorageMigrationSink(args *migrationSinkArgs) (*migrationSink, error) {
 func (c *migrationSink) DoStorage(state *state.State, projectName string, poolName string, req *api.StorageVolumesPost, op *operations.Operation) error {
 	l := logger.AddContext(logger.Ctx{"project": projectName, "pool": poolName, "volume": req.Name, "push": c.push})
 
-	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
+	ctx, cancel := context.WithTimeout(state.ShutdownCtx, time.Second*10)
 	defer cancel()
 
 	l.Info("Waiting for migration connections on target")
@@ -425,7 +425,7 @@ func (c *migrationSink) DoStorage(state *state.State, projectName string, poolNa
 				Refresh:       c.refresh,
 			}
 
-			fsConn, err := c.conns[api.SecretNameFilesystem].WebsocketIO(context.TODO())
+			fsConn, err := c.conns[api.SecretNameFilesystem].WebsocketIO(state.ShutdownCtx)
 			if err != nil {
 				fsTransfer <- err
 				return

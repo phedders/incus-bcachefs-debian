@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -17,7 +18,6 @@ import (
 	"github.com/lxc/incus/internal/server/cluster/request"
 	"github.com/lxc/incus/internal/server/db"
 	dbCluster "github.com/lxc/incus/internal/server/db/cluster"
-	"github.com/lxc/incus/internal/server/network/ovn"
 	"github.com/lxc/incus/internal/server/state"
 	localUtil "github.com/lxc/incus/internal/server/util"
 	"github.com/lxc/incus/internal/version"
@@ -290,13 +290,13 @@ func (d *common) validateConfigMap(config map[string]string, rules map[string]fu
 // validateRule validates the rule supplied.
 func (d *common) validateRule(direction ruleDirection, rule api.NetworkACLRule) error {
 	// Validate Action field (required).
-	if !util.ValueInSlice(rule.Action, ValidActions) {
+	if !slices.Contains(ValidActions, rule.Action) {
 		return fmt.Errorf("Action must be one of: %s", strings.Join(ValidActions, ", "))
 	}
 
 	// Validate State field (required).
 	validStates := []string{"enabled", "disabled", "logged"}
-	if !util.ValueInSlice(rule.State, validStates) {
+	if !slices.Contains(validStates, rule.State) {
 		return fmt.Errorf("State must be one of: %s", strings.Join(validStates, ", "))
 	}
 
@@ -354,13 +354,13 @@ func (d *common) validateRule(direction ruleDirection, rule api.NetworkACLRule) 
 	// Validate Protocol field.
 	if rule.Protocol != "" {
 		validProtocols := []string{"icmp4", "icmp6", "tcp", "udp"}
-		if !util.ValueInSlice(rule.Protocol, validProtocols) {
+		if !slices.Contains(validProtocols, rule.Protocol) {
 			return fmt.Errorf("Protocol must be one of: %s", strings.Join(validProtocols, ", "))
 		}
 	}
 
 	// Validate protocol dependent fields.
-	if util.ValueInSlice(rule.Protocol, []string{"tcp", "udp"}) {
+	if slices.Contains([]string{"tcp", "udp"}, rule.Protocol) {
 		if rule.ICMPType != "" {
 			return fmt.Errorf("ICMP type cannot be used with non-ICMP protocol")
 		}
@@ -384,7 +384,7 @@ func (d *common) validateRule(direction ruleDirection, rule api.NetworkACLRule) 
 				return fmt.Errorf("Invalid Destination port: %w", err)
 			}
 		}
-	} else if util.ValueInSlice(rule.Protocol, []string{"icmp4", "icmp6"}) {
+	} else if slices.Contains([]string{"icmp4", "icmp6"}, rule.Protocol) {
 		if rule.SourcePort != "" {
 			return fmt.Errorf("Source port cannot be used with %q protocol", rule.Protocol)
 		}
@@ -581,6 +581,7 @@ func (d *common) validatePorts(ports []string) error {
 
 // Update applies the supplied config to the ACL.
 func (d *common) Update(config *api.NetworkACLPut, clientType request.ClientType) error {
+	// Validate the configuration.
 	err := d.validateConfig(config)
 	if err != nil {
 		return err
@@ -645,9 +646,9 @@ func (d *common) Update(config *api.NetworkACLPut, clientType request.ClientType
 	// If there are affected OVN networks, then apply the changes, but only if the request type is normal.
 	// This way we won't apply the same changes multiple times for each cluster member.
 	if len(aclOVNNets) > 0 && clientType == request.ClientTypeNormal {
-		ovnnb, err := ovn.NewNB(d.state)
-		if err != nil {
-			return fmt.Errorf("Failed to get OVN client: %w", err)
+		// Check that OVN is available.
+		if d.state.OVNNB == nil {
+			return fmt.Errorf("OVN isn't currently available")
 		}
 
 		var aclNameIDs map[string]int64
@@ -668,7 +669,7 @@ func (d *common) Update(config *api.NetworkACLPut, clientType request.ClientType
 		// apply those rules to each network affected by the ACL, so pass the full list of OVN networks
 		// affected by this ACL (either because the ACL is assigned directly or because it is assigned to
 		// an OVN NIC in an instance or profile).
-		cleanup, err := OVNEnsureACLs(d.state, d.logger, ovnnb, d.projectName, aclNameIDs, aclOVNNets, []string{d.info.Name}, true)
+		cleanup, err := OVNEnsureACLs(d.state, d.logger, d.state.OVNNB, d.projectName, aclNameIDs, aclOVNNets, []string{d.info.Name}, true)
 		if err != nil {
 			return fmt.Errorf("Failed ensuring ACL is configured in OVN: %w", err)
 		}
@@ -677,7 +678,7 @@ func (d *common) Update(config *api.NetworkACLPut, clientType request.ClientType
 
 		// Run unused port group cleanup in case any formerly referenced ACL in this ACL's rules means that
 		// an ACL port group is now considered unused.
-		err = OVNPortGroupDeleteIfUnused(d.state, d.logger, ovnnb, d.projectName, nil, "", d.info.Name)
+		err = OVNPortGroupDeleteIfUnused(d.state, d.logger, d.state.OVNNB, d.projectName, nil, "", d.info.Name)
 		if err != nil {
 			return fmt.Errorf("Failed removing unused OVN port groups: %w", err)
 		}

@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -112,6 +113,19 @@ func (c *cmdMigrateData) Render() string {
 }
 
 func (c *cmdMigrate) askServer() (incus.InstanceServer, string, error) {
+	// Detect local server.
+	local, err := c.connectLocal()
+	if err == nil {
+		useLocal, err := c.global.asker.AskBool("The local Incus server is the target [default=yes]: ", "yes")
+		if err != nil {
+			return nil, "", err
+		}
+
+		if useLocal {
+			return local, "", nil
+		}
+	}
+
 	// Server address
 	serverURL, err := c.global.asker.AskString("Please provide Incus server URL: ", "", nil)
 	if err != nil {
@@ -174,7 +188,7 @@ func (c *cmdMigrate) askServer() (incus.InstanceServer, string, error) {
 
 	i := 1
 
-	if util.ValueInSlice(api.AuthenticationMethodTLS, apiServer.AuthMethods) {
+	if slices.Contains(apiServer.AuthMethods, api.AuthenticationMethodTLS) {
 		fmt.Printf("%d) Use a certificate token\n", i)
 		availableAuthMethods = append(availableAuthMethods, authMethodTLSCertificateToken)
 		i++
@@ -185,7 +199,7 @@ func (c *cmdMigrate) askServer() (incus.InstanceServer, string, error) {
 		availableAuthMethods = append(availableAuthMethods, authMethodTLSTemporaryCertificate)
 	}
 
-	if len(apiServer.AuthMethods) > 1 || util.ValueInSlice(api.AuthenticationMethodTLS, apiServer.AuthMethods) {
+	if len(apiServer.AuthMethods) > 1 || slices.Contains(apiServer.AuthMethods, api.AuthenticationMethodTLS) {
 		authMethodInt, err := c.global.asker.AskInt("Please pick an authentication mechanism above: ", 1, int64(i), "", nil)
 		if err != nil {
 			return nil, "", err
@@ -300,7 +314,7 @@ func (c *cmdMigrate) RunInteractive(server incus.InstanceServer) (cmdMigrateData
 			return cmdMigrateData{}, err
 		}
 
-		if util.ValueInSlice(instanceName, instanceNames) {
+		if slices.Contains(instanceNames, instanceName) {
 			fmt.Printf("Instance %q already exists\n", instanceName)
 			continue
 		}
@@ -313,7 +327,7 @@ func (c *cmdMigrate) RunInteractive(server incus.InstanceServer) (cmdMigrateData
 
 	// Provide source path
 	if config.InstanceArgs.Type == api.InstanceTypeVM {
-		question = "Please provide the path to a disk, partition, or image file: "
+		question = "Please provide the path to a disk, partition, or raw image file: "
 	} else {
 		question = "Please provide the path to a root filesystem: "
 	}
@@ -337,13 +351,23 @@ func (c *cmdMigrate) RunInteractive(server incus.InstanceServer) (cmdMigrateData
 	if config.InstanceArgs.Type == api.InstanceTypeVM {
 		architectureName, _ := osarch.ArchitectureGetLocal()
 
-		if util.ValueInSlice(architectureName, []string{"x86_64", "aarch64"}) {
-			hasSecureBoot, err := c.global.asker.AskBool("Does the VM support UEFI Secure Boot? [default=no]: ", "no")
+		if slices.Contains([]string{"x86_64", "aarch64"}, architectureName) {
+			hasUEFI, err := c.global.asker.AskBool("Does the VM support UEFI booting? [default=yes]: ", "yes")
 			if err != nil {
 				return cmdMigrateData{}, err
 			}
 
-			if !hasSecureBoot {
+			if hasUEFI {
+				hasSecureBoot, err := c.global.asker.AskBool("Does the VM support UEFI Secure Boot? [default=yes]: ", "yes")
+				if err != nil {
+					return cmdMigrateData{}, err
+				}
+
+				if !hasSecureBoot {
+					config.InstanceArgs.Config["security.secureboot"] = "false"
+				}
+			} else {
+				config.InstanceArgs.Config["security.csm"] = "true"
 				config.InstanceArgs.Config["security.secureboot"] = "false"
 			}
 		}
@@ -598,7 +622,7 @@ func (c *cmdMigrate) askProfiles(server incus.InstanceServer, config *cmdMigrate
 		profiles := strings.Split(s, " ")
 
 		for _, profile := range profiles {
-			if !util.ValueInSlice(profile, profileNames) {
+			if !slices.Contains(profileNames, profile) {
 				return fmt.Errorf("Unknown profile %q", profile)
 			}
 		}

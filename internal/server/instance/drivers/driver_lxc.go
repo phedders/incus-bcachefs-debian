@@ -17,6 +17,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1658,7 +1659,7 @@ func (d *lxc) deviceDetachNIC(configCopy map[string]string, netIF []deviceConfig
 		}
 
 		// If interface doesn't exist inside container, cannot proceed.
-		if !util.ValueInSlice(configCopy["name"], ifaces) {
+		if !slices.Contains(ifaces, configCopy["name"]) {
 			return nil
 		}
 
@@ -1920,6 +1921,14 @@ func (d *lxc) startCommon() (string, []func() error, error) {
 
 	revert := revert.New()
 	defer revert.Fail()
+
+	// Assign a NUMA node if needed.
+	if d.expandedConfig["limits.cpu.nodes"] == "balanced" {
+		err := d.setNUMANode()
+		if err != nil {
+			return "", nil, err
+		}
+	}
 
 	// Check if idmap needs changing.
 	if !d.IsPrivileged() {
@@ -2224,7 +2233,7 @@ func (d *lxc) startCommon() (string, []func() error, error) {
 			}
 
 			for _, mount := range runConf.Mounts {
-				if util.ValueInSlice("propagation", mount.Opts) && !liblxc.RuntimeLiblxcVersionAtLeast(liblxc.Version(), 3, 0, 0) {
+				if slices.Contains(mount.Opts, "propagation") && !liblxc.RuntimeLiblxcVersionAtLeast(liblxc.Version(), 3, 0, 0) {
 					return "", nil, fmt.Errorf("Failed to setup device mount %q: %w", dev.Name(), fmt.Errorf("liblxc 3.0 is required for mount propagation configuration"))
 				}
 
@@ -2617,6 +2626,21 @@ func (d *lxc) onStart(_ map[string]string) error {
 	return nil
 }
 
+// validateStartup checks any constraints that would prevent start up from succeeding under normal circumstances.
+func (d *lxc) validateStartup(stateful bool, statusCode api.StatusCode) error {
+	err := d.common.validateStartup(stateful, statusCode)
+	if err != nil {
+		return err
+	}
+
+	// Ensure nesting is turned on for images that require nesting.
+	if util.IsTrue(d.localConfig["image.requirements.nesting"]) && util.IsFalseOrEmpty(d.expandedConfig["security.nesting"]) {
+		return fmt.Errorf("The image used by this instance requires nesting. Please set security.nesting=true on the instance")
+	}
+
+	return nil
+}
+
 // Stop functions.
 func (d *lxc) Stop(stateful bool) error {
 	d.logger.Debug("Stop started", logger.Ctx{"stateful": stateful})
@@ -2915,7 +2939,7 @@ func (d *lxc) onStopNS(args map[string]string) error {
 	netns := args["netns"]
 
 	// Validate target.
-	if !util.ValueInSlice(target, []string{"stop", "reboot"}) {
+	if !slices.Contains([]string{"stop", "reboot"}, target) {
 		d.logger.Error("Container sent invalid target to OnStopNS", logger.Ctx{"target": target})
 		return fmt.Errorf("Invalid stop target %q", target)
 	}
@@ -2938,7 +2962,7 @@ func (d *lxc) onStop(args map[string]string) error {
 	target := args["target"]
 
 	// Validate target
-	if !util.ValueInSlice(target, []string{"stop", "reboot"}) {
+	if !slices.Contains([]string{"stop", "reboot"}, target) {
 		d.logger.Error("Container sent invalid target to OnStop", logger.Ctx{"target": target})
 		return fmt.Errorf("Invalid stop target: %s", target)
 	}
@@ -4135,11 +4159,11 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 
 	checkedProfiles := []string{}
 	for _, profile := range args.Profiles {
-		if !util.ValueInSlice(profile.Name, profiles) {
+		if !slices.Contains(profiles, profile.Name) {
 			return fmt.Errorf("Requested profile '%s' doesn't exist", profile.Name)
 		}
 
-		if util.ValueInSlice(profile.Name, checkedProfiles) {
+		if slices.Contains(checkedProfiles, profile.Name) {
 			return fmt.Errorf("Duplicate profile found in request")
 		}
 
@@ -4242,7 +4266,7 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 	changedConfig := []string{}
 	for key := range oldExpandedConfig {
 		if oldExpandedConfig[key] != d.expandedConfig[key] {
-			if !util.ValueInSlice(key, changedConfig) {
+			if !slices.Contains(changedConfig, key) {
 				changedConfig = append(changedConfig, key)
 			}
 		}
@@ -4250,7 +4274,7 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 
 	for key := range d.expandedConfig {
 		if oldExpandedConfig[key] != d.expandedConfig[key] {
-			if !util.ValueInSlice(key, changedConfig) {
+			if !slices.Contains(changedConfig, key) {
 				changedConfig = append(changedConfig, key)
 			}
 		}
@@ -4312,7 +4336,7 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 		}
 
 		for _, k := range changedConfig {
-			if !util.ValueInSlice(k, protectedKeys) {
+			if !slices.Contains(protectedKeys, k) {
 				continue
 			}
 
@@ -4358,7 +4382,7 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 	}
 
 	// If raw.lxc changed, re-validate the config.
-	if util.ValueInSlice("raw.lxc", changedConfig) && d.expandedConfig["raw.lxc"] != "" {
+	if slices.Contains(changedConfig, "raw.lxc") && d.expandedConfig["raw.lxc"] != "" {
 		// Get a new liblxc instance.
 		cc, err := liblxc.NewContainer(d.name, d.state.OS.LxcPath)
 		if err != nil {
@@ -4377,14 +4401,14 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 	}
 
 	// If apparmor changed, re-validate the apparmor profile (even if not running).
-	if util.ValueInSlice("raw.apparmor", changedConfig) || util.ValueInSlice("security.nesting", changedConfig) {
+	if slices.Contains(changedConfig, "raw.apparmor") || slices.Contains(changedConfig, "security.nesting") {
 		err = apparmor.InstanceValidate(d.state.OS, d, nil)
 		if err != nil {
 			return fmt.Errorf("Parse AppArmor profile: %w", err)
 		}
 	}
 
-	if util.ValueInSlice("security.idmap.isolated", changedConfig) || util.ValueInSlice("security.idmap.base", changedConfig) || util.ValueInSlice("security.idmap.size", changedConfig) || util.ValueInSlice("raw.idmap", changedConfig) || util.ValueInSlice("security.privileged", changedConfig) {
+	if slices.Contains(changedConfig, "security.idmap.isolated") || slices.Contains(changedConfig, "security.idmap.base") || slices.Contains(changedConfig, "security.idmap.size") || slices.Contains(changedConfig, "raw.idmap") || slices.Contains(changedConfig, "security.privileged") {
 		var idmapSet *idmap.Set
 		base := int64(0)
 		if !d.IsPrivileged() {
@@ -5349,7 +5373,7 @@ func (d *lxc) MigrateSend(args instance.MigrateSendArgs) error {
 		// Ensure that only the requested snapshots are included in the migration index header.
 		volSourceArgs.Info.Config.VolumeSnapshots = make([]*api.StorageVolumeSnapshot, 0, len(volSourceArgs.Snapshots))
 		for i := range allSnapshots {
-			if util.ValueInSlice(allSnapshots[i].Name, volSourceArgs.Snapshots) {
+			if slices.Contains(volSourceArgs.Snapshots, allSnapshots[i].Name) {
 				volSourceArgs.Info.Config.VolumeSnapshots = append(volSourceArgs.Info.Config.VolumeSnapshots, allSnapshots[i])
 			}
 		}
@@ -5432,7 +5456,7 @@ func (d *lxc) MigrateSend(args instance.MigrateSendArgs) error {
 			// Setup rsync options (used for CRIU state transfers).
 			rsyncBwlimit := pool.Driver().Config()["rsync.bwlimit"]
 			rsyncFeatures := respHeader.GetRsyncFeaturesSlice()
-			if !util.ValueInSlice("bidirectional", rsyncFeatures) {
+			if !slices.Contains(rsyncFeatures, "bidirectional") {
 				// If no bi-directional support, assume 3.7 level.
 				// NOTE: Do NOT extend this list of arguments.
 				rsyncFeatures = []string{"xattrs", "delete", "compress"}
@@ -6135,7 +6159,7 @@ func (d *lxc) MigrateReceive(args instance.MigrateReceiveArgs) error {
 					}
 
 					// Create the snapshot instance.
-					_, snapInstOp, cleanup, err := instance.CreateInternal(d.state, *snapArgs, true, true)
+					_, snapInstOp, cleanup, err := instance.CreateInternal(d.state, *snapArgs, true, false)
 					if err != nil {
 						return fmt.Errorf("Failed creating instance snapshot record %q: %w", snapArgs.Name, err)
 					}
@@ -7886,7 +7910,7 @@ func (d *lxc) FillNetworkDevice(name string, m deviceConfig.Device) (deviceConfi
 
 		// Include all static interface names
 		for _, dev := range d.expandedDevices.Sorted() {
-			if dev.Config["name"] != "" && !util.ValueInSlice(dev.Config["name"], devNames) {
+			if dev.Config["name"] != "" && !slices.Contains(devNames, dev.Config["name"]) {
 				devNames = append(devNames, dev.Config["name"])
 			}
 		}
@@ -7902,7 +7926,7 @@ func (d *lxc) FillNetworkDevice(name string, m deviceConfig.Device) (deviceConfi
 				continue
 			}
 
-			if fields[2] != "name" || util.ValueInSlice(v, devNames) {
+			if fields[2] != "name" || slices.Contains(devNames, v) {
 				continue
 			}
 
@@ -7918,7 +7942,7 @@ func (d *lxc) FillNetworkDevice(name string, m deviceConfig.Device) (deviceConfi
 			interfaces, err := cc.Interfaces()
 			if err == nil {
 				for _, name := range interfaces {
-					if util.ValueInSlice(name, devNames) {
+					if slices.Contains(devNames, name) {
 						continue
 					}
 
@@ -7937,7 +7961,7 @@ func (d *lxc) FillNetworkDevice(name string, m deviceConfig.Device) (deviceConfi
 			}
 
 			// Find a free device name
-			if !util.ValueInSlice(name, devNames) {
+			if !slices.Contains(devNames, name) {
 				return name, nil
 			}
 
@@ -7951,7 +7975,7 @@ func (d *lxc) FillNetworkDevice(name string, m deviceConfig.Device) (deviceConfi
 	}
 
 	// Fill in the MAC address.
-	if !util.ValueInSlice(nicType, []string{"physical", "ipvlan", "sriov"}) && m["hwaddr"] == "" {
+	if !slices.Contains([]string{"physical", "ipvlan", "sriov"}, nicType) && m["hwaddr"] == "" {
 		configKey := fmt.Sprintf("volatile.%s.hwaddr", name)
 		volatileHwaddr := d.localConfig[configKey]
 		if volatileHwaddr == "" {

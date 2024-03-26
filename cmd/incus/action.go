@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -11,7 +12,6 @@ import (
 	"github.com/lxc/incus/internal/i18n"
 	"github.com/lxc/incus/shared/api"
 	config "github.com/lxc/incus/shared/cliconfig"
-	"github.com/lxc/incus/shared/util"
 )
 
 // Start.
@@ -31,6 +31,10 @@ func (c *cmdStart) Command() *cobra.Command {
 	cmd.Short = i18n.G("Start instances")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Start instances`))
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return c.global.cmpInstances(toComplete)
+	}
 
 	return cmd
 }
@@ -54,6 +58,10 @@ func (c *cmdPause) Command() *cobra.Command {
 		`Pause instances`))
 	cmd.Aliases = []string{"freeze"}
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return c.global.cmpInstances(toComplete)
+	}
+
 	return cmd
 }
 
@@ -76,6 +84,10 @@ func (c *cmdResume) Command() *cobra.Command {
 		`Resume instances`))
 	cmd.Aliases = []string{"unfreeze"}
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return c.global.cmpInstances(toComplete)
+	}
+
 	return cmd
 }
 
@@ -95,9 +107,11 @@ func (c *cmdRestart) Command() *cobra.Command {
 	cmd.Use = usage("restart", i18n.G("[<remote>:]<instance> [[<remote>:]<instance>...]"))
 	cmd.Short = i18n.G("Restart instances")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Restart instances
+		`Restart instances`))
 
-The opposite of "incus pause" is "incus start".`))
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return c.global.cmpInstances(toComplete)
+	}
 
 	return cmd
 }
@@ -119,6 +133,10 @@ func (c *cmdStop) Command() *cobra.Command {
 	cmd.Short = i18n.G("Stop instances")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Stop instances`))
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return c.global.cmpInstances(toComplete)
+	}
 
 	return cmd
 }
@@ -148,12 +166,12 @@ func (c *cmdAction) Command(action string) *cobra.Command {
 		cmd.Flags().BoolVar(&c.flagStateless, "stateless", false, i18n.G("Ignore the instance state"))
 	}
 
-	if util.ValueInSlice(action, []string{"start", "restart", "stop"}) {
+	if slices.Contains([]string{"start", "restart", "stop"}, action) {
 		cmd.Flags().StringVar(&c.flagConsole, "console", "", i18n.G("Immediately attach to the console")+"``")
 		cmd.Flags().Lookup("console").NoOptDefVal = "console"
 	}
 
-	if util.ValueInSlice(action, []string{"restart", "stop"}) {
+	if slices.Contains([]string{"restart", "stop"}, action) {
 		cmd.Flags().BoolVarP(&c.flagForce, "force", "f", false, i18n.G("Force the instance to stop"))
 		cmd.Flags().IntVar(&c.flagTimeout, "timeout", -1, i18n.G("Time to wait for the instance to shutdown cleanly")+"``")
 	}

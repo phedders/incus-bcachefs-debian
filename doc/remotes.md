@@ -4,7 +4,7 @@ Remote servers are a concept in the Incus command-line client.
 By default, the command-line client interacts with the local Incus daemon, but you can add other servers or clusters to interact with.
 
 One use case for remote servers is to distribute images that can be used to create instances on local servers.
-See {ref}`remote-image-servers` for more information.
+See {ref}`image-servers` for more information.
 
 You can also add a full Incus server as a remote server to your client.
 In this case, you can interact with the remote server in the same way as with your local daemon.
@@ -57,6 +57,9 @@ To configure a global remote, create or edit a `config.yml` file that is located
 
 Certificates for the remotes must be stored in the `servercerts` directory in the same location (for example, `/etc/incus/servercerts/`).
 They must match the remote name (for example, `foo.crt`).
+
+It's also possible to provide per-remote client certificates by placing them in the `clientcerts` directory.
+The similarly must match the remote name (for example, `foo.crt` and `foo.key`).
 
 See the following example configuration:
 

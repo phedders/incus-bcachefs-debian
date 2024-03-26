@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -421,7 +422,7 @@ func (d *qemu) getMonitorEventHandler() func(event string, data map[string]any) 
 	state := d.state
 
 	return func(event string, data map[string]any) {
-		if !util.ValueInSlice(event, []string{qmp.EventVMShutdown, qmp.EventAgentStarted}) {
+		if !slices.Contains([]string{qmp.EventVMShutdown, qmp.EventAgentStarted}, event) {
 			return // Don't bother loading the instance from DB if we aren't going to handle the event.
 		}
 
@@ -1041,44 +1042,72 @@ func (d *qemu) validateStartup(stateful bool, statusCode api.StatusCode) error {
 		return fmt.Errorf("Stateful start requires migration.stateful to be set to true")
 	}
 
-	// The "size.state" of the instance root disk device must be larger than the instance memory.
+	// Ensure secureboot is turned off for images that are not secureboot enabled.
+	if util.IsFalse(d.localConfig["image.requirements.secureboot"]) && util.IsTrueOrEmpty(d.expandedConfig["security.secureboot"]) {
+		return fmt.Errorf("The image used by this instance is incompatible with secureboot. Please set security.secureboot=false on the instance")
+	}
+
+	// Ensure secureboot is turned off when CSM is on.
+	if util.IsTrue(d.expandedConfig["security.csm"]) && util.IsTrueOrEmpty(d.expandedConfig["security.secureboot"]) {
+		return fmt.Errorf("Secure boot can't be enabled while CSM is turned on. Please set security.secureboot=false on the instance")
+	}
+
+	// Ensure an agent drive is present if the image requires it.
+	if util.IsTrue(d.localConfig["image.requirements.cdrom_agent"]) {
+		found := false
+		for _, dev := range d.expandedDevices {
+			if dev["type"] == "disk" && dev["source"] == "agent:config" {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return fmt.Errorf("This virtual machine image requires an agent:config disk be added")
+		}
+	}
+
+	return nil
+}
+
+func (d *qemu) checkStateStorage() error {
+	// For some operations, the "size.state" of the instance root disk device must be larger than the instance memory.
 	// Otherwise, there will not be enough disk space to write the instance state to disk during any subsequent stops.
 	// (Only check when migration.stateful is true, otherwise the memory won't be dumped when this instance stops).
-	if util.IsTrue(d.expandedConfig["migration.stateful"]) {
-		_, rootDiskDevice, err := d.getRootDiskDevice()
-		if err != nil {
-			return err
-		}
 
-		// Don't access d.storagePool directly since it isn't populated at this stage.
-		pool, err := d.getStoragePool()
-		if err != nil {
-			return err
-		}
+	_, rootDiskDevice, err := d.getRootDiskDevice()
+	if err != nil {
+		return err
+	}
 
-		stateDiskSizeStr := pool.Driver().Info().DefaultVMBlockFilesystemSize
-		if rootDiskDevice["size.state"] != "" {
-			stateDiskSizeStr = rootDiskDevice["size.state"]
-		}
+	// Don't access d.storagePool directly since it isn't populated at this stage.
+	pool, err := d.getStoragePool()
+	if err != nil {
+		return err
+	}
 
-		stateDiskSize, err := units.ParseByteSizeString(stateDiskSizeStr)
-		if err != nil {
-			return err
-		}
+	stateDiskSizeStr := pool.Driver().Info().DefaultVMBlockFilesystemSize
+	if rootDiskDevice["size.state"] != "" {
+		stateDiskSizeStr = rootDiskDevice["size.state"]
+	}
 
-		memoryLimitStr := QEMUDefaultMemSize
-		if d.expandedConfig["limits.memory"] != "" {
-			memoryLimitStr = d.expandedConfig["limits.memory"]
-		}
+	stateDiskSize, err := units.ParseByteSizeString(stateDiskSizeStr)
+	if err != nil {
+		return err
+	}
 
-		memoryLimit, err := units.ParseByteSizeString(memoryLimitStr)
-		if err != nil {
-			return err
-		}
+	memoryLimitStr := QEMUDefaultMemSize
+	if d.expandedConfig["limits.memory"] != "" {
+		memoryLimitStr = d.expandedConfig["limits.memory"]
+	}
 
-		if stateDiskSize < memoryLimit {
-			return fmt.Errorf("Stateful start requires that the instance limits.memory is less than size.state on the root disk device")
-		}
+	memoryLimit, err := units.ParseByteSizeString(memoryLimitStr)
+	if err != nil {
+		return err
+	}
+
+	if stateDiskSize < memoryLimit {
+		return fmt.Errorf("Stateful stop and snapshots require that the instance limits.memory is less than size.state on the root disk device")
 	}
 
 	return nil
@@ -1109,16 +1138,6 @@ func (d *qemu) start(stateful bool, op *operationlock.InstanceOperation) error {
 		return err
 	}
 
-	// Ensure secureboot is turned off for images that are not secureboot enabled
-	if util.IsFalse(d.localConfig["image.requirements.secureboot"]) && util.IsTrueOrEmpty(d.expandedConfig["security.secureboot"]) {
-		return fmt.Errorf("The image used by this instance is incompatible with secureboot. Please set security.secureboot=false on the instance")
-	}
-
-	// Ensure secureboot is turned off when CSM is on
-	if util.IsTrue(d.expandedConfig["security.csm"]) && util.IsTrueOrEmpty(d.expandedConfig["security.secureboot"]) {
-		return fmt.Errorf("Secure boot can't be enabled while CSM is turned on. Please set security.secureboot=false on the instance")
-	}
-
 	// Setup a new operation if needed.
 	if op == nil {
 		op, err = operationlock.CreateWaitGet(d.Project().Name, d.Name(), operationlock.ActionStart, []operationlock.Action{operationlock.ActionRestart, operationlock.ActionRestore}, false, false)
@@ -1133,6 +1152,15 @@ func (d *qemu) start(stateful bool, op *operationlock.InstanceOperation) error {
 	}
 
 	defer op.Done(err)
+
+	// Assign a NUMA node if needed.
+	if d.expandedConfig["limits.cpu.nodes"] == "balanced" {
+		err := d.setNUMANode()
+		if err != nil {
+			op.Done(err)
+			return err
+		}
+	}
 
 	// Ensure the correct vhost_vsock kernel module is loaded before establishing the vsock.
 	err = linux.LoadModule("vhost_vsock")
@@ -1620,23 +1648,10 @@ func (d *qemu) start(stateful bool, op *operationlock.InstanceOperation) error {
 	// onStop hook isn't triggered prematurely (as this function's reverter will clean up on failure to start).
 	monitor.SetOnDisconnectEvent(false)
 
-	// Get the list of PIDs from the VM.
-	pids, err := monitor.GetCPUs()
-	if err != nil {
-		op.Done(err)
-		return err
-	}
-
-	err = d.setCoreSched(pids)
-	if err != nil {
-		err = fmt.Errorf("Failed to allocate new core scheduling domain for vCPU threads: %w", err)
-		op.Done(err)
-		return err
-	}
-
 	// Apply CPU pinning.
 	if cpuInfo.vcpus == nil {
 		if d.architectureSupportsCPUHotplug() && cpuInfo.cores > 1 {
+			// Hotplug the CPUs.
 			err := d.setCPUs(cpuInfo.cores)
 			if err != nil {
 				err = fmt.Errorf("Failed to add CPUs: %w", err)
@@ -1645,6 +1660,13 @@ func (d *qemu) start(stateful bool, op *operationlock.InstanceOperation) error {
 			}
 		}
 	} else {
+		// Get the list of PIDs from the VM.
+		pids, err := monitor.GetCPUs()
+		if err != nil {
+			op.Done(err)
+			return err
+		}
+
 		// Confirm nothing weird is going on.
 		if len(cpuInfo.vcpus) != len(pids) {
 			err = fmt.Errorf("QEMU has less vCPUs than configured")
@@ -1652,6 +1674,7 @@ func (d *qemu) start(stateful bool, op *operationlock.InstanceOperation) error {
 			return err
 		}
 
+		// Apply the CPU pins.
 		for i, pid := range pids {
 			set := unix.CPUSet{}
 			set.Set(int(cpuInfo.vcpus[uint64(i)]))
@@ -1662,6 +1685,14 @@ func (d *qemu) start(stateful bool, op *operationlock.InstanceOperation) error {
 				op.Done(err)
 				return err
 			}
+		}
+
+		// Create a core scheduling group.
+		err = d.setCoreSched(pids)
+		if err != nil {
+			err = fmt.Errorf("Failed to allocate new core scheduling domain for vCPU threads: %w", err)
+			op.Done(err)
+			return err
 		}
 	}
 
@@ -1879,7 +1910,8 @@ func (d *qemu) advertiseVsockAddress() error {
 		return fmt.Errorf("Failed getting agent client handle: %w", err)
 	}
 
-	agent, err := incus.ConnectIncusHTTP(nil, client)
+	agentArgs := &incus.ConnectionArgs{SkipGetServer: true}
+	agent, err := incus.ConnectIncusHTTP(agentArgs, client)
 	if err != nil {
 		return fmt.Errorf("Failed connecting to the agent: %w", err)
 	}
@@ -1919,7 +1951,7 @@ func (d *qemu) AgentCertificate() *x509.Certificate {
 }
 
 func (d *qemu) architectureSupportsUEFI(arch int) bool {
-	return util.ValueInSlice(arch, []int{osarch.ARCH_64BIT_INTEL_X86, osarch.ARCH_64BIT_ARMV8_LITTLE_ENDIAN})
+	return slices.Contains([]int{osarch.ARCH_64BIT_INTEL_X86, osarch.ARCH_64BIT_ARMV8_LITTLE_ENDIAN}, arch)
 }
 
 func (d *qemu) setupNvram() error {
@@ -2347,7 +2379,7 @@ func (d *qemu) deviceAttachNIC(deviceName string, configCopy map[string]string, 
 	qemuDev := make(map[string]string)
 
 	// PCIe and PCI require a port device name to hotplug the NIC into.
-	if util.ValueInSlice(qemuBus, []string{"pcie", "pci"}) {
+	if slices.Contains([]string{"pcie", "pci"}, qemuBus) {
 		pciDevID := qemuPCIDeviceIDStart
 
 		// Iterate through all the instance devices in the same sorted order as is used when allocating the
@@ -2494,7 +2526,7 @@ func (d *qemu) deviceDetachNIC(deviceName string) error {
 		return err
 	}
 
-	if util.ValueInSlice(qemuBus, []string{"pcie", "pci"}) {
+	if slices.Contains([]string{"pcie", "pci"}, qemuBus) {
 		// Wait until the device is actually removed (or we timeout waiting).
 		waitDuration := time.Duration(time.Second * time.Duration(10))
 		waitUntil := time.Now().Add(waitDuration)
@@ -2988,7 +3020,7 @@ func (d *qemu) generateQemuConfigFile(cpuInfo *cpuTopology, mountInfo *storagePo
 	}
 
 	// Allow disabling the UEFI firmware.
-	if util.ValueInSlice("-bios", rawOptions) || util.ValueInSlice("-kernel", rawOptions) {
+	if slices.Contains(rawOptions, "-bios") || slices.Contains(rawOptions, "-kernel") {
 		d.logger.Warn("Starting VM without default firmware (-bios or -kernel in raw.qemu)")
 	} else if d.architectureSupportsUEFI(d.architecture) {
 		// Open the UEFI NVRAM file and pass it via file descriptor to QEMU.
@@ -3226,7 +3258,7 @@ func (d *qemu) generateQemuConfigFile(cpuInfo *cpuTopology, mountInfo *storagePo
 
 	// Dynamic devices.
 	base := 0
-	if util.ValueInSlice("-kernel", rawOptions) {
+	if slices.Contains(rawOptions, "-kernel") {
 		base = 1
 	}
 
@@ -3260,7 +3292,7 @@ func (d *qemu) generateQemuConfigFile(cpuInfo *cpuTopology, mountInfo *storagePo
 				}
 
 				qemuDev := make(map[string]string)
-				if util.ValueInSlice(busName, []string{"nvme", "virtio-blk"}) {
+				if slices.Contains([]string{"nvme", "virtio-blk"}, busName) {
 					// Allocate a PCI(e) port and write it to the config file so QMP can "hotplug" the
 					// drive into it later.
 					devBus, devAddr, multi := bus.allocate(busFunctionGroupNone)
@@ -3295,7 +3327,7 @@ func (d *qemu) generateQemuConfigFile(cpuInfo *cpuTopology, mountInfo *storagePo
 		// Add network device.
 		if len(runConf.NetworkInterface) > 0 {
 			qemuDev := make(map[string]string)
-			if util.ValueInSlice(bus.name, []string{"pcie", "pci"}) {
+			if slices.Contains([]string{"pcie", "pci"}, bus.name) {
 				// Allocate a PCI(e) port and write it to the config file so QMP can "hotplug" the
 				// NIC into it later.
 				devBus, devAddr, multi := bus.allocate(busFunctionGroupNone)
@@ -3411,6 +3443,9 @@ func (d *qemu) addCPUMemoryConfig(cfg *[]cfgSection, cpuInfo *cpuTopology) error
 		if d.architectureSupportsCPUHotplug() {
 			cpuOpts.cpuCount = 1
 			cpuOpts.cpuCores = 1
+
+			// Expose the total requested by the user already so the hotplug limit can be set higher if needed.
+			cpuOpts.cpuRequested = cpuInfo.cores
 		} else {
 			cpuOpts.cpuCount = cpuInfo.cores
 			cpuOpts.cpuCores = cpuInfo.cores
@@ -3419,6 +3454,22 @@ func (d *qemu) addCPUMemoryConfig(cfg *[]cfgSection, cpuInfo *cpuTopology) error
 		cpuOpts.cpuSockets = 1
 		cpuOpts.cpuThreads = 1
 		hostNodes = []uint64{0}
+
+		// Handle NUMA restrictions.
+		numaNodes := d.expandedConfig["limits.cpu.nodes"]
+		if numaNodes != "" {
+			if numaNodes == "balanced" {
+				numaNodes = d.expandedConfig["volatile.cpu.nodes"]
+			}
+
+			// Parse the NUMA restriction.
+			numaNodeSet, err := resources.ParseNumaNodeSet(numaNodes)
+			if err != nil {
+				return err
+			}
+
+			cpuOpts.memoryHostNodes = numaNodeSet
+		}
 	} else {
 		cpuPinning = true
 
@@ -3531,7 +3582,7 @@ func (d *qemu) addRootDriveConfig(qemuDev map[string]string, mountInfo *storageP
 	if d.storagePool.Driver().Info().Remote {
 		vol := d.storagePool.GetVolume(storageDrivers.VolumeTypeVM, storageDrivers.ContentTypeBlock, project.Instance(d.project.Name, d.name), nil)
 
-		if util.ValueInSlice(d.storagePool.Driver().Info().Name, []string{"ceph", "cephfs"}) {
+		if slices.Contains([]string{"ceph", "cephfs"}, d.storagePool.Driver().Info().Name) {
 			config := d.storagePool.ToAPI().Config
 
 			userName := config["ceph.user.name"]
@@ -3567,7 +3618,7 @@ func (d *qemu) addDriveDirConfig(cfg *[]cfgSection, bus *qemuBus, fdFiles *[]*os
 		agentMount.Options = append(agentMount.Options, "trans=virtio,msize=33554432")
 	}
 
-	readonly := util.ValueInSlice("ro", driveConf.Opts)
+	readonly := slices.Contains(driveConf.Opts, "ro")
 
 	// Indicate to agent to mount this readonly. Note: This is purely to indicate to VM guest that this is
 	// readonly, it should *not* be used as a security measure, as the VM guest could remount it R/W.
@@ -3652,7 +3703,7 @@ func (d *qemu) addDriveConfig(qemuDev map[string]string, bootIndexes map[string]
 	info := DriverStatuses()[instancetype.VM].Info
 	minVer, _ := version.NewDottedVersion("5.13.0")
 	_, ioUring := info.Features["io_uring"]
-	if util.ValueInSlice(device.DiskIOUring, driveConf.Opts) && ioUring && d.state.OS.KernelVersion.Compare(minVer) >= 0 {
+	if slices.Contains(driveConf.Opts, device.DiskIOUring) && ioUring && d.state.OS.KernelVersion.Compare(minVer) >= 0 {
 		aioMode = "io_uring"
 	}
 
@@ -3724,7 +3775,7 @@ func (d *qemu) addDriveConfig(qemuDev map[string]string, bootIndexes map[string]
 				// Only warn about using writeback cache if the drive image is writable.
 				d.logger.Warn("Using writeback cache I/O", logger.Ctx{"device": driveConf.DevName, "devPath": srcDevPath, "fsType": fsType})
 			}
-		} else if !util.ValueInSlice(device.DiskDirectIO, driveConf.Opts) {
+		} else if !slices.Contains(driveConf.Opts, device.DiskDirectIO) {
 			// If drive config indicates we need to use unsafe I/O then use it.
 			d.logger.Warn("Using unsafe cache I/O", logger.Ctx{"device": driveConf.DevName, "devPath": srcDevPath})
 			aioMode = "threads"
@@ -3873,7 +3924,7 @@ func (d *qemu) addDriveConfig(qemuDev map[string]string, bootIndexes map[string]
 		}
 	}
 
-	readonly := util.ValueInSlice("ro", driveConf.Opts)
+	readonly := slices.Contains(driveConf.Opts, "ro")
 
 	if readonly {
 		blockDev["read-only"] = true
@@ -3901,7 +3952,7 @@ func (d *qemu) addDriveConfig(qemuDev map[string]string, bootIndexes map[string]
 		} else if media == "cdrom" {
 			qemuDev["driver"] = "scsi-cd"
 		}
-	} else if util.ValueInSlice(bus, []string{"nvme", "virtio-blk"}) {
+	} else if slices.Contains([]string{"nvme", "virtio-blk"}, bus) {
 		if qemuDev["bus"] == "" {
 			// Figure out a hotplug slot.
 			pciDevID := qemuPCIDeviceIDStart
@@ -3976,6 +4027,13 @@ func (d *qemu) addDriveConfig(qemuDev map[string]string, bootIndexes map[string]
 			return fmt.Errorf("Failed adding block device for disk device %q: %w", driveConf.DevName, err)
 		}
 
+		if driveConf.Limits != nil {
+			err = m.SetBlockThrottle(qemuDev["id"], int(driveConf.Limits.ReadBytes), int(driveConf.Limits.WriteBytes), int(driveConf.Limits.ReadIOps), int(driveConf.Limits.WriteIOps))
+			if err != nil {
+				return fmt.Errorf("Failed applying limits for disk device %q: %w", driveConf.DevName, err)
+			}
+		}
+
 		revert.Success()
 		return nil
 	}
@@ -4035,7 +4093,7 @@ func (d *qemu) addNetDevConfig(busName string, qemuDev map[string]string, bootIn
 		vectors := 2*queueCount + 2
 		if vectors > 0 {
 			qemuDev["mq"] = "on"
-			if util.ValueInSlice(busName, []string{"pcie", "pci"}) {
+			if slices.Contains([]string{"pcie", "pci"}, busName) {
 				qemuDev["vectors"] = strconv.Itoa(vectors)
 			}
 		}
@@ -4109,7 +4167,7 @@ func (d *qemu) addNetDevConfig(busName string, qemuDev map[string]string, bootIn
 				"vhost": vhostNetEnabled,
 			}
 
-			if util.ValueInSlice(busName, []string{"pcie", "pci"}) {
+			if slices.Contains([]string{"pcie", "pci"}, busName) {
 				qemuDev["driver"] = "virtio-net-pci"
 			} else if busName == "ccw" {
 				qemuDev["driver"] = "virtio-net-ccw"
@@ -4218,7 +4276,7 @@ func (d *qemu) addNetDevConfig(busName string, qemuDev map[string]string, bootIn
 				"queues":  queues,
 			}
 
-			if util.ValueInSlice(busName, []string{"pcie", "pci"}) {
+			if slices.Contains([]string{"pcie", "pci"}, busName) {
 				qemuDev["driver"] = "virtio-net-pci"
 			} else if busName == "ccw" {
 				qemuDev["driver"] = "virtio-net-ccw"
@@ -4239,7 +4297,7 @@ func (d *qemu) addNetDevConfig(busName string, qemuDev map[string]string, bootIn
 		}
 	} else if pciSlotName != "" {
 		// Detect physical passthrough device.
-		if util.ValueInSlice(busName, []string{"pcie", "pci"}) {
+		if slices.Contains([]string{"pcie", "pci"}, busName) {
 			qemuDev["driver"] = "vfio-pci"
 		} else if busName == "ccw" {
 			qemuDev["driver"] = "vfio-ccw"
@@ -4585,8 +4643,17 @@ func (d *qemu) Stop(stateful bool) error {
 	}
 
 	// Check for stateful.
-	if stateful && util.IsFalseOrEmpty(d.expandedConfig["migration.stateful"]) {
-		return fmt.Errorf("Stateful stop requires migration.stateful to be set to true")
+	if stateful {
+		// Confirm the instance has stateful migration enabled.
+		if util.IsFalseOrEmpty(d.expandedConfig["migration.stateful"]) {
+			return fmt.Errorf("Stateful stop requires migration.stateful to be set to true")
+		}
+
+		// Confirm the instance has sufficient reserved state space.
+		err := d.checkStateStorage()
+		if err != nil {
+			return err
+		}
 	}
 
 	// Setup a new operation.
@@ -4745,6 +4812,12 @@ func (d *qemu) snapshot(name string, expiry time.Time, stateful bool) error {
 		// Confirm the instance has stateful migration enabled.
 		if util.IsFalseOrEmpty(d.expandedConfig["migration.stateful"]) {
 			return fmt.Errorf("Stateful snapshot requires migration.stateful to be set to true")
+		}
+
+		// Confirm the instance has sufficient reserved state space.
+		err = d.checkStateStorage()
+		if err != nil {
+			return err
 		}
 
 		// Quick checks.
@@ -5179,11 +5252,11 @@ func (d *qemu) Update(args db.InstanceArgs, userRequested bool) error {
 
 	checkedProfiles := []string{}
 	for _, profile := range args.Profiles {
-		if !util.ValueInSlice(profile.Name, profiles) {
+		if !slices.Contains(profiles, profile.Name) {
 			return fmt.Errorf("Requested profile '%s' doesn't exist", profile.Name)
 		}
 
-		if util.ValueInSlice(profile.Name, checkedProfiles) {
+		if slices.Contains(checkedProfiles, profile.Name) {
 			return fmt.Errorf("Duplicate profile found in request")
 		}
 
@@ -5276,7 +5349,7 @@ func (d *qemu) Update(args db.InstanceArgs, userRequested bool) error {
 	changedConfig := []string{}
 	for key := range oldExpandedConfig {
 		if oldExpandedConfig[key] != d.expandedConfig[key] {
-			if !util.ValueInSlice(key, changedConfig) {
+			if !slices.Contains(changedConfig, key) {
 				changedConfig = append(changedConfig, key)
 			}
 		}
@@ -5284,7 +5357,7 @@ func (d *qemu) Update(args db.InstanceArgs, userRequested bool) error {
 
 	for key := range d.expandedConfig {
 		if oldExpandedConfig[key] != d.expandedConfig[key] {
-			if !util.ValueInSlice(key, changedConfig) {
+			if !slices.Contains(changedConfig, key) {
 				changedConfig = append(changedConfig, key)
 			}
 		}
@@ -5363,7 +5436,7 @@ func (d *qemu) Update(args db.InstanceArgs, userRequested bool) error {
 	}
 
 	// If apparmor changed, re-validate the apparmor profile (even if not running).
-	if util.ValueInSlice("raw.apparmor", changedConfig) {
+	if slices.Contains(changedConfig, "raw.apparmor") {
 		qemuPath, _, err := d.qemuArchConfig(d.architecture)
 		if err != nil {
 			return err
@@ -5415,7 +5488,7 @@ func (d *qemu) Update(args db.InstanceArgs, userRequested bool) error {
 				return d.architectureSupportsCPUHotplug()
 			}
 
-			if util.ValueInSlice(key, liveUpdateKeys) {
+			if slices.Contains(liveUpdateKeys, key) {
 				return true
 			}
 
@@ -5457,6 +5530,7 @@ func (d *qemu) Update(args db.InstanceArgs, userRequested bool) error {
 					return fmt.Errorf("Cannot change CPU pinning when VM is running")
 				}
 
+				// Hotplug the CPUs.
 				err = d.setCPUs(limit)
 				if err != nil {
 					return fmt.Errorf("Failed updating cpu limit: %w", err)
@@ -5483,7 +5557,7 @@ func (d *qemu) Update(args db.InstanceArgs, userRequested bool) error {
 		}
 	}
 
-	if d.architectureSupportsUEFI(d.architecture) && (util.ValueInSlice("security.secureboot", changedConfig) || util.ValueInSlice("security.csm", changedConfig)) {
+	if d.architectureSupportsUEFI(d.architecture) && (slices.Contains(changedConfig, "security.secureboot") || slices.Contains(changedConfig, "security.csm")) {
 		// setupNvram() requires instance's config volume to be mounted.
 		// The easiest way to detect that is to check if instance is running.
 		// TODO: extend storage API to be able to check if volume is already mounted?
@@ -6376,7 +6450,7 @@ func (d *qemu) MigrateSend(args instance.MigrateSendArgs) error {
 		// Ensure that only the requested snapshots are included in the migration index header.
 		volSourceArgs.Info.Config.VolumeSnapshots = make([]*api.StorageVolumeSnapshot, 0, len(volSourceArgs.Snapshots))
 		for i := range allSnapshots {
-			if util.ValueInSlice(allSnapshots[i].Name, volSourceArgs.Snapshots) {
+			if slices.Contains(volSourceArgs.Snapshots, allSnapshots[i].Name) {
 				volSourceArgs.Info.Config.VolumeSnapshots = append(volSourceArgs.Info.Config.VolumeSnapshots, allSnapshots[i])
 			}
 		}
@@ -7090,7 +7164,7 @@ func (d *qemu) MigrateReceive(args instance.MigrateReceiveArgs) error {
 					}
 
 					// Create the snapshot instance.
-					_, snapInstOp, cleanup, err := instance.CreateInternal(d.state, *snapArgs, true, true)
+					_, snapInstOp, cleanup, err := instance.CreateInternal(d.state, *snapArgs, true, false)
 					if err != nil {
 						return fmt.Errorf("Failed creating instance snapshot record %q: %w", snapArgs.Name, err)
 					}
@@ -7382,6 +7456,9 @@ func (d *qemu) Exec(req api.InstanceExecPost, stdin *os.File, stdout *os.File, s
 	// Always needed for VM exec, as even for non-websocket requests from the client we need to connect the
 	// websockets for control and for capturing output to a file on the server.
 	req.WaitForWS = true
+
+	// Similarly, output recording is performed on the host rather than in the guest, so clear that bit from the request.
+	req.RecordOutput = false
 
 	op, err := agent.ExecInstance("", req, &args)
 	if err != nil {
@@ -7693,47 +7770,67 @@ func (d *qemu) LockExclusive() (*operationlock.InstanceOperation, error) {
 
 // DeviceEventHandler handles events occurring on the instance's devices.
 func (d *qemu) DeviceEventHandler(runConf *deviceConfig.RunConfig) error {
-	if !d.IsRunning() {
+	if !d.IsRunning() || runConf == nil {
 		return nil
 	}
 
-	if runConf == nil || len(runConf.Uevents) == 0 {
-		return nil
+	// Handle uevents.
+	for _, uevent := range runConf.Uevents {
+		for _, event := range uevent {
+			fields := strings.SplitN(event, "=", 2)
+
+			if fields[0] != "ACTION" {
+				continue
+			}
+
+			switch fields[1] {
+			case "add":
+				for _, usbDev := range runConf.USBDevice {
+					// This ensures that the device is actually removed from QEMU before adding it again.
+					// In most cases the device will already be removed, but it is possible that the
+					// device still exists in QEMU before trying to add it again.
+					// If a USB device is physically detached from a running VM while the server
+					// itself is stopped, QEMU in theory will not delete the device.
+					err := d.deviceDetachUSB(usbDev)
+					if err != nil {
+						return err
+					}
+
+					err = d.deviceAttachUSB(usbDev)
+					if err != nil {
+						return err
+					}
+				}
+			case "remove":
+				for _, usbDev := range runConf.USBDevice {
+					err := d.deviceDetachUSB(usbDev)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
 	}
 
-	// Uevents will contain 1 entry at most, therefore we don't need to iterate through it.
-	for _, event := range runConf.Uevents[0] {
-		fields := strings.SplitN(event, "=", 2)
-
-		if fields[0] != "ACTION" {
+	// Handle disk reconfiguration.
+	for _, mount := range runConf.Mounts {
+		if mount.Limits == nil {
 			continue
 		}
 
-		switch fields[1] {
-		case "add":
-			for _, usbDev := range runConf.USBDevice {
-				// This ensures that the device is actually removed from QEMU before adding it again.
-				// In most cases the device will already be removed, but it is possible that the
-				// device still exists in QEMU before trying to add it again.
-				// If a USB device is physically detached from a running VM while the server
-				// itself is stopped, QEMU in theory will not delete the device.
-				err := d.deviceDetachUSB(usbDev)
-				if err != nil {
-					return err
-				}
+		// Get the QMP monitor.
+		m, err := qmp.Connect(d.monitorPath(), qemuSerialChardevName, d.getMonitorEventHandler())
+		if err != nil {
+			return err
+		}
 
-				err = d.deviceAttachUSB(usbDev)
-				if err != nil {
-					return err
-				}
-			}
-		case "remove":
-			for _, usbDev := range runConf.USBDevice {
-				err := d.deviceDetachUSB(usbDev)
-				if err != nil {
-					return err
-				}
-			}
+		// Figure out the QEMU device ID.
+		devID := fmt.Sprintf("%s%s", qemuDeviceIDPrefix, linux.PathNameEncode(mount.DevName))
+
+		// Apply the limits.
+		err = m.SetBlockThrottle(devID, int(mount.Limits.ReadBytes), int(mount.Limits.WriteBytes), int(mount.Limits.ReadIOps), int(mount.Limits.WriteIOps))
+		if err != nil {
+			return fmt.Errorf("Failed applying limits for disk device %q: %w", mount.DevName, err)
 		}
 	}
 
@@ -7956,7 +8053,7 @@ func (d *qemu) FillNetworkDevice(name string, m deviceConfig.Device) (deviceConf
 	}
 
 	// Fill in the MAC address.
-	if !util.ValueInSlice(nicType, []string{"physical", "ipvlan", "sriov"}) && m["hwaddr"] == "" {
+	if !slices.Contains([]string{"physical", "ipvlan", "sriov"}, nicType) && m["hwaddr"] == "" {
 		configKey := fmt.Sprintf("volatile.%s.hwaddr", name)
 		volatileHwaddr := d.localConfig[configKey]
 		if volatileHwaddr == "" {
@@ -8059,7 +8156,7 @@ func (d *qemu) cpuTopology(limit string) (*cpuTopology, error) {
 							sockets[cpu.Socket] = []uint64{}
 						}
 
-						if !util.ValueInSlice(core.Core, sockets[cpu.Socket]) {
+						if !slices.Contains(sockets[cpu.Socket], core.Core) {
 							sockets[cpu.Socket] = append(sockets[cpu.Socket], core.Core)
 						}
 
@@ -8069,7 +8166,7 @@ func (d *qemu) cpuTopology(limit string) (*cpuTopology, error) {
 							cores[core.Core] = []uint64{}
 						}
 
-						if !util.ValueInSlice(thread.Thread, cores[core.Core]) {
+						if !slices.Contains(cores[core.Core], thread.Thread) {
 							cores[core.Core] = append(cores[core.Core], thread.Thread)
 						}
 
@@ -8166,7 +8263,8 @@ func (d *qemu) devIncusEventSend(eventType string, eventMessage map[string]any) 
 		return err
 	}
 
-	agent, err := incus.ConnectIncusHTTP(nil, client)
+	agentArgs := &incus.ConnectionArgs{SkipGetServer: true}
+	agent, err := incus.ConnectIncusHTTP(agentArgs, client)
 	if err != nil {
 		d.logger.Error("Failed to connect to the agent", logger.Ctx{"err": err})
 		return fmt.Errorf("Failed to connect to the agent")
@@ -8396,7 +8494,7 @@ func (d *qemu) checkFeatures(hostArch int, qemuPath string) (map[string]any, err
 		parts := strings.Split(string(cmdline), " ")
 
 		// Check if SME is enabled in the kernel command line.
-		if util.ValueInSlice("mem_encrypt=on", parts) {
+		if slices.Contains(parts, "mem_encrypt=on") {
 			features["sme"] = struct{}{}
 		}
 
@@ -8471,7 +8569,8 @@ func (d *qemu) getAgentMetrics() (*metrics.MetricSet, error) {
 		return nil, err
 	}
 
-	agent, err := incus.ConnectIncusHTTP(nil, client)
+	agentArgs := &incus.ConnectionArgs{SkipGetServer: true}
+	agent, err := incus.ConnectIncusHTTP(agentArgs, client)
 	if err != nil {
 		d.logger.Error("Failed to connect to the agent", logger.Ctx{"project": d.Project().Name, "instance": d.Name(), "err": err})
 		return nil, fmt.Errorf("Failed to connect to the agent")
@@ -8707,9 +8806,19 @@ func (d *qemu) setCPUs(count int) error {
 				d.logger.Warn("Failed to add CPU device", logger.Ctx{"err": err})
 			})
 		}
+
+		// QEMU doesn't immediately remove the thread from the vCPU list.
+		// Wait a second to allow the thread to fully exit and disappear from the vCPU list.
+		time.Sleep(time.Second)
 	}
 
 	revert.Success()
+
+	// Run post-hotplug tasks.
+	err = d.postCPUHotplug(monitor)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -8719,4 +8828,75 @@ func (d *qemu) architectureSupportsCPUHotplug() bool {
 	info := DriverStatuses()[instancetype.VM].Info
 	_, found := info.Features["cpu_hotplug"]
 	return found
+}
+
+func (d *qemu) postCPUHotplug(monitor *qmp.Monitor) error {
+	// Get the vCPU PID list.
+	pids, err := monitor.GetCPUs()
+	if err != nil {
+		return err
+	}
+
+	// Handle NUMA node restrictions.
+	numaNodes := d.expandedConfig["limits.cpu.nodes"]
+	if numaNodes != "" {
+		if numaNodes == "balanced" {
+			numaNodes = d.expandedConfig["volatile.cpu.nodes"]
+		}
+
+		// Parse the NUMA restriction.
+		numaNodeSet, err := resources.ParseNumaNodeSet(numaNodes)
+		if err != nil {
+			return err
+		}
+
+		// Get the CPU topology.
+		cpusTopology, err := resources.GetCPU()
+		if err != nil {
+			return err
+		}
+
+		// Get the isolated CPU ids.
+		isolatedCpusInt := resources.GetCPUIsolated()
+
+		// Build a map of NUMA node to CPU threads.
+		numaNodeToCPU := make(map[int64][]int64)
+		for _, cpu := range cpusTopology.Sockets {
+			for _, core := range cpu.Cores {
+				for _, thread := range core.Threads {
+					// Skip any isolated CPU thread.
+					if slices.Contains(isolatedCpusInt, thread.ID) {
+						continue
+					}
+
+					numaNodeToCPU[int64(thread.NUMANode)] = append(numaNodeToCPU[int64(thread.NUMANode)], thread.ID)
+				}
+			}
+		}
+
+		// Figure out the list of CPU threads for the NUMA node(s).
+		set := unix.CPUSet{}
+		for _, numaNode := range numaNodeSet {
+			for _, id := range numaNodeToCPU[numaNode] {
+				set.Set(int(id))
+			}
+		}
+
+		// Apply the restriction.
+		for _, pid := range pids {
+			// Apply the pin.
+			err := unix.SchedSetaffinity(pid, &set)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Create a core scheduling group.
+	err = d.setCoreSched(pids)
+	if err != nil {
+		return fmt.Errorf("Failed to allocate new core scheduling domain for vCPU threads: %w", err)
+	}
+
+	return nil
 }

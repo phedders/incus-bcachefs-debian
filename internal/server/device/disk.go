@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -179,7 +180,7 @@ func (d *disk) validateConfig(instConf instance.ConfigReader) error {
 	// These come from https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt
 	propagationTypes := []string{"", "private", "shared", "slave", "unbindable", "rshared", "rslave", "runbindable", "rprivate"}
 	validatePropagation := func(input string) error {
-		if !util.ValueInSlice(d.config["bind"], propagationTypes) {
+		if !slices.Contains(propagationTypes, d.config["bind"]) {
 			return fmt.Errorf("Invalid propagation value. Must be one of: %s", strings.Join(propagationTypes, ", "))
 		}
 
@@ -338,6 +339,11 @@ func (d *disk) validateConfig(instConf instance.ConfigReader) error {
 				var usedBy []string
 
 				err = storagePools.VolumeUsedByInstanceDevices(d.state, d.pool.Name(), storageProjectName, &dbVolume.StorageVolume, true, func(inst db.InstanceArgs, project api.Project, usedByDevices []string) error {
+					// Don't count the current instance.
+					if d.inst != nil && d.inst.Project().Name == inst.Project && d.inst.Name() == inst.Name {
+						return nil
+					}
+
 					usedBy = append(usedBy, inst.Name)
 
 					return nil
@@ -517,7 +523,7 @@ func (d *disk) validateEnvironmentSourcePath() error {
 
 // validateEnvironment checks the runtime environment for correctness.
 func (d *disk) validateEnvironment() error {
-	if d.inst.Type() != instancetype.VM && util.ValueInSlice(d.config["source"], []string{diskSourceCloudInit, diskSourceAgent}) {
+	if d.inst.Type() != instancetype.VM && slices.Contains([]string{diskSourceCloudInit, diskSourceAgent}, d.config["source"]) {
 		return fmt.Errorf("disks with source=%s are only supported by virtual machines", d.config["source"])
 	}
 
@@ -833,6 +839,23 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 		opts = append(opts, fmt.Sprintf("cache=%s", d.config["io.cache"]))
 	}
 
+	// Add I/O limits if set.
+	var diskLimits *deviceConfig.DiskLimits
+	if d.config["limits.read"] != "" || d.config["limits.write"] != "" || d.config["limits.max"] != "" {
+		// Parse the limits into usable values.
+		readBps, readIops, writeBps, writeIops, err := d.parseLimit(d.config)
+		if err != nil {
+			return nil, err
+		}
+
+		diskLimits = &deviceConfig.DiskLimits{
+			ReadBytes:  readBps,
+			ReadIOps:   readIops,
+			WriteBytes: writeBps,
+			WriteIOps:  writeIops,
+		}
+	}
+
 	if internalInstance.IsRootDiskDevice(d.config) {
 		// Handle previous requests for setting new quotas.
 		err := d.applyDeferredQuota()
@@ -847,6 +870,7 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 				TargetPath: d.config["path"], // Indicator used that this is the root device.
 				DevName:    d.name,
 				Opts:       opts,
+				Limits:     diskLimits,
 			},
 		}
 
@@ -920,6 +944,7 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 					DevPath: DiskGetRBDFormat(clusterName, userName, fields[0], fields[1]),
 					DevName: d.name,
 					Opts:    opts,
+					Limits:  diskLimits,
 				},
 			}
 		} else {
@@ -930,6 +955,7 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 				DevPath: d.config["source"],
 				DevName: d.name,
 				Opts:    opts,
+				Limits:  diskLimits,
 			}
 
 			// Mount the pool volume and update srcPath to mount path so it can be recognised as dir
@@ -983,6 +1009,7 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 						DevPath: DiskGetRBDFormat(clusterName, userName, poolName, d.config["source"]),
 						DevName: d.name,
 						Opts:    opts,
+						Limits:  diskLimits,
 					}
 
 					if contentType == db.StoragePoolVolumeContentTypeISO {
@@ -1166,10 +1193,6 @@ func (d *disk) postStart() error {
 
 // Update applies configuration changes to a started device.
 func (d *disk) Update(oldDevices deviceConfig.Devices, isRunning bool) error {
-	if d.inst.Type() == instancetype.VM && !internalInstance.IsRootDiskDevice(d.config) {
-		return fmt.Errorf("Non-root disks not supported for VMs")
-	}
-
 	if internalInstance.IsRootDiskDevice(d.config) {
 		// Make sure we have a valid root disk device (and only one).
 		expandedDevices := d.inst.ExpandedDevices()
@@ -1226,15 +1249,41 @@ func (d *disk) Update(oldDevices deviceConfig.Devices, isRunning bool) error {
 		}
 	}
 
-	// Only apply IO limits if instance is container and is running.
-	if isRunning && d.inst.Type() == instancetype.Container {
+	// Only apply IO limits if instance is running.
+	if isRunning {
 		runConf := deviceConfig.RunConfig{}
-		err := d.generateLimits(&runConf)
-		if err != nil {
-			return err
+
+		if d.inst.Type() == instancetype.Container {
+			err := d.generateLimits(&runConf)
+			if err != nil {
+				return err
+			}
 		}
 
-		err = d.inst.DeviceEventHandler(&runConf)
+		if d.inst.Type() == instancetype.VM {
+			// Parse the limits into usable values.
+			readBps, readIops, writeBps, writeIops, err := d.parseLimit(d.config)
+			if err != nil {
+				return err
+			}
+
+			// Apply the limits to a minimal mount entry.
+			diskLimits := &deviceConfig.DiskLimits{
+				ReadBytes:  readBps,
+				ReadIOps:   readIops,
+				WriteBytes: writeBps,
+				WriteIOps:  writeIops,
+			}
+
+			runConf.Mounts = []deviceConfig.MountEntryItem{
+				{
+					DevName: d.name,
+					Limits:  diskLimits,
+				},
+			}
+		}
+
+		err := d.inst.DeviceEventHandler(&runConf)
 		if err != nil {
 			return err
 		}
@@ -1954,14 +2003,8 @@ func (d *disk) getDiskLimits() (map[string]diskBlockLimit, error) {
 			continue
 		}
 
-		// Apply max limit
-		if dev["limits.max"] != "" {
-			dev["limits.read"] = dev["limits.max"]
-			dev["limits.write"] = dev["limits.max"]
-		}
-
 		// Parse the user input
-		readBps, readIops, writeBps, writeIops, err := d.parseDiskLimit(dev["limits.read"], dev["limits.write"])
+		readBps, readIops, writeBps, writeIops, err := d.parseLimit(dev)
 		if err != nil {
 			return nil, err
 		}
@@ -1996,14 +2039,14 @@ func (d *disk) getDiskLimits() (map[string]diskBlockLimit, error) {
 		for _, block := range blocks {
 			blockStr := ""
 
-			if util.ValueInSlice(block, validBlocks) {
+			if slices.Contains(validBlocks, block) {
 				// Straightforward entry (full block device)
 				blockStr = block
 			} else {
 				// Attempt to deal with a partition (guess its parent)
 				fields := strings.SplitN(block, ":", 2)
 				fields[1] = "0"
-				if util.ValueInSlice(fmt.Sprintf("%s:%s", fields[0], fields[1]), validBlocks) {
+				if slices.Contains(validBlocks, fmt.Sprintf("%s:%s", fields[0], fields[1])) {
 					blockStr = fmt.Sprintf("%s:%s", fields[0], fields[1])
 				}
 			}
@@ -2070,7 +2113,18 @@ func (d *disk) getDiskLimits() (map[string]diskBlockLimit, error) {
 	return result, nil
 }
 
-func (d *disk) parseDiskLimit(readSpeed string, writeSpeed string) (int64, int64, int64, int64, error) {
+// parseLimit parses the disk configuration for its I/O limits and returns the I/O bytes/iops limits.
+func (d *disk) parseLimit(dev deviceConfig.Device) (int64, int64, int64, int64, error) {
+	readSpeed := dev["limits.read"]
+	writeSpeed := dev["limits.write"]
+
+	// Apply max limit.
+	if dev["limits.max"] != "" {
+		readSpeed = dev["limits.max"]
+		writeSpeed = dev["limits.max"]
+	}
+
+	// parseValue parses a single value to either a B/s limit or iops limit.
 	parseValue := func(value string) (int64, int64, error) {
 		var err error
 
@@ -2096,11 +2150,13 @@ func (d *disk) parseDiskLimit(readSpeed string, writeSpeed string) (int64, int64
 		return bps, iops, nil
 	}
 
+	// Process reads.
 	readBps, readIops, err := parseValue(readSpeed)
 	if err != nil {
 		return -1, -1, -1, -1, err
 	}
 
+	// Process writes.
 	writeBps, writeIops, err := parseValue(writeSpeed)
 	if err != nil {
 		return -1, -1, -1, -1, err

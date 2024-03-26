@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -193,7 +194,7 @@ func (c *cmdConfigTrustAddCertificate) Run(cmd *cobra.Command, args []string) er
 	}
 
 	// Validate flags.
-	if !util.ValueInSlice(c.flagType, []string{"client", "metrics"}) {
+	if !slices.Contains([]string{"client", "metrics"}, c.flagType) {
 		return fmt.Errorf(i18n.G("Unknown certificate type %q"), c.flagType)
 	}
 
@@ -372,8 +373,6 @@ func (c *cmdConfigTrustEdit) Run(cmd *cobra.Command, args []string) error {
 }
 
 // List.
-const layout = "Jan 2, 2006 at 3:04pm (MST)"
-
 type cmdConfigTrustList struct {
 	global      *cmdGlobal
 	config      *cmdConfig
@@ -482,11 +481,11 @@ func (c *cmdConfigTrustList) descriptionColumnData(rowData rowData) string {
 }
 
 func (c *cmdConfigTrustList) issueDateColumnData(rowData rowData) string {
-	return rowData.TlsCert.NotBefore.Format(layout)
+	return rowData.TlsCert.NotBefore.Local().Format(dateLayout)
 }
 
 func (c *cmdConfigTrustList) expiryDateColumnData(rowData rowData) string {
-	return rowData.TlsCert.NotAfter.Format(layout)
+	return rowData.TlsCert.NotAfter.Local().Format(dateLayout)
 }
 
 func (c *cmdConfigTrustList) restrictedColumnData(rowData rowData) string {
@@ -643,8 +642,8 @@ func (c *cmdConfigTrustListTokens) Run(cmd *cobra.Command, args []string) error 
 		var expiresAt string
 
 		// Only show the expiry date if available, otherwise show an empty string.
-		if joinToken.ExpiresAt.Unix() > 0 {
-			expiresAt = joinToken.ExpiresAt.Format("2006/01/02 15:04 MST")
+		if !joinToken.ExpiresAt.IsZero() {
+			expiresAt = joinToken.ExpiresAt.Local().Format(dateLayout)
 		}
 
 		displayTokens = append(displayTokens, displayToken{

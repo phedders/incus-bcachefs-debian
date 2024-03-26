@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/lxc/incus/internal/server/db"
@@ -212,7 +213,7 @@ func NetworkAllowed(reqProjectConfig map[string]string, networkName string, isMa
 	}
 
 	// Don't allow access to unmanaged networks if only managed network access is allowed.
-	if util.ValueInSlice(reqProjectConfig["restricted.devices.nic"], []string{"managed", ""}) && !isManaged {
+	if slices.Contains([]string{"managed", ""}, reqProjectConfig["restricted.devices.nic"]) && !isManaged {
 		return false
 	}
 
@@ -223,7 +224,24 @@ func NetworkAllowed(reqProjectConfig map[string]string, networkName string, isMa
 
 	// Check if reqquested network is in list of allowed networks.
 	allowedRestrictedNetworks := util.SplitNTrimSpace(reqProjectConfig["restricted.networks.access"], ",", -1, false)
-	return util.ValueInSlice(networkName, allowedRestrictedNetworks)
+	return slices.Contains(allowedRestrictedNetworks, networkName)
+}
+
+// NetworkIntegrationAllowed returns whether access is allowed for a particular network integration based on projectConfig.
+func NetworkIntegrationAllowed(reqProjectConfig map[string]string, integrationName string) bool {
+	// If project is not restricted, then access to network is allowed.
+	if util.IsFalseOrEmpty(reqProjectConfig["restricted"]) {
+		return true
+	}
+
+	// If restricted.networks.integrations is not set then allow access to all networks.
+	if reqProjectConfig["restricted.networks.integrations"] == "" {
+		return true
+	}
+
+	// Check if reqquested integration is in list of allowed network integrations.
+	allowedRestrictedIntegrations := util.SplitNTrimSpace(reqProjectConfig["restricted.networks.integrations"], ",", -1, false)
+	return slices.Contains(allowedRestrictedIntegrations, integrationName)
 }
 
 // ImageProjectFromRecord returns the project name to use for the image based on the supplied project.
@@ -232,7 +250,7 @@ func NetworkAllowed(reqProjectConfig map[string]string, networkName string, isMa
 func ImageProjectFromRecord(p *api.Project) string {
 	// Images only use the project specified if the project has the features.images feature enabled,
 	// otherwise the default project for profiles is used.
-	if util.IsTrue(p.Config["features.image"]) {
+	if util.IsTrue(p.Config["features.images"]) {
 		return p.Name
 	}
 

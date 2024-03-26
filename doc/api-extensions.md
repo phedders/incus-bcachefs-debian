@@ -2375,3 +2375,58 @@ With this, it's possible to have a single shared LVM pool across multiple server
 This adds a new configuration key `security.shared` to custom block volumes.
 If unset or `false`, the custom block volume cannot be attached to multiple instances.
 This feature was added to prevent data loss which can happen when custom block volumes are attached to multiple instances at once.
+
+## `auth_tls_jwt`
+
+This adds the ability to use a signed `JSON Web Token` (`JWT`) instead of using the TLS client certificate directly.
+
+In this scenario, the client derives a `JWT` from their own TLS client certificate providing it as a `bearer` token through the `Authorization` HTTP header.
+
+The `JWT` must have the certificate's fingerprint as its `Subject` and must be signed by the client's private key.
+
+## `oidc_claim`
+
+This introduces a new `oidc.claim` server configuration key which can be used to specify what OpenID Connect claim to use as the username.
+
+## `device_usb_serial`
+
+This adds a new configuration key `serial` for device type `usb`.
+Feature has been added, to make it possible to distinguish between devices with identical `vendorid` and `productid`.
+
+## `numa_cpu_balanced`
+
+This adds `balanced` as a new value for `limits.cpu.nodes`.
+
+When set to `balanced`, Incus will attempt to select the least busy NUMA
+node at startup time for the instance, trying to keep the load spread
+across NUMA nodes on the system.
+
+## `image_restriction_nesting`
+
+This extension adds a new image restriction, `requirements.nesting` which when `true` indicates that an image cannot be run without nesting.
+
+## `network_integrations`
+
+Adds the concept of network integrations and initial support for OVN Interconnection.
+
+New API:
+
+* `/1.0/network-integrations` (GET, POST)
+* `/1.0/network-integrations/NAME` (GET, PUT, PATCH, DELETE, POST)
+
+Each integration is made of:
+
+* name
+* description
+* type (only `ovn` for now)
+* configuration
+   * `ovn.northbound_connection` (database connection string for the OVN Interconnection database)
+   * `ovn.ca_cert` (optional, SSL CA certificate for the OVN Interconnection database)
+   * `ovn.client_cert` (optional, SSL client certificate to connect to the OVN Interconnection database)
+   * `ovn.client_key` (optional, SSL client key to connect to the OVN Interconnection database)
+   * `ovn.transit.pattern` (Pongo2 template to generate the transit switch name)
+
+Those integrations attach to network peers through some new fields:
+
+* `type` (`local` for current behavior, `remote` for integrations)
+* `target_integration` (reference to the integration)

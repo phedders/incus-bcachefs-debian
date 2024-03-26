@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -40,6 +41,10 @@ func (c *cmdRemote) Command() *cobra.Command {
 	// Add
 	remoteAddCmd := cmdRemoteAdd{global: c.global, remote: c}
 	cmd.AddCommand(remoteAddCmd.Command())
+
+	// Generate certificate
+	remoteGenerateCertificateCmd := cmdRemoteGenerateCertificate{global: c.global, remote: c}
+	cmd.AddCommand(remoteGenerateCertificateCmd.Command())
 
 	// Get default
 	remoteGetDefaultCmd := cmdRemoteGetDefault{global: c.global, remote: c}
@@ -133,7 +138,7 @@ func (c *cmdRemoteAdd) findProject(d incus.InstanceServer, project string) (stri
 			}
 
 			// Deal with multiple projects.
-			if util.ValueInSlice(api.ProjectDefaultName, names) {
+			if slices.Contains(names, api.ProjectDefaultName) {
 				// If we have access to the default project, use it.
 				return "", nil
 			}
@@ -515,13 +520,13 @@ func (c *cmdRemoteAdd) Run(cmd *cobra.Command, args []string) error {
 
 	// If not specified, the preferred order of authentication is 1) OIDC 2) TLS.
 	if c.flagAuthType == "" {
-		if !srv.Public && util.ValueInSlice(api.AuthenticationMethodOIDC, srv.AuthMethods) {
+		if !srv.Public && slices.Contains(srv.AuthMethods, api.AuthenticationMethodOIDC) {
 			c.flagAuthType = api.AuthenticationMethodOIDC
 		} else {
 			c.flagAuthType = api.AuthenticationMethodTLS
 		}
 
-		if util.ValueInSlice(c.flagAuthType, []string{api.AuthenticationMethodOIDC}) {
+		if slices.Contains([]string{api.AuthenticationMethodOIDC}, c.flagAuthType) {
 			// Update the remote configuration
 			remote := conf.Remotes[server]
 			remote.AuthType = c.flagAuthType
@@ -547,7 +552,7 @@ func (c *cmdRemoteAdd) Run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if !srv.Public && !util.ValueInSlice(c.flagAuthType, srv.AuthMethods) {
+	if !srv.Public && !slices.Contains(srv.AuthMethods, c.flagAuthType) {
 		return fmt.Errorf(i18n.G("Authentication type '%s' not supported by server"), c.flagAuthType)
 	}
 
@@ -609,6 +614,53 @@ func (c *cmdRemoteAdd) Run(cmd *cobra.Command, args []string) error {
 	conf.Remotes[server] = remote
 
 	return conf.SaveConfig(c.global.confPath)
+}
+
+// Generate certificate.
+type cmdRemoteGenerateCertificate struct {
+	global *cmdGlobal
+	remote *cmdRemote
+}
+
+// Command generates the command definition.
+func (c *cmdRemoteGenerateCertificate) Command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = usage("generate-certificate")
+	cmd.Short = i18n.G("Generate the client certificate")
+	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+		`Manually trigger the generation of a client certificate`))
+
+	cmd.RunE = c.Run
+
+	return cmd
+}
+
+// Run runs the actual command logic.
+func (c *cmdRemoteGenerateCertificate) Run(cmd *cobra.Command, args []string) error {
+	conf := c.global.conf
+
+	// Quick checks.
+	exit, err := c.global.CheckArgs(cmd, args, 0, 0)
+	if exit {
+		return err
+	}
+
+	// Check if we already have a certificate.
+	if conf.HasClientCertificate() {
+		return fmt.Errorf(i18n.G("A client certificate is already present"))
+	}
+
+	// Generate the certificate.
+	if !c.global.flagQuiet {
+		fmt.Fprintf(os.Stderr, i18n.G("Generating a client certificate. This may take a minute...")+"\n")
+	}
+
+	err = conf.GenerateClientCertificate()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Get default.
@@ -746,6 +798,14 @@ func (c *cmdRemoteRename) Command() *cobra.Command {
 
 	cmd.RunE = c.Run
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpRemoteNames()
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
 	return cmd
 }
 
@@ -817,6 +877,14 @@ func (c *cmdRemoteRemove) Command() *cobra.Command {
 
 	cmd.RunE = c.Run
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpRemoteNames()
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
 	return cmd
 }
 
@@ -872,6 +940,14 @@ func (c *cmdRemoteSwitch) Command() *cobra.Command {
 
 	cmd.RunE = c.Run
 
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpRemoteNames()
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
 	return cmd
 }
 
@@ -909,6 +985,14 @@ func (c *cmdRemoteSetURL) Command() *cobra.Command {
 		`Set the URL for the remote`))
 
 	cmd.RunE = c.Run
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpRemoteNames()
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 
 	return cmd
 }
