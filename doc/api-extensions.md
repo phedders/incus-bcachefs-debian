@@ -2430,3 +2430,11 @@ Those integrations attach to network peers through some new fields:
 
 * `type` (`local` for current behavior, `remote` for integrations)
 * `target_integration` (reference to the integration)
+
+## `instance_memory_swap_bytes`
+
+This extends `limits.memory.swap` to allow for a total limit in bytes.
+
+## `network_bridge_external_create`
+
+This adds the ability for `bridge.external_interfaces` to create a parent interface using a `interface/parent/vlan` syntax.

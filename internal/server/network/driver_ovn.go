@@ -918,7 +918,7 @@ func (n *ovn) getLogicalRouterPeerPortName(peerNetworkID int64) networkOVN.OVNRo
 	return networkOVN.OVNRouterPort(fmt.Sprintf("%s-lrp-peer-net%d", n.getRouterName(), peerNetworkID))
 }
 
-// setupUplinkPort initialises the uplink connection. Returns the derived ovnUplinkVars settings used
+// setupUplinkPort initializes the uplink connection. Returns the derived ovnUplinkVars settings used
 // during the initial creation of the logical network.
 func (n *ovn) setupUplinkPort(routerMAC net.HardwareAddr) (*ovnUplinkVars, error) {
 	// Uplink network must be in default project.
@@ -2698,7 +2698,7 @@ func (n *ovn) deleteChassisGroupEntry() error {
 	}
 
 	err = n.state.OVNNB.SetChassisGroupPriority(context.TODO(), n.getChassisGroupName(), chassisID, -1)
-	if err != nil {
+	if err != nil && err != ovs.ErrNotFound {
 		return fmt.Errorf("Failed deleting OVS chassis %q from chassis group %q: %w", chassisID, n.getChassisGroupName(), err)
 	}
 
@@ -5498,7 +5498,7 @@ func (n *ovn) remotePeerCreate(peer api.NetworkPeersPost) error {
 	// Determine the transit switch name.
 	pattern := integration.Config["ovn.transit.pattern"]
 	if pattern == "" {
-		pattern = "ts-incus-{{ integrationName }}-{{ projectName }}-{{ networkname }}"
+		pattern = "ts-incus-{{ integrationName }}-{{ projectName }}-{{ networkName }}"
 	}
 
 	tsNameRendered, err := internalUtil.RenderTemplate(pattern, pongo2.Context{
@@ -5963,7 +5963,7 @@ func (n *ovn) remotePeerDelete(peer *api.NetworkPeer) error {
 	// Determine the transit switch name.
 	pattern := integration.Config["ovn.transit.pattern"]
 	if pattern == "" {
-		pattern = "ts-incus-{{ integrationName }}-{{ projectName }}-{{ networkname }}"
+		pattern = "ts-incus-{{ integrationName }}-{{ projectName }}-{{ networkName }}"
 	}
 
 	tsNameRendered, err := internalUtil.RenderTemplate(pattern, pongo2.Context{
