@@ -50,7 +50,7 @@ Build-Depends: debhelper-compat (= 13),
                golang-github-stretchr-testify-dev,
                golang-github-vishvananda-netlink-dev,
                golang-github-xenolf-lego-dev,
-               golang-github-zitadel-oidc-dev,
+               golang-github-zitadel-oidc-dev (>= 3.0),
                golang-gocapability-dev,
                golang-golang-x-crypto-dev,
                golang-golang-x-oauth2-dev,
@@ -68,7 +68,7 @@ Build-Depends: debhelper-compat (= 13),
                libacl1-dev,
                libcap-dev
 Build-Conflicts: golang-github-golang-protobuf-1-3-dev
-Standards-Version: 4.6.2
+Standards-Version: 4.7.0
 Vcs-Browser: https://salsa.debian.org/go-team/packages/incus
 Vcs-Git: https://salsa.debian.org/go-team/packages/incus.git
 Homepage: https://linuxcontainers.org/incus/
@@ -122,7 +122,7 @@ Depends: golang-github-armon-go-proxyproto-dev,
          golang-github-stretchr-testify-dev,
          golang-github-vishvananda-netlink-dev,
          golang-github-xenolf-lego-dev,
-         golang-github-zitadel-oidc-dev,
+         golang-github-zitadel-oidc-dev (>= 3.0),
          golang-gocapability-dev,
          golang-golang-x-crypto-dev,
          golang-golang-x-oauth2-dev,
