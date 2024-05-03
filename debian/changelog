@@ -1,3 +1,9 @@
+incus (6.0.0-2) UNRELEASED; urgency=medium
+
+  * Cherry-pick upstream fix for autocomplete regression
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 03 May 2024 15:19:07 +0000
+
 incus (6.0.0-1) unstable; urgency=medium
 
   * New upstream release
