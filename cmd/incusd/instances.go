@@ -12,19 +12,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lxc/incus/internal/server/auth"
-	"github.com/lxc/incus/internal/server/db"
-	"github.com/lxc/incus/internal/server/db/cluster"
-	"github.com/lxc/incus/internal/server/db/warningtype"
-	"github.com/lxc/incus/internal/server/instance"
-	"github.com/lxc/incus/internal/server/instance/instancetype"
-	"github.com/lxc/incus/internal/server/project"
-	"github.com/lxc/incus/internal/server/state"
-	"github.com/lxc/incus/internal/server/warnings"
-	internalUtil "github.com/lxc/incus/internal/util"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/logger"
-	"github.com/lxc/incus/shared/util"
+	"github.com/lxc/incus/v6/internal/server/auth"
+	"github.com/lxc/incus/v6/internal/server/db"
+	"github.com/lxc/incus/v6/internal/server/db/cluster"
+	"github.com/lxc/incus/v6/internal/server/db/warningtype"
+	"github.com/lxc/incus/v6/internal/server/instance"
+	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
+	"github.com/lxc/incus/v6/internal/server/project"
+	"github.com/lxc/incus/v6/internal/server/state"
+	"github.com/lxc/incus/v6/internal/server/warnings"
+	internalUtil "github.com/lxc/incus/v6/internal/util"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/util"
 )
 
 var instancesCmd = APIEndpoint{
@@ -156,6 +156,13 @@ var instanceBackupExportCmd = APIEndpoint{
 	Get: APIEndpointAction{Handler: instanceBackupExportGet, AccessHandler: allowPermission(auth.ObjectTypeInstance, auth.EntitlementCanManageBackups, "name")},
 }
 
+var instanceAccessCmd = APIEndpoint{
+	Name: "access",
+	Path: "instances/{name}/access",
+
+	Get: APIEndpointAction{Handler: instanceAccess, AccessHandler: allowPermission(auth.ObjectTypeInstance, auth.EntitlementCanView, "name")},
+}
+
 type instanceAutostartList []instance.Instance
 
 func (slice instanceAutostartList) Len() int {
@@ -192,11 +199,19 @@ func instanceShouldAutoStart(inst instance.Instance) bool {
 }
 
 func instancesStart(s *state.State, instances []instance.Instance) {
+	// Check if the cluster is currently evacuated.
+	if s.DB.Cluster.LocalNodeIsEvacuated() {
+		return
+	}
+
+	// Acquire startup lock.
 	instancesStartMu.Lock()
 	defer instancesStartMu.Unlock()
 
+	// Sort based on instance boot priority.
 	sort.Sort(instanceAutostartList(instances))
 
+	// Let's make up to 3 attempts to start instances.
 	maxAttempts := 3
 
 	// Start the instances

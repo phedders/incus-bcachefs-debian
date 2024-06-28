@@ -11,12 +11,12 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 
-	"github.com/lxc/incus/client"
-	cli "github.com/lxc/incus/internal/cmd"
-	"github.com/lxc/incus/internal/i18n"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/logger"
-	"github.com/lxc/incus/shared/termios"
+	"github.com/lxc/incus/v6/client"
+	cli "github.com/lxc/incus/v6/internal/cmd"
+	"github.com/lxc/incus/v6/internal/i18n"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/termios"
 )
 
 type cmdExec struct {
@@ -49,6 +49,11 @@ executable, passing the shell commands as arguments, for example:
   incus exec <instance> -- sh -c "cd /tmp && pwd"
 
 Mode defaults to non-interactive, interactive mode is selected if both stdin AND stdout are terminals (stderr is ignored).`))
+	cmd.Example = cli.FormatSection("", i18n.G(`incus exec c1 bash
+	Run the "bash" command in instance "c1"
+
+incus exec c1 -- ls -lh /
+	Run the "ls -lh /" command in instance "c1"`))
 
 	cmd.RunE = c.Run
 	cmd.Flags().StringArrayVar(&c.flagEnvironment, "env", nil, i18n.G("Environment variable to set (e.g. HOME=/home/foo)")+"``")

@@ -16,13 +16,13 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pkg/sftp"
 
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/cancel"
-	"github.com/lxc/incus/shared/ioprogress"
-	"github.com/lxc/incus/shared/tcp"
-	localtls "github.com/lxc/incus/shared/tls"
-	"github.com/lxc/incus/shared/units"
-	"github.com/lxc/incus/shared/ws"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/cancel"
+	"github.com/lxc/incus/v6/shared/ioprogress"
+	"github.com/lxc/incus/v6/shared/tcp"
+	localtls "github.com/lxc/incus/v6/shared/tls"
+	"github.com/lxc/incus/v6/shared/units"
+	"github.com/lxc/incus/v6/shared/ws"
 )
 
 // Instance handling functions.
@@ -2118,6 +2118,23 @@ func (r *ProtocolIncus) UpdateInstanceState(name string, state api.InstanceState
 	}
 
 	return op, nil
+}
+
+// GetInstanceAccess returns an Access entry for the provided instance name.
+func (r *ProtocolIncus) GetInstanceAccess(name string) (api.Access, error) {
+	access := api.Access{}
+
+	if !r.HasExtension("instance_access") {
+		return nil, fmt.Errorf("The server is missing the required \"instance_access\" API extension")
+	}
+
+	// Fetch the raw value
+	_, err := r.queryStruct("GET", fmt.Sprintf("/instances/%s/access", url.PathEscape(name)), nil, "", &access)
+	if err != nil {
+		return nil, err
+	}
+
+	return access, nil
 }
 
 // GetInstanceLogfiles returns a list of logfiles for the instance.

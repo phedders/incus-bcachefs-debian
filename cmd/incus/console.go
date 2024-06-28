@@ -14,13 +14,13 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 
-	"github.com/lxc/incus/client"
-	cli "github.com/lxc/incus/internal/cmd"
-	"github.com/lxc/incus/internal/i18n"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/logger"
-	"github.com/lxc/incus/shared/termios"
-	"github.com/lxc/incus/shared/util"
+	"github.com/lxc/incus/v6/client"
+	cli "github.com/lxc/incus/v6/internal/cmd"
+	"github.com/lxc/incus/v6/internal/i18n"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/termios"
+	"github.com/lxc/incus/v6/shared/util"
 )
 
 type cmdConsole struct {
@@ -120,7 +120,11 @@ func (c *cmdConsole) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Show the current log if requested
+	return c.console(d, name)
+}
+
+func (c *cmdConsole) console(d incus.InstanceServer, name string) error {
+	// Show the current log if requested.
 	if c.flagShowLog {
 		if c.flagType != "console" {
 			return fmt.Errorf(i18n.G("The --show-log flag is only supported for by 'console' output type"))
@@ -132,26 +136,23 @@ func (c *cmdConsole) Run(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		stuff, err := io.ReadAll(log)
+		content, err := io.ReadAll(log)
 		if err != nil {
 			return err
 		}
 
-		fmt.Printf("\n"+i18n.G("Console log:")+"\n\n%s\n", string(stuff))
+		fmt.Println(string(content))
 		return nil
 	}
 
-	return c.Console(d, name)
-}
-
-func (c *cmdConsole) Console(d incus.InstanceServer, name string) error {
+	// Handle running consoles.
 	if c.flagType == "" {
 		c.flagType = "console"
 	}
 
 	switch c.flagType {
 	case "console":
-		return c.console(d, name)
+		return c.text(d, name)
 	case "vga":
 		return c.vga(d, name)
 	}
@@ -159,7 +160,7 @@ func (c *cmdConsole) Console(d incus.InstanceServer, name string) error {
 	return fmt.Errorf(i18n.G("Unknown console type %q"), c.flagType)
 }
 
-func (c *cmdConsole) console(d incus.InstanceServer, name string) error {
+func (c *cmdConsole) text(d incus.InstanceServer, name string) error {
 	// Configure the terminal
 	cfd := int(os.Stdin.Fd())
 
@@ -207,13 +208,13 @@ func (c *cmdConsole) console(d incus.InstanceServer, name string) error {
 		close(consoleDisconnect)
 	}()
 
-	fmt.Printf(i18n.G("To detach from the console, press: <ctrl>+a q") + "\n\r")
-
 	// Attach to the instance console
 	op, err := d.ConsoleInstance(name, req, &consoleArgs)
 	if err != nil {
 		return err
 	}
+
+	fmt.Printf(i18n.G("To detach from the console, press: <ctrl>+a q") + "\n\r")
 
 	// Wait for the operation to complete
 	err = op.Wait()

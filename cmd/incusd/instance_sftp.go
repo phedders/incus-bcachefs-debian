@@ -11,14 +11,14 @@ import (
 
 	"github.com/gorilla/mux"
 
-	internalInstance "github.com/lxc/incus/internal/instance"
-	"github.com/lxc/incus/internal/server/cluster"
-	"github.com/lxc/incus/internal/server/instance"
-	"github.com/lxc/incus/internal/server/request"
-	"github.com/lxc/incus/internal/server/response"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/logger"
-	"github.com/lxc/incus/shared/tcp"
+	internalInstance "github.com/lxc/incus/v6/internal/instance"
+	"github.com/lxc/incus/v6/internal/server/cluster"
+	"github.com/lxc/incus/v6/internal/server/instance"
+	"github.com/lxc/incus/v6/internal/server/request"
+	"github.com/lxc/incus/v6/internal/server/response"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/tcp"
 )
 
 // swagger:operation GET /1.0/instances/{name}/sftp instances instance_sftp
@@ -106,6 +106,11 @@ type sftpServeResponse struct {
 
 func (r *sftpServeResponse) String() string {
 	return "sftp handler"
+}
+
+// Code returns the HTTP code.
+func (r *sftpServeResponse) Code() int {
+	return http.StatusOK
 }
 
 func (r *sftpServeResponse) Render(w http.ResponseWriter) error {

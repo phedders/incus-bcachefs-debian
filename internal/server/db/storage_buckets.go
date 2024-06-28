@@ -12,8 +12,9 @@ import (
 
 	dqliteDriver "github.com/cowsql/go-cowsql/driver"
 
-	"github.com/lxc/incus/internal/server/db/query"
-	"github.com/lxc/incus/shared/api"
+	"github.com/lxc/incus/v6/internal/server/db/query"
+	"github.com/lxc/incus/v6/internal/version"
+	"github.com/lxc/incus/v6/shared/api"
 )
 
 // StorageBucketFilter used for filtering storage buckets with GetStorageBuckets().
@@ -29,7 +30,6 @@ type StorageBucket struct {
 	api.StorageBucket
 
 	ID       int64
-	Project  string
 	PoolID   int64
 	PoolName string
 }
@@ -633,4 +633,27 @@ WHERE storage_buckets.id = ?
 	}
 
 	return response, nil
+}
+
+// GetStorageBucketURIs returns the URIs of the storage buckets, specifying
+// target node if applicable.
+func (c *ClusterTx) GetStorageBucketURIs(ctx context.Context, project string) ([]string, error) {
+	filter := StorageBucketFilter{Project: &project}
+	bucketInfo, err := c.GetStoragePoolBuckets(ctx, false, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	uris := []string{}
+	for _, info := range bucketInfo {
+		uri := api.NewURL().Path(version.APIVersion, "storage-pools", info.PoolName, "buckets", info.Name).Project(project)
+
+		if info.Location != "" {
+			uri.Target(info.Location)
+		}
+
+		uris = append(uris, uri.String())
+	}
+
+	return uris, nil
 }

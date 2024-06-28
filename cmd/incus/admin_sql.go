@@ -12,10 +12,10 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 
-	"github.com/lxc/incus/client"
-	cli "github.com/lxc/incus/internal/cmd"
-	"github.com/lxc/incus/internal/i18n"
-	internalSQL "github.com/lxc/incus/internal/sql"
+	"github.com/lxc/incus/v6/client"
+	cli "github.com/lxc/incus/v6/internal/cmd"
+	"github.com/lxc/incus/v6/internal/i18n"
+	internalSQL "github.com/lxc/incus/v6/internal/sql"
 )
 
 type cmdAdminSQL struct {
@@ -49,12 +49,8 @@ func (c *cmdAdminSQL) Command() *cobra.Command {
 
   This internal command is mostly useful for debugging and disaster
   recovery. The development team will occasionally provide hotfixes to users as a
-  set of database queries to fix some data inconsistency.
-
-  This command targets the global database and works in both local
-  and cluster mode.`))
+  set of database queries to fix some data inconsistency.`))
 	cmd.RunE = c.Run
-	cmd.Hidden = true
 
 	return cmd
 }

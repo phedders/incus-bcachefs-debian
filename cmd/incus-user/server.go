@@ -9,14 +9,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lxc/incus/client"
-	"github.com/lxc/incus/internal/linux"
-	"github.com/lxc/incus/internal/revert"
-	internalUtil "github.com/lxc/incus/internal/util"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/idmap"
-	"github.com/lxc/incus/shared/subprocess"
-	localtls "github.com/lxc/incus/shared/tls"
+	"github.com/lxc/incus/v6/client"
+	"github.com/lxc/incus/v6/internal/linux"
+	"github.com/lxc/incus/v6/internal/revert"
+	internalUtil "github.com/lxc/incus/v6/internal/util"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/idmap"
+	"github.com/lxc/incus/v6/shared/subprocess"
+	localtls "github.com/lxc/incus/v6/shared/tls"
 )
 
 func serverIsConfigured(client incus.InstanceServer) (bool, error) {
@@ -55,6 +55,8 @@ func serverInitialConfiguration(client incus.InstanceServer) error {
 	availableBackends := linux.AvailableStorageDrivers(internalUtil.VarPath(), info.Environment.StorageSupportedDrivers, internalUtil.PoolTypeLocal)
 
 	// Load the default profile.
+	var profileNeedsUpdate bool
+
 	profile, profileEtag, err := client.GetProfile("default")
 	if err != nil {
 		return fmt.Errorf("Failed to load default profile: %w", err)
@@ -97,6 +99,8 @@ func serverInitialConfiguration(client incus.InstanceServer) error {
 			"pool": "default",
 			"path": "/",
 		}
+
+		profileNeedsUpdate = true
 	}
 
 	// Look for networks.
@@ -131,12 +135,16 @@ func serverInitialConfiguration(client incus.InstanceServer) error {
 			"network": "incusbr0",
 			"name":    "eth0",
 		}
+
+		profileNeedsUpdate = true
 	}
 
 	// Update the default profile.
-	err = client.UpdateProfile("default", profile.Writable(), profileEtag)
-	if err != nil {
-		return fmt.Errorf("Failed to update default profile: %w", err)
+	if profileNeedsUpdate {
+		err = client.UpdateProfile("default", profile.Writable(), profileEtag)
+		if err != nil {
+			return fmt.Errorf("Failed to update default profile: %w", err)
+		}
 	}
 
 	return nil
@@ -248,7 +256,7 @@ func serverSetupUser(uid uint32) error {
 	network.Config = map[string]string{}
 	network.Type = "bridge"
 	network.Name = networkName
-	network.Description = fmt.Sprintf("Network for user restricted project user-%s", projectName)
+	network.Description = fmt.Sprintf("Network for user restricted project %s", projectName)
 
 	err = client.CreateNetwork(network)
 	if err != nil {

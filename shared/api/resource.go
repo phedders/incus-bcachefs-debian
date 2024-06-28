@@ -41,6 +41,11 @@ type Resources struct {
 	//
 	// API extension: resources_system
 	System ResourcesSystem `json:"system" yaml:"system"`
+
+	// Load average information
+	//
+	// API extension: resources_load
+	Load ResourcesLoad `json:"load" yaml:"load"`
 }
 
 // ResourcesCPU represents the cpu resources available on the system
@@ -141,6 +146,12 @@ type ResourcesCPUCore struct {
 	// Current frequency
 	// Example: 3500
 	Frequency uint64 `json:"frequency,omitempty" yaml:"frequency,omitempty"`
+
+	// List of CPU flags
+	// Example: []
+	//
+	// API extension: resources_cpu_flags
+	Flags []string `json:"flags" yaml:"flags"`
 }
 
 // ResourcesCPUThread represents a CPU thread on the system
@@ -1091,4 +1102,27 @@ type ResourcesSystemMotherboard struct {
 	// Motherboard version/revision
 	// Example: None
 	Version string `json:"version" yaml:"version"`
+}
+
+// ResourcesLoad represents system load information
+//
+// swagger:model
+//
+// API extension: resources_load.
+type ResourcesLoad struct {
+	// Load average in the past minute
+	// Example: 0.69
+	Average1Min float64
+
+	// Load average in the past 5 minutes
+	// Example: 1.10
+	Average5Min float64
+
+	// Load average in the past 10 minutes
+	// Example: 1.29
+	Average10Min float64
+
+	// The number of active processes
+	// Example: 1234
+	Processes int
 }

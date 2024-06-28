@@ -10,11 +10,11 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 
-	cli "github.com/lxc/incus/internal/cmd"
-	"github.com/lxc/incus/internal/i18n"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/termios"
-	"github.com/lxc/incus/shared/util"
+	cli "github.com/lxc/incus/v6/internal/cmd"
+	"github.com/lxc/incus/v6/internal/i18n"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/termios"
+	"github.com/lxc/incus/v6/shared/util"
 )
 
 type cmdNetworkLoadBalancer struct {
@@ -251,6 +251,11 @@ func (c *cmdNetworkLoadBalancerCreate) Command() *cobra.Command {
 	cmd.Use = usage("create", i18n.G("[<remote>:]<network> <listen_address> [key=value...]"))
 	cmd.Short = i18n.G("Create new network load balancers")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G("Create new network load balancers"))
+	cmd.Example = cli.FormatSection("", i18n.G(`incus network load-balancer create n1 127.0.0.1
+
+incus network load-balancer create n1 127.0.0.1 < config.yaml
+    Create network load-balancer for network n1 with configuration from config.yaml`))
+
 	cmd.RunE = c.Run
 
 	cmd.Flags().StringVar(&c.networkLoadBalancer.flagTarget, "target", "", i18n.G("Cluster member name")+"``")
@@ -588,12 +593,22 @@ func (c *cmdNetworkLoadBalancerEdit) helpTemplate() string {
 ### config:
 ###   target_address: 198.51.100.2
 ### description: test desc
+### backends:
+### - name: backend1
+###   description: First backend server
+###   target_address: 192.0.3.1
+###   target_port: 80
+### - name: backend2
+###   description: Second backend server
+###   target_address: 192.0.3.2
+###   target_port: 80
 ### ports:
 ### - description: port forward
 ###   protocol: tcp
 ###   listen_port: 80,81,8080-8090
-###   target_address: 198.51.100.3
-###   target_port: 80,81,8080-8090
+###   target_backend:
+###    - backend1
+###    - backend2
 ### location: server01
 ###
 ### Note that the listen_address and location cannot be changed.`)

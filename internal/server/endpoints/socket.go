@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"os/user"
 	"strconv"
 
-	"github.com/lxc/incus/client"
-	"github.com/lxc/incus/shared/logger"
-	"github.com/lxc/incus/shared/util"
+	"github.com/lxc/incus/v6/client"
+	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/subprocess"
+	"github.com/lxc/incus/v6/shared/util"
 )
 
 // Bind to the given unix socket path.
@@ -109,6 +111,25 @@ func socketUnixSetOwnership(path string, groupName string) error {
 	if err != nil {
 		return fmt.Errorf("cannot change ownership on local socket: %w", err)
 	}
+
+	return nil
+}
+
+// Set the SELinux label on the socket.
+func socketUnixSetLabel(path string, label string) error {
+	// Skip if no label requested.
+	if label == "" {
+		return nil
+	}
+
+	// Check if chcon is installed.
+	_, err := exec.LookPath("chcon")
+	if err != nil {
+		return nil
+	}
+
+	// Attempt to apply (don't fail as kernel may not support it).
+	_, _ = subprocess.RunCommand("chcon", label, path)
 
 	return nil
 }

@@ -19,22 +19,22 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 
-	"github.com/lxc/incus/internal/instancewriter"
-	"github.com/lxc/incus/internal/linux"
-	"github.com/lxc/incus/internal/migration"
-	"github.com/lxc/incus/internal/revert"
-	"github.com/lxc/incus/internal/server/backup"
-	localMigration "github.com/lxc/incus/internal/server/migration"
-	"github.com/lxc/incus/internal/server/operations"
-	internalUtil "github.com/lxc/incus/internal/util"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/archive"
-	"github.com/lxc/incus/shared/ioprogress"
-	"github.com/lxc/incus/shared/logger"
-	"github.com/lxc/incus/shared/subprocess"
-	"github.com/lxc/incus/shared/units"
-	"github.com/lxc/incus/shared/util"
-	"github.com/lxc/incus/shared/validate"
+	"github.com/lxc/incus/v6/internal/instancewriter"
+	"github.com/lxc/incus/v6/internal/linux"
+	"github.com/lxc/incus/v6/internal/migration"
+	"github.com/lxc/incus/v6/internal/revert"
+	"github.com/lxc/incus/v6/internal/server/backup"
+	localMigration "github.com/lxc/incus/v6/internal/server/migration"
+	"github.com/lxc/incus/v6/internal/server/operations"
+	internalUtil "github.com/lxc/incus/v6/internal/util"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/archive"
+	"github.com/lxc/incus/v6/shared/ioprogress"
+	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/subprocess"
+	"github.com/lxc/incus/v6/shared/units"
+	"github.com/lxc/incus/v6/shared/util"
+	"github.com/lxc/incus/v6/shared/validate"
 )
 
 // CreateVolume creates an empty volume and can optionally fill it by executing the supplied
@@ -1077,7 +1077,11 @@ func (d *zfs) createVolumeFromMigrationOptimized(vol Volume, conn io.ReadWriteCl
 				return err
 			}
 
-			wrapper := localMigration.ProgressWriter(op, "fs_progress", snapVol.Name())
+			// Setup progress tracking.
+			var wrapper *ioprogress.ProgressTracker
+			if volTargetArgs.TrackProgress {
+				wrapper = localMigration.ProgressTracker(op, "fs_progress", snapVol.Name())
+			}
 
 			err = d.receiveDataset(snapVol, conn, wrapper)
 			if err != nil {
@@ -1097,8 +1101,13 @@ func (d *zfs) createVolumeFromMigrationOptimized(vol Volume, conn io.ReadWriteCl
 		})
 	}
 
+	// Setup progress tracking.
+	var wrapper *ioprogress.ProgressTracker
+	if volTargetArgs.TrackProgress {
+		wrapper = localMigration.ProgressTracker(op, "fs_progress", vol.name)
+	}
+
 	// Transfer the main volume.
-	wrapper := localMigration.ProgressWriter(op, "fs_progress", vol.name)
 	err = d.receiveDataset(vol, conn, wrapper)
 	if err != nil {
 		return fmt.Errorf("Failed receiving volume %q: %w", vol.Name(), err)
