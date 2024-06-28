@@ -6,8 +6,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/lxc/incus/internal/server/response"
-	"github.com/lxc/incus/shared/ws"
+	"github.com/lxc/incus/v6/internal/server/response"
+	"github.com/lxc/incus/v6/shared/ws"
 )
 
 type operationWebSocket struct {
@@ -37,6 +37,11 @@ func (r *operationWebSocket) String() string {
 	}
 
 	return md.ID
+}
+
+// Code returns the HTTP code.
+func (r *operationWebSocket) Code() int {
+	return http.StatusOK
 }
 
 type forwardedOperationWebSocket struct {
@@ -69,4 +74,9 @@ func (r *forwardedOperationWebSocket) Render(w http.ResponseWriter) error {
 
 func (r *forwardedOperationWebSocket) String() string {
 	return r.id
+}
+
+// Code returns the HTTP code.
+func (r *forwardedOperationWebSocket) Code() int {
+	return http.StatusOK
 }

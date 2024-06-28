@@ -32,6 +32,25 @@ Packages are available for a number of Linux distributions, either in their main
 
 ````{tabs}
 
+```{group-tab} Alpine
+Incus and all of its dependencies are available in Alpine Linux's community repository as `incus`.
+
+Install Incus with:
+
+    apk add incus incus-client
+
+If running virtual machines, also do:
+
+    apk add incus-vm
+
+Then enable and start the service:
+
+    rc-update add incusd
+    rc-service incusd start
+
+Please report packaging issues [here](https://gitlab.alpinelinux.org/alpine/aports/-/issues).
+```
+
 ```{group-tab} Arch Linux
 Incus and all of its dependencies are available in Arch Linux's main repository as `incus`.
 
@@ -51,12 +70,14 @@ There are three options currently available to Debian users.
     This package will be featured in the upcoming Debian 13 (`trixie`) release.
 
     On such systems, just running `apt install incus` will get Incus installed.
+    To run virtual machines, also run `apt install qemu-system`.
 
 1. Native `incus` backported package
 
    A native `incus` backported package is currently available for Debian 12 (`bookworm`) users.
 
    On such systems, just running `apt install incus/bookworm-backports` will get Incus installed.
+   To run virtual machines, also run `apt install qemu-system`.
 
    ****NOTE:**** Users of backported packages should not file bugs in the Debian Bug Tracker, instead please reach out [through our forum](https://discuss.linuxcontainers.org) or directly to the Debian packager.
 
@@ -66,6 +87,10 @@ There are three options currently available to Debian users.
     Those packages contain everything needed to use all Incus features.
 
     Up to date installation instructions may be found here: [`https://github.com/zabbly/incus`](https://github.com/zabbly/incus)
+```
+
+```{group-tab} Docker
+Docker/Podman images of Incus, based on the Zabbly package repository, are available with instructions here: [`ghcr.io/cmspam/incus-docker`](https://ghcr.io/cmspam/incus-docker)
 ```
 
 ```{group-tab} Fedora
@@ -92,6 +117,10 @@ Incus and all of its dependencies are available in Gentoo's main repository as [
 Install Incus with:
 
     emerge -av app-containers/incus
+
+To run virtual machines, also run:
+
+    emerge -av app-emulation/qemu
 
 Note: Installing LTS vs. feature-release will be explained later, when Incus upstream and Gentoo's repository has those releases available.
 
@@ -140,10 +169,9 @@ There are two options currently available to Ubuntu users.
 
 1. Native `incus` package
 
-    A native `incus` package is currently available in the Ubuntu development repository.
-    This package will be featured in the upcoming Ubuntu 24.04 (noble) release.
-
+    A native `incus` package is currently available in Ubuntu 24.04 LTS and later.
     On such systems, just running `apt install incus` will get Incus installed.
+    To run virtual machines, also run `apt install qemu-system`.
 
 1. Zabbly package repository
 
@@ -229,33 +257,6 @@ version to work.
 
 ````{tabs}
 
-```{group-tab} Debian and Ubuntu
-Install the build and required runtime dependencies with:
-
-    sudo apt update
-    sudo apt install acl attr autoconf automake dnsmasq-base git golang-go libacl1-dev libcap-dev liblxc1 liblxc-dev libsqlite3-dev libtool libudev-dev liblz4-dev libuv1-dev make pkg-config rsync squashfs-tools tar tcl xz-utils ebtables
-
-There are a few storage drivers for Incus besides the default `dir` driver.
-Installing these tools adds a bit to initramfs and may slow down your
-host boot, but are needed if you'd like to use a particular driver:
-
-    sudo apt install btrfs-progs
-    sudo apt install ceph-common
-    sudo apt install lvm2 thin-provisioning-tools
-    sudo apt install zfsutils-linux
-
-To run the test suite, you'll also need:
-
-    sudo apt install busybox-static curl gettext jq sqlite3 socat bind9-dnsutils
-
-****NOTE:**** If you use the `liblxc-dev` package and get compile time errors when building the `go-lxc` module,
-ensure that the value for `LXC_DEVEL` is `0` for your `liblxc` build. To check that, look at `/usr/include/lxc/version.h`.
-If the `LXC_DEVEL` value is `1`, replace it with `0` to work around the problem. It's a packaging bug, and
-we are aware of it for Ubuntu 22.04/22.10. Ubuntu 23.04/23.10 does not have this problem.
-
-```
-
-
 ```{group-tab} Alpine Linux
 You can get the development resources required to build Incus on your Alpine Linux via the following command:
 
@@ -283,6 +284,54 @@ Also, due to a [`gettext` issue](https://github.com/gosexy/gettext/issues/1), yo
     export CGO_CPPFLAGS="-I/usr/include"
 ```
 
+```{group-tab} Debian and Ubuntu
+Install the build and required runtime dependencies with:
+
+    sudo apt update
+    sudo apt install acl attr autoconf automake dnsmasq-base git golang-go libacl1-dev libcap-dev liblxc1 lxc-dev libsqlite3-dev libtool libudev-dev liblz4-dev libuv1-dev make pkg-config rsync squashfs-tools tar tcl xz-utils ebtables
+
+****NOTE:**** The version of `golang-go` in your version of Debian or Ubuntu may not be sufficient to build Incus (see {ref}`requirements-go`).
+In such cases, you may need to install a newer Go version [from upstream](https://go.dev/doc/install).
+
+There are a few storage drivers for Incus besides the default `dir` driver.
+Installing these tools adds a bit to initramfs and may slow down your
+host boot, but are needed if you'd like to use a particular driver:
+
+    sudo apt install btrfs-progs
+    sudo apt install ceph-common
+    sudo apt install lvm2 thin-provisioning-tools
+    sudo apt install zfsutils-linux
+
+To run the test suite, you'll also need:
+
+    sudo apt install busybox-static curl gettext jq sqlite3 socat bind9-dnsutils
+
+****NOTE:**** If you use the `liblxc-dev` package and get compile time errors when building the `go-lxc` module,
+ensure that the value for `LXC_DEVEL` is `0` for your `liblxc` build. To check that, look at `/usr/include/lxc/version.h`.
+If the `LXC_DEVEL` value is `1`, replace it with `0` to work around the problem. It's a packaging bug, and
+we are aware of it for Ubuntu 22.04/22.10. Ubuntu 23.04/23.10 does not have this problem.
+
+```
+
+```{group-tab} OpenSUSE
+You can get the development resources required to build Incus on your OpenSUSE Tumbleweed system via the following command:
+
+    sudo zypper install autoconf automake git go libacl-devel libcap-devel liblxc1 liblxc-devel sqlite3-devel libtool libudev-devel liblz4-devel libuv-devel make pkg-config tcl
+
+In addition, for normal operation, you'll also likely need
+
+    sudo zypper install dnsmasq squashfs xz rsync tar attr acl qemu qemu-img qemu-spice qemu-hw-display-virtio-gpu-pci iptables ebtables nftables
+
+As OpenSUSE stores QEMU firmware files using an unusual filename and location, you will need to create some symlinks for them:
+
+    sudo mkdir /usr/share/OVMF
+    sudo ln -s /usr/share/qemu/ovmf-x86_64-4m-code.bin /usr/share/OVMF/OVMF_CODE.4MB.fd
+    sudo ln -s /usr/share/qemu/ovmf-x86_64-4m-vars.bin /usr/share/OVMF/OVMF_VARS.4MB.fd
+    sudo ln -s /usr/share/qemu/ovmf-x86_64-ms-4m-vars.bin /usr/share/OVMF/OVMF_VARS.4MB.ms.fd
+    sudo ln -s /usr/share/qemu/ovmf-x86_64-ms-4m-code.bin /usr/share/OVMF/OVMF_CODE.4MB.ms.fd
+```
+
+
 ````
 
 ### From source: Build the latest version
@@ -306,8 +355,8 @@ The Incus release tarballs bundle a complete dependency tree as well as a
 local copy of `libraft` and `libcowsql` for Incus' database setup.
 
 ```bash
-tar zxvf incus-0.1.tar.gz
-cd incus-0.1
+tar zxvf incus-6.0.0.tar.gz
+cd incus-6.0.0
 ```
 
 This will unpack the release tarball and place you inside of the source tree.

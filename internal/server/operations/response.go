@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/lxc/incus/internal/server/response"
-	localUtil "github.com/lxc/incus/internal/server/util"
-	"github.com/lxc/incus/internal/version"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/logger"
+	"github.com/lxc/incus/v6/internal/server/response"
+	localUtil "github.com/lxc/incus/v6/internal/server/util"
+	"github.com/lxc/incus/v6/internal/version"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/logger"
 )
 
 // Operation response.
@@ -42,12 +42,11 @@ func (r *operationResponse) Render(w http.ResponseWriter) error {
 
 	w.Header().Set("Location", url)
 
-	code := 202
-	w.WriteHeader(code)
+	w.WriteHeader(http.StatusAccepted)
 
 	var debugLogger logger.Logger
 	if debug {
-		debugLogger = logger.AddContext(logger.Ctx{"http_code": code})
+		debugLogger = logger.AddContext(logger.Ctx{"http_code": http.StatusAccepted})
 	}
 
 	return localUtil.WriteJSON(w, body, debugLogger)
@@ -60,6 +59,11 @@ func (r *operationResponse) String() string {
 	}
 
 	return md.ID
+}
+
+// Code returns the HTTP code.
+func (r *operationResponse) Code() int {
+	return http.StatusAccepted
 }
 
 // Forwarded operation response.
@@ -95,12 +99,11 @@ func (r *forwardedOperationResponse) Render(w http.ResponseWriter) error {
 
 	w.Header().Set("Location", url)
 
-	code := 202
-	w.WriteHeader(code)
+	w.WriteHeader(http.StatusAccepted)
 
 	var debugLogger logger.Logger
 	if debug {
-		debugLogger = logger.AddContext(logger.Ctx{"http_code": code})
+		debugLogger = logger.AddContext(logger.Ctx{"http_code": http.StatusAccepted})
 	}
 
 	return localUtil.WriteJSON(w, body, debugLogger)
@@ -108,4 +111,9 @@ func (r *forwardedOperationResponse) Render(w http.ResponseWriter) error {
 
 func (r *forwardedOperationResponse) String() string {
 	return r.op.ID
+}
+
+// Code returns the HTTP code.
+func (r *forwardedOperationResponse) Code() int {
+	return http.StatusAccepted
 }

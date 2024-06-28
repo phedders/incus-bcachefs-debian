@@ -9,13 +9,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lxc/incus/client"
-	"github.com/lxc/incus/internal/i18n"
-	"github.com/lxc/incus/internal/instance"
-	"github.com/lxc/incus/internal/revert"
-	"github.com/lxc/incus/shared/api"
-	config "github.com/lxc/incus/shared/cliconfig"
-	"github.com/lxc/incus/shared/termios"
+	"github.com/lxc/incus/v6/client"
+	"github.com/lxc/incus/v6/internal/i18n"
+	"github.com/lxc/incus/v6/internal/instance"
+	"github.com/lxc/incus/v6/internal/revert"
+	"github.com/lxc/incus/v6/shared/api"
+	config "github.com/lxc/incus/v6/shared/cliconfig"
+	"github.com/lxc/incus/v6/shared/termios"
 )
 
 // Date layout to be used throughout the client.
@@ -370,8 +370,8 @@ func getImgInfo(d incus.InstanceServer, conf *config.Config, imgRemote string, i
 		}
 	}
 
-	// Optimisation for simplestreams
-	if conf.Remotes[imgRemote].Protocol == "simplestreams" {
+	// Optimisation for public image servers.
+	if conf.Remotes[imgRemote].Protocol != "incus" {
 		imgInfo = &api.Image{}
 		imgInfo.Fingerprint = imageRef
 		imgInfo.Public = true

@@ -17,9 +17,9 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/lxc/incus/client"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/util"
+	"github.com/lxc/incus/v6/client"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/util"
 )
 
 // Remote holds details for communication with a remote daemon.
@@ -68,7 +68,7 @@ func (c *Config) GetInstanceServer(name string) (incus.InstanceServer, error) {
 	}
 
 	// Quick checks.
-	if remote.Public || remote.Protocol == "simplestreams" {
+	if remote.Public || remote.Protocol != "incus" {
 		return nil, fmt.Errorf("The remote isn't a private server")
 	}
 
@@ -273,7 +273,7 @@ func (c *Config) getConnectionArgs(name string) (*incus.ConnectionArgs, error) {
 	}
 
 	// Stop here if no client certificate involved
-	if remote.Protocol == "simplestreams" || slices.Contains([]string{api.AuthenticationMethodOIDC}, remote.AuthType) {
+	if remote.Protocol != "incus" || slices.Contains([]string{api.AuthenticationMethodOIDC}, remote.AuthType) {
 		return &args, nil
 	}
 

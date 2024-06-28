@@ -18,15 +18,15 @@ import (
 	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v2"
 
-	"github.com/lxc/incus/client"
-	cli "github.com/lxc/incus/internal/cmd"
-	"github.com/lxc/incus/internal/revert"
-	"github.com/lxc/incus/internal/version"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/osarch"
-	localtls "github.com/lxc/incus/shared/tls"
-	"github.com/lxc/incus/shared/units"
-	"github.com/lxc/incus/shared/util"
+	"github.com/lxc/incus/v6/client"
+	cli "github.com/lxc/incus/v6/internal/cmd"
+	"github.com/lxc/incus/v6/internal/revert"
+	"github.com/lxc/incus/v6/internal/version"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/osarch"
+	localtls "github.com/lxc/incus/v6/shared/tls"
+	"github.com/lxc/incus/v6/shared/units"
+	"github.com/lxc/incus/v6/shared/util"
 )
 
 type cmdMigrate struct {
@@ -138,33 +138,38 @@ func (c *cmdMigrate) askServer() (incus.InstanceServer, string, error) {
 	}
 
 	args := incus.ConnectionArgs{
-		UserAgent:          fmt.Sprintf("LXC-MIGRATE %s", version.Version),
-		InsecureSkipVerify: true,
+		UserAgent: fmt.Sprintf("LXC-MIGRATE %s", version.Version),
 	}
 
-	certificate, err := localtls.GetRemoteCertificate(serverURL, args.UserAgent)
-	if err != nil {
-		return nil, "", fmt.Errorf("Failed to get remote certificate: %w", err)
-	}
-
-	digest := localtls.CertFingerprint(certificate)
-
-	fmt.Println("Certificate fingerprint:", digest)
-	fmt.Print("ok (y/n)? ")
-
-	buf := bufio.NewReader(os.Stdin)
-	line, _, err := buf.ReadLine()
-	if err != nil {
-		return nil, "", err
-	}
-
-	if len(line) < 1 || line[0] != 'y' && line[0] != 'Y' {
-		return nil, "", fmt.Errorf("Server certificate rejected by user")
-	}
-
+	// Attempt to connect
 	server, err := incus.ConnectIncus(serverURL, &args)
 	if err != nil {
-		return nil, "", fmt.Errorf("Failed to connect to server: %w", err)
+		// Failed to connect using the system CA, so retrieve the remote certificate.
+		certificate, err := localtls.GetRemoteCertificate(serverURL, args.UserAgent)
+		if err != nil {
+			return nil, "", fmt.Errorf("Failed to get remote certificate: %w", err)
+		}
+
+		digest := localtls.CertFingerprint(certificate)
+
+		fmt.Println("Certificate fingerprint:", digest)
+		fmt.Print("ok (y/n)? ")
+
+		buf := bufio.NewReader(os.Stdin)
+		line, _, err := buf.ReadLine()
+		if err != nil {
+			return nil, "", err
+		}
+
+		if len(line) < 1 || line[0] != 'y' && line[0] != 'Y' {
+			return nil, "", fmt.Errorf("Server certificate rejected by user")
+		}
+
+		args.InsecureSkipVerify = true
+		server, err = incus.ConnectIncus(serverURL, &args)
+		if err != nil {
+			return nil, "", fmt.Errorf("Failed to connect to server: %w", err)
+		}
 	}
 
 	apiServer, _, err := server.GetServer()

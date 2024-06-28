@@ -9,21 +9,22 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 
-	"github.com/lxc/incus/client"
-	cli "github.com/lxc/incus/internal/cmd"
-	"github.com/lxc/incus/internal/i18n"
-	"github.com/lxc/incus/internal/instance"
-	"github.com/lxc/incus/shared/api"
-	config "github.com/lxc/incus/shared/cliconfig"
-	"github.com/lxc/incus/shared/units"
+	"github.com/lxc/incus/v6/client"
+	cli "github.com/lxc/incus/v6/internal/cmd"
+	"github.com/lxc/incus/v6/internal/i18n"
+	"github.com/lxc/incus/v6/internal/instance"
+	"github.com/lxc/incus/v6/shared/api"
+	config "github.com/lxc/incus/v6/shared/cliconfig"
+	"github.com/lxc/incus/v6/shared/units"
 )
 
 type cmdInfo struct {
 	global *cmdGlobal
 
-	flagShowLog   bool
-	flagResources bool
-	flagTarget    string
+	flagShowAccess bool
+	flagShowLog    bool
+	flagResources  bool
+	flagTarget     string
 }
 
 func (c *cmdInfo) Command() *cobra.Command {
@@ -40,7 +41,8 @@ incus info [<remote>:] [--resources]
     For server information.`))
 
 	cmd.RunE = c.Run
-	cmd.Flags().BoolVar(&c.flagShowLog, "show-log", false, i18n.G("Show the instance's last 100 log lines?"))
+	cmd.Flags().BoolVar(&c.flagShowAccess, "show-access", false, i18n.G("Show the instance's access list"))
+	cmd.Flags().BoolVar(&c.flagShowLog, "show-log", false, i18n.G("Show the instance's recent log entries"))
 	cmd.Flags().BoolVar(&c.flagResources, "resources", false, i18n.G("Show the resources available to the server"))
 	cmd.Flags().StringVar(&c.flagTarget, "target", "", i18n.G("Cluster member name")+"``")
 
@@ -85,6 +87,22 @@ func (c *cmdInfo) Run(cmd *cobra.Command, args []string) error {
 
 	if cName == "" {
 		return c.remoteInfo(d)
+	}
+
+	if c.flagShowAccess {
+		access, err := d.GetInstanceAccess(cName)
+		if err != nil {
+			return err
+		}
+
+		data, err := yaml.Marshal(access)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("%s", data)
+
+		return nil
 	}
 
 	return c.instanceInfo(d, conf.Remotes[remote], cName, c.flagShowLog)
@@ -349,6 +367,17 @@ func (c *cmdInfo) renderUSB(usb api.ResourcesUSBDevice, prefix string) {
 	}
 }
 
+func (c *cmdInfo) renderPCI(pci api.ResourcesPCIDevice, prefix string) {
+	fmt.Printf(prefix+i18n.G("Address: %v")+"\n", pci.PCIAddress)
+	fmt.Printf(prefix+i18n.G("Vendor: %v")+"\n", pci.Vendor)
+	fmt.Printf(prefix+i18n.G("Vendor ID: %v")+"\n", pci.VendorID)
+	fmt.Printf(prefix+i18n.G("Product: %v")+"\n", pci.Product)
+	fmt.Printf(prefix+i18n.G("Product ID: %v")+"\n", pci.ProductID)
+	fmt.Printf(prefix+i18n.G("NUMA node: %v")+"\n", pci.NUMANode)
+	fmt.Printf(prefix+i18n.G("IOMMU group: %v")+"\n", pci.IOMMUGroup)
+	fmt.Printf(prefix+i18n.G("Driver: %v")+"\n", pci.Driver)
+}
+
 func (c *cmdInfo) remoteInfo(d incus.InstanceServer) error {
 	// Targeting
 	if c.flagTarget != "" {
@@ -404,61 +433,76 @@ func (c *cmdInfo) remoteInfo(d incus.InstanceServer) error {
 		}
 
 		// System: Chassis
-		fmt.Printf(i18n.G("  Chassis:") + "\n")
-		if resources.System.Chassis.Vendor != "" {
-			fmt.Printf("      "+i18n.G("Vendor: %s")+"\n", resources.System.Chassis.Vendor)
-		}
+		if resources.System.Chassis != nil {
+			fmt.Printf(i18n.G("  Chassis:") + "\n")
+			if resources.System.Chassis.Vendor != "" {
+				fmt.Printf("      "+i18n.G("Vendor: %s")+"\n", resources.System.Chassis.Vendor)
+			}
 
-		if resources.System.Chassis.Type != "" {
-			fmt.Printf("      "+i18n.G("Type: %s")+"\n", resources.System.Chassis.Type)
-		}
+			if resources.System.Chassis.Type != "" {
+				fmt.Printf("      "+i18n.G("Type: %s")+"\n", resources.System.Chassis.Type)
+			}
 
-		if resources.System.Chassis.Version != "" {
-			fmt.Printf("      "+i18n.G("Version: %s")+"\n", resources.System.Chassis.Version)
-		}
+			if resources.System.Chassis.Version != "" {
+				fmt.Printf("      "+i18n.G("Version: %s")+"\n", resources.System.Chassis.Version)
+			}
 
-		if resources.System.Chassis.Serial != "" {
-			fmt.Printf("      "+i18n.G("Serial: %s")+"\n", resources.System.Chassis.Serial)
+			if resources.System.Chassis.Serial != "" {
+				fmt.Printf("      "+i18n.G("Serial: %s")+"\n", resources.System.Chassis.Serial)
+			}
 		}
 
 		// System: Motherboard
-		fmt.Printf(i18n.G("  Motherboard:") + "\n")
-		if resources.System.Motherboard.Vendor != "" {
-			fmt.Printf("      "+i18n.G("Vendor: %s")+"\n", resources.System.Motherboard.Vendor)
-		}
+		if resources.System.Motherboard != nil {
+			fmt.Printf(i18n.G("  Motherboard:") + "\n")
+			if resources.System.Motherboard.Vendor != "" {
+				fmt.Printf("      "+i18n.G("Vendor: %s")+"\n", resources.System.Motherboard.Vendor)
+			}
 
-		if resources.System.Motherboard.Product != "" {
-			fmt.Printf("      "+i18n.G("Product: %s")+"\n", resources.System.Motherboard.Product)
-		}
+			if resources.System.Motherboard.Product != "" {
+				fmt.Printf("      "+i18n.G("Product: %s")+"\n", resources.System.Motherboard.Product)
+			}
 
-		if resources.System.Motherboard.Serial != "" {
-			fmt.Printf("      "+i18n.G("Serial: %s")+"\n", resources.System.Motherboard.Serial)
-		}
+			if resources.System.Motherboard.Serial != "" {
+				fmt.Printf("      "+i18n.G("Serial: %s")+"\n", resources.System.Motherboard.Serial)
+			}
 
-		if resources.System.Motherboard.Version != "" {
-			fmt.Printf("      "+i18n.G("Version: %s")+"\n", resources.System.Motherboard.Version)
+			if resources.System.Motherboard.Version != "" {
+				fmt.Printf("      "+i18n.G("Version: %s")+"\n", resources.System.Motherboard.Version)
+			}
 		}
 
 		// System: Firmware
-		fmt.Printf(i18n.G("  Firmware:") + "\n")
-		if resources.System.Firmware.Vendor != "" {
-			fmt.Printf("      "+i18n.G("Vendor: %s")+"\n", resources.System.Firmware.Vendor)
+		if resources.System.Firmware != nil {
+			fmt.Printf(i18n.G("  Firmware:") + "\n")
+			if resources.System.Firmware.Vendor != "" {
+				fmt.Printf("      "+i18n.G("Vendor: %s")+"\n", resources.System.Firmware.Vendor)
+			}
+
+			if resources.System.Firmware.Version != "" {
+				fmt.Printf("      "+i18n.G("Version: %s")+"\n", resources.System.Firmware.Version)
+			}
+
+			if resources.System.Firmware.Date != "" {
+				fmt.Printf("      "+i18n.G("Date: %s")+"\n", resources.System.Firmware.Date)
+			}
 		}
 
-		if resources.System.Firmware.Version != "" {
-			fmt.Printf("      "+i18n.G("Version: %s")+"\n", resources.System.Firmware.Version)
-		}
-
-		if resources.System.Firmware.Date != "" {
-			fmt.Printf("      "+i18n.G("Date: %s")+"\n", resources.System.Firmware.Date)
+		// Load
+		fmt.Printf("\n" + i18n.G("Load:") + "\n")
+		if resources.Load.Processes > 0 {
+			fmt.Printf("  "+i18n.G("Processes: %d")+"\n", resources.Load.Processes)
+			fmt.Printf("  "+i18n.G("Average: %.2f %.2f %.2f")+"\n", resources.Load.Average1Min, resources.Load.Average5Min, resources.Load.Average10Min)
 		}
 
 		// CPU
 		if len(resources.CPU.Sockets) == 1 {
-			fmt.Printf("\n"+i18n.G("CPU (%s):")+"\n", resources.CPU.Architecture)
+			fmt.Printf("\n" + i18n.G("CPU:") + "\n")
+			fmt.Printf("  "+i18n.G("Architecture: %s")+"\n", resources.CPU.Architecture)
 			c.renderCPU(resources.CPU.Sockets[0], "  ")
 		} else if len(resources.CPU.Sockets) > 1 {
-			fmt.Printf(i18n.G("CPUs (%s):")+"\n", resources.CPU.Architecture)
+			fmt.Printf(i18n.G("CPUs:") + "\n")
+			fmt.Printf("  "+i18n.G("Architecture: %s")+"\n", resources.CPU.Architecture)
 			for _, cpu := range resources.CPU.Sockets {
 				fmt.Printf("  "+i18n.G("Socket %d:")+"\n", cpu.Socket)
 				c.renderCPU(cpu, "    ")
@@ -542,6 +586,19 @@ func (c *cmdInfo) remoteInfo(d incus.InstanceServer) error {
 				c.renderUSB(usb, "    ")
 			}
 		}
+
+		// PCI
+		if len(resources.PCI.Devices) == 1 {
+			fmt.Printf("\n" + i18n.G("PCI device:") + "\n")
+			c.renderPCI(resources.PCI.Devices[0], "  ")
+		} else if len(resources.PCI.Devices) > 1 {
+			fmt.Printf("\n" + i18n.G("PCI devices:") + "\n")
+			for id, pci := range resources.PCI.Devices {
+				fmt.Printf("  "+i18n.G("Device %d:")+"\n", id)
+				c.renderPCI(pci, "    ")
+			}
+		}
+
 		return nil
 	}
 
@@ -605,6 +662,10 @@ func (c *cmdInfo) instanceInfo(d incus.InstanceServer, remote config.Remote, nam
 	}
 
 	if inst.State.Pid != 0 {
+		if !inst.State.StartedAt.IsZero() {
+			fmt.Printf(i18n.G("Started: %s")+"\n", inst.State.StartedAt.Local().Format(dateLayout))
+		}
+
 		fmt.Println("\n" + i18n.G("Resources:"))
 		// Processes
 		fmt.Printf("  "+i18n.G("Processes: %d")+"\n", inst.State.Processes)
@@ -661,30 +722,39 @@ func (c *cmdInfo) instanceInfo(d incus.InstanceServer, remote config.Remote, nam
 		// Network usage and IP info
 		networkInfo := ""
 		if inst.State.Network != nil {
-			for netName, net := range inst.State.Network {
+			network := inst.State.Network
+
+			netNames := make([]string, 0, len(network))
+			for netName := range network {
+				netNames = append(netNames, netName)
+			}
+
+			sort.Strings(netNames)
+
+			for _, netName := range netNames {
 				networkInfo += fmt.Sprintf("    %s:\n", netName)
-				networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("Type"), net.Type)
-				networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("State"), strings.ToUpper(net.State))
-				if net.HostName != "" {
-					networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("Host interface"), net.HostName)
+				networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("Type"), network[netName].Type)
+				networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("State"), strings.ToUpper(network[netName].State))
+				if network[netName].HostName != "" {
+					networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("Host interface"), network[netName].HostName)
 				}
 
-				if net.Hwaddr != "" {
-					networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("MAC address"), net.Hwaddr)
+				if network[netName].Hwaddr != "" {
+					networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("MAC address"), network[netName].Hwaddr)
 				}
 
-				if net.Mtu != 0 {
-					networkInfo += fmt.Sprintf("      %s: %d\n", i18n.G("MTU"), net.Mtu)
+				if network[netName].Mtu != 0 {
+					networkInfo += fmt.Sprintf("      %s: %d\n", i18n.G("MTU"), network[netName].Mtu)
 				}
 
-				networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("Bytes received"), units.GetByteSizeString(net.Counters.BytesReceived, 2))
-				networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("Bytes sent"), units.GetByteSizeString(net.Counters.BytesSent, 2))
-				networkInfo += fmt.Sprintf("      %s: %d\n", i18n.G("Packets received"), net.Counters.PacketsReceived)
-				networkInfo += fmt.Sprintf("      %s: %d\n", i18n.G("Packets sent"), net.Counters.PacketsSent)
+				networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("Bytes received"), units.GetByteSizeString(network[netName].Counters.BytesReceived, 2))
+				networkInfo += fmt.Sprintf("      %s: %s\n", i18n.G("Bytes sent"), units.GetByteSizeString(network[netName].Counters.BytesSent, 2))
+				networkInfo += fmt.Sprintf("      %s: %d\n", i18n.G("Packets received"), network[netName].Counters.PacketsReceived)
+				networkInfo += fmt.Sprintf("      %s: %d\n", i18n.G("Packets sent"), network[netName].Counters.PacketsSent)
 
 				networkInfo += fmt.Sprintf("      %s:\n", i18n.G("IP addresses"))
 
-				for _, addr := range net.Addresses {
+				for _, addr := range network[netName].Addresses {
 					if addr.Family == "inet" {
 						networkInfo += fmt.Sprintf("        %s:  %s/%s (%s)\n", addr.Family, addr.Address, addr.Netmask, addr.Scope)
 					} else {

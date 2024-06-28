@@ -19,12 +19,13 @@ import (
 	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v2"
 
-	"github.com/lxc/incus/internal/revert"
-	"github.com/lxc/incus/internal/server/backup"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/ioprogress"
-	"github.com/lxc/incus/shared/logger"
-	"github.com/lxc/incus/shared/subprocess"
+	"github.com/lxc/incus/v6/internal/linux"
+	"github.com/lxc/incus/v6/internal/revert"
+	"github.com/lxc/incus/v6/internal/server/backup"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/ioprogress"
+	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/subprocess"
 )
 
 // Errors.
@@ -62,8 +63,7 @@ func setReceivedUUID(path string, UUID string) error {
 
 	copy(args.uuid[:], binUUID)
 
-	// 0xC0C09425 = _IOWR(BTRFS_IOCTL_MAGIC, 37, struct btrfs_ioctl_received_subvol_args)
-	_, _, errno := unix.Syscall(unix.SYS_IOCTL, f.Fd(), 0xC0C09425, uintptr(unsafe.Pointer(&args)))
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, f.Fd(), linux.IoctlBtrfsSetReceivedSubvol, uintptr(unsafe.Pointer(&args)))
 	if errno != 0 {
 		return fmt.Errorf("Failed setting received UUID: %w", unix.Errno(errno))
 	}

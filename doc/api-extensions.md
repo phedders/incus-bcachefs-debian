@@ -1846,6 +1846,10 @@ This adds:
 * `PATCH /1.0/network-zones/ZONE/records/RECORD`
 * `DELETE /1.0/network-zones/ZONE/records/RECORD`
 
+## `network_zones_all_projects`
+
+This adds support for listing network zones across all projects through the `all-projects` parameter on the `GET /1.0/network-zones`API.
+
 ## `storage_zfs_reserve_space`
 
 Adds ability to set the `reservation`/`refreservation` ZFS property along with `quota`/`refquota`.
@@ -2438,3 +2442,74 @@ This extends `limits.memory.swap` to allow for a total limit in bytes.
 ## `network_bridge_external_create`
 
 This adds the ability for `bridge.external_interfaces` to create a parent interface using a `interface/parent/vlan` syntax.
+
+## `storage_zfs_vdev`
+
+This adds support for `mirror`, `raidz1` and `raidz2` ZFS `vdev` types by extending storage `source` configuration.
+
+## `container_migration_stateful`
+
+A `migration.stateful` configuration key was introduced.
+
+It's a Boolean flag set to true whenever the container is in a stateful mode
+during the start, stop, and snapshot functions.
+
+This makes it less likely for users to run into CRIU errors when copying
+containers to another system.
+
+## `profiles_all_projects`
+
+This adds support for listing profiles across all projects through the `all-projects` parameter on the `GET /1.0/profiles`API.
+
+## `instances_scriptlet_get_instances`
+
+This allows the instance scriptlet to fetch a list of instances given an optional Project or Location filter.
+
+## `instances_scriptlet_get_cluster_members`
+
+This allows the instance scriptlet to fetch a list of cluster members given an optional cluster group.
+
+## `instances_scriptlet_get_project`
+
+This allows the instance scriptlet to fetch a project given name of a project.
+
+## `network_acl_stateless`
+
+This adds support for stateless rules in network ACLs.
+
+## `instance_state_started_at`
+
+This adds a `started_at` timestamp to the instance state API.
+
+## `networks_all_projects`
+
+This adds support for listing networks across all projects through the `all-projects` parameter on the `GET /1.0/networks`API.
+
+## `network_acls_all_projects`
+
+This adds support for listing network ACLs across all projects through the `all-projects` parameter on the `GET /1.0/network-acls`API.
+
+## `storage_buckets_all_projects`
+
+This adds support for listing storage buckets across all projects through the `all-projects` parameter on the `GET /1.0/storage-pools/POOL/buckets`API.
+
+## `resources_load`
+
+Add a new Load section to the resources API.
+
+## `instance_access`
+
+This introduces a new API endpoint at `GET /1.0/instances/NAME/access` which exposes who can interact with the instance and what role they have.
+
+## `project_access`
+
+This introduces a new API endpoint at `GET /1.0/projects/NAME/access` which exposes who can interact with the project and what role they have.
+
+## `projects_force_delete`
+
+This extends `DELETE /1.0/projects` to allow `?force=true` which will
+delete everything inside of the project along with the project itself.
+
+## `resources_cpu_flags`
+
+This exposes the CPU flags/extensions in our resources API to check the CPU features.

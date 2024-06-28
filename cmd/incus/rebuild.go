@@ -6,11 +6,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	cli "github.com/lxc/incus/internal/cmd"
-	"github.com/lxc/incus/internal/i18n"
-	"github.com/lxc/incus/internal/instance"
-	"github.com/lxc/incus/shared/api"
-	config "github.com/lxc/incus/shared/cliconfig"
+	cli "github.com/lxc/incus/v6/internal/cmd"
+	"github.com/lxc/incus/v6/internal/i18n"
+	"github.com/lxc/incus/v6/internal/instance"
+	"github.com/lxc/incus/v6/shared/api"
+	config "github.com/lxc/incus/v6/shared/cliconfig"
 )
 
 // Rebuild.
@@ -126,7 +126,7 @@ func (c *cmdRebuild) rebuild(conf *config.Config, args []string) error {
 			return err
 		}
 
-		if conf.Remotes[iremote].Protocol != "simplestreams" {
+		if conf.Remotes[iremote].Protocol == "incus" {
 			if imgInfo.Type != "virtual-machine" && current.Type == "virtual-machine" {
 				return fmt.Errorf(i18n.G("Asked for a VM but image is of type container"))
 			}

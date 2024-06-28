@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	cli "github.com/lxc/incus/internal/cmd"
-	"github.com/lxc/incus/internal/i18n"
-	"github.com/lxc/incus/shared/api"
-	config "github.com/lxc/incus/shared/cliconfig"
+	cli "github.com/lxc/incus/v6/internal/cmd"
+	"github.com/lxc/incus/v6/internal/i18n"
+	"github.com/lxc/incus/v6/shared/api"
+	config "github.com/lxc/incus/v6/shared/cliconfig"
 )
 
 // Start.
@@ -314,7 +314,7 @@ func (c *cmdAction) doAction(action string, conf *config.Config, nameArg string)
 		console := cmdConsole{}
 		console.global = c.global
 		console.flagType = c.flagConsole
-		return console.Console(d, name)
+		return console.console(d, name)
 	}
 
 	progress := cli.ProgressRenderer{
@@ -341,7 +341,22 @@ func (c *cmdAction) doAction(action string, conf *config.Config, nameArg string)
 		console := cmdConsole{}
 		console.global = c.global
 		console.flagType = c.flagConsole
-		return console.Console(d, name)
+
+		consoleErr := console.console(d, name)
+		if consoleErr != nil {
+			// Check if still running.
+			state, _, err := d.GetInstanceState(name)
+			if err != nil {
+				return err
+			}
+
+			if state.StatusCode != api.Stopped {
+				return consoleErr
+			}
+
+			console.flagShowLog = true
+			return console.console(d, name)
+		}
 	}
 
 	return nil

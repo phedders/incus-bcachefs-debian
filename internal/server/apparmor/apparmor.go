@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lxc/incus/internal/server/sys"
-	internalUtil "github.com/lxc/incus/internal/util"
-	"github.com/lxc/incus/internal/version"
-	"github.com/lxc/incus/shared/subprocess"
-	"github.com/lxc/incus/shared/util"
+	"github.com/lxc/incus/v6/internal/server/sys"
+	internalUtil "github.com/lxc/incus/v6/internal/util"
+	"github.com/lxc/incus/v6/internal/version"
+	"github.com/lxc/incus/v6/shared/subprocess"
+	"github.com/lxc/incus/v6/shared/util"
 )
 
 const (
@@ -180,6 +180,15 @@ func parserSupports(sysOS *sys.OS, feature string) (bool, error) {
 
 	if feature == "unix" {
 		minVer, err := version.NewDottedVersion("2.10.95")
+		if err != nil {
+			return false, err
+		}
+
+		return ver.Compare(minVer) >= 0, nil
+	}
+
+	if feature == "nosymfollow" {
+		minVer, err := version.NewDottedVersion("4.0.0")
 		if err != nil {
 			return false, err
 		}

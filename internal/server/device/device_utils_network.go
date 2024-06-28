@@ -16,18 +16,18 @@ import (
 	"github.com/j-keck/arping"
 	"github.com/mdlayher/ndp"
 
-	"github.com/lxc/incus/internal/revert"
-	deviceConfig "github.com/lxc/incus/internal/server/device/config"
-	pcidev "github.com/lxc/incus/internal/server/device/pci"
-	"github.com/lxc/incus/internal/server/instance"
-	"github.com/lxc/incus/internal/server/instance/instancetype"
-	"github.com/lxc/incus/internal/server/ip"
-	"github.com/lxc/incus/internal/server/network"
-	"github.com/lxc/incus/internal/server/state"
-	"github.com/lxc/incus/shared/logger"
-	"github.com/lxc/incus/shared/units"
-	"github.com/lxc/incus/shared/util"
-	"github.com/lxc/incus/shared/validate"
+	"github.com/lxc/incus/v6/internal/revert"
+	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
+	pcidev "github.com/lxc/incus/v6/internal/server/device/pci"
+	"github.com/lxc/incus/v6/internal/server/instance"
+	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
+	"github.com/lxc/incus/v6/internal/server/ip"
+	"github.com/lxc/incus/v6/internal/server/network"
+	"github.com/lxc/incus/v6/internal/server/state"
+	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/units"
+	"github.com/lxc/incus/v6/shared/util"
+	"github.com/lxc/incus/v6/shared/validate"
 )
 
 // Instances can be started in parallel, so lock the creation of VLANs.
@@ -778,10 +778,7 @@ func networkSRIOVSetupVF(d deviceCommon, vfParent string, vfDevice string, vfID 
 		// before being able to set a new VF MAC or disable spoofchecking. However some devices don't
 		// allow it so ignore failures.
 		link := &ip.Link{Name: vfParent}
-		err = link.SetVfAddress(volatile["last_state.vf.id"], "00:00:00:00:00:00")
-		if err != nil {
-			return vfPCIDev, 0, fmt.Errorf("Failed clearing MAC for VF %q: %w", volatile["last_state.vf.id"], err)
-		}
+		_ = link.SetVfAddress(volatile["last_state.vf.id"], "00:00:00:00:00:00")
 
 		if useSpoofCheck {
 			// Ensure spoof checking is disabled if not enabled in instance (only for real VF).

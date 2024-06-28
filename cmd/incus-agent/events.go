@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/lxc/incus/internal/server/events"
-	"github.com/lxc/incus/internal/server/response"
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/logger"
-	"github.com/lxc/incus/shared/ws"
+	"github.com/lxc/incus/v6/internal/server/events"
+	"github.com/lxc/incus/v6/internal/server/response"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/ws"
 )
 
 var eventsCmd = APIEndpoint{
@@ -31,6 +31,11 @@ func (r *eventsServe) Render(w http.ResponseWriter) error {
 
 func (r *eventsServe) String() string {
 	return "event handler"
+}
+
+// Code returns the HTTP code.
+func (r *eventsServe) Code() int {
+	return http.StatusOK
 }
 
 func eventsSocket(d *Daemon, r *http.Request, w http.ResponseWriter) error {

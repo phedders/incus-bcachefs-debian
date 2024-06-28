@@ -9,9 +9,9 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pkg/sftp"
 
-	"github.com/lxc/incus/shared/api"
-	"github.com/lxc/incus/shared/cancel"
-	"github.com/lxc/incus/shared/ioprogress"
+	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/cancel"
+	"github.com/lxc/incus/v6/shared/ioprogress"
 )
 
 // The Operation type represents a currently running operation.
@@ -154,6 +154,8 @@ type InstanceServer interface {
 	GetInstanceState(name string) (state *api.InstanceState, ETag string, err error)
 	UpdateInstanceState(name string, state api.InstanceStatePut, ETag string) (op Operation, err error)
 
+	GetInstanceAccess(name string) (access api.Access, err error)
+
 	GetInstanceLogfiles(name string) (logfiles []string, err error)
 	GetInstanceLogfile(name string, filename string) (content io.ReadCloser, err error)
 	DeleteInstanceLogfile(name string, filename string) (err error)
@@ -189,6 +191,7 @@ type InstanceServer interface {
 	// Network functions ("network" API extension)
 	GetNetworkNames() (names []string, err error)
 	GetNetworks() (networks []api.Network, err error)
+	GetNetworksAllProjects() (networks []api.Network, err error)
 	GetNetwork(name string) (network *api.Network, ETag string, err error)
 	GetNetworkLeases(name string) (leases []api.NetworkLease, err error)
 	GetNetworkState(name string) (state *api.NetworkState, err error)
@@ -224,6 +227,7 @@ type InstanceServer interface {
 	// Network ACL functions ("network_acl" API extension)
 	GetNetworkACLNames() (names []string, err error)
 	GetNetworkACLs() (acls []api.NetworkACL, err error)
+	GetNetworkACLsAllProjects() (acls []api.NetworkACL, err error)
 	GetNetworkACL(name string) (acl *api.NetworkACL, ETag string, err error)
 	GetNetworkACLLogfile(name string) (log io.ReadCloser, err error)
 	CreateNetworkACL(acl api.NetworkACLsPost) (err error)
@@ -232,9 +236,11 @@ type InstanceServer interface {
 	DeleteNetworkACL(name string) (err error)
 
 	// Network allocations functions ("network_allocations" API extension)
-	GetNetworkAllocations(allProjects bool) (allocations []api.NetworkAllocations, err error)
+	GetNetworkAllocations() (allocations []api.NetworkAllocations, err error)
+	GetNetworkAllocationsAllProjects() (allocations []api.NetworkAllocations, err error)
 
 	// Network zone functions ("network_dns" API extension)
+	GetNetworkZonesAllProjects() (zones []api.NetworkZone, err error)
 	GetNetworkZoneNames() (names []string, err error)
 	GetNetworkZones() (zones []api.NetworkZone, err error)
 	GetNetworkZone(name string) (zone *api.NetworkZone, ETag string, err error)
@@ -269,6 +275,7 @@ type InstanceServer interface {
 	DeleteOperation(uuid string) (err error)
 
 	// Profile functions
+	GetProfilesAllProjects() (profiles []api.Profile, err error)
 	GetProfileNames() (names []string, err error)
 	GetProfiles() (profiles []api.Profile, err error)
 	GetProfile(name string) (profile *api.Profile, ETag string, err error)
@@ -282,10 +289,12 @@ type InstanceServer interface {
 	GetProjects() (projects []api.Project, err error)
 	GetProject(name string) (project *api.Project, ETag string, err error)
 	GetProjectState(name string) (project *api.ProjectState, err error)
+	GetProjectAccess(name string) (access api.Access, err error)
 	CreateProject(project api.ProjectsPost) (err error)
 	UpdateProject(name string, project api.ProjectPut, ETag string) (err error)
 	RenameProject(name string, project api.ProjectPost) (op Operation, err error)
 	DeleteProject(name string) (err error)
+	DeleteProjectForce(name string) (err error)
 
 	// Storage pool functions ("storage" API extension)
 	GetStoragePoolNames() (names []string, err error)
@@ -298,6 +307,7 @@ type InstanceServer interface {
 
 	// Storage bucket functions ("storage_buckets" API extension)
 	GetStoragePoolBucketNames(poolName string) ([]string, error)
+	GetStoragePoolBucketsAllProjects(poolName string) ([]api.StorageBucket, error)
 	GetStoragePoolBuckets(poolName string) ([]api.StorageBucket, error)
 	GetStoragePoolBucket(poolName string, bucketName string) (bucket *api.StorageBucket, ETag string, err error)
 	CreateStoragePoolBucket(poolName string, bucket api.StorageBucketsPost) (*api.StorageBucketKey, error)

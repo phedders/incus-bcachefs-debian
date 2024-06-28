@@ -9,11 +9,11 @@ import (
 
 	tomb "gopkg.in/tomb.v2"
 
-	"github.com/lxc/incus/internal/linux"
-	"github.com/lxc/incus/internal/server/endpoints/listeners"
-	"github.com/lxc/incus/internal/server/util"
-	"github.com/lxc/incus/shared/logger"
-	localtls "github.com/lxc/incus/shared/tls"
+	"github.com/lxc/incus/v6/internal/linux"
+	"github.com/lxc/incus/v6/internal/server/endpoints/listeners"
+	"github.com/lxc/incus/v6/internal/server/util"
+	"github.com/lxc/incus/v6/shared/logger"
+	localtls "github.com/lxc/incus/v6/shared/tls"
 )
 
 // Config holds various configuration values that affect endpoints initialization.
@@ -41,6 +41,9 @@ type Config struct {
 	// chgrp'ed when starting. The default is to use the process group. An empty
 	// string means "use the default".
 	LocalUnixSocketGroup string
+
+	// SELinux label to apply to the soecket.
+	LocalUnixSocketLabel string
 
 	// NetworkSetAddress sets the address for the network endpoint. If not
 	// set, the network endpoint won't be started (unless it's passed via
@@ -195,9 +198,9 @@ func (e *Endpoints) up(config *Config) error {
 	} else {
 		e.listeners = map[kind]net.Listener{}
 
-		e.listeners[local], err = localCreateListener(config.UnixSocket, config.LocalUnixSocketGroup)
+		e.listeners[local], err = localCreateListener(config.UnixSocket, config.LocalUnixSocketGroup, config.LocalUnixSocketLabel)
 		if err != nil {
-			return fmt.Errorf("local endpoint: %w", err)
+			return fmt.Errorf("Local endpoint: %w", err)
 		}
 	}
 
