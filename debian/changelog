@@ -1,3 +1,10 @@
+incus (6.0.1-2) experimental; urgency=medium
+
+  * Team upload.
+  * Compile against go-criu v7, Closes: #1078217
+
+ -- Reinhard Tartler <siretart@tauware.de>  Thu, 08 Aug 2024 19:01:26 -0400
+
 incus (6.0.1-1) unstable; urgency=medium
 
   * New upstream release
