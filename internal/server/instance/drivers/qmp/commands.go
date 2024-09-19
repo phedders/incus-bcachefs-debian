@@ -61,6 +61,12 @@ type HotpluggableCPU struct {
 	Props CPUInstanceProperties `json:"props"`
 }
 
+// CPUModel contains information about a CPU model.
+type CPUModel struct {
+	Name  string         `json:"name"`
+	Flags map[string]any `json:"props"`
+}
+
 // QueryCPUs returns a list of CPUs.
 func (m *Monitor) QueryCPUs() ([]CPU, error) {
 	// Prepare the response.
@@ -89,6 +95,28 @@ func (m *Monitor) QueryHotpluggableCPUs() ([]HotpluggableCPU, error) {
 	}
 
 	return resp.Return, nil
+}
+
+// QueryCPUModel returns a CPUModel for the specified model name.
+func (m *Monitor) QueryCPUModel(model string) (*CPUModel, error) {
+	// Prepare the response.
+	var resp struct {
+		Return struct {
+			Model CPUModel `json:"model"`
+		} `json:"return"`
+	}
+
+	args := map[string]any{
+		"model": map[string]string{"name": model},
+		"type":  "full",
+	}
+
+	err := m.run("query-cpu-model-expansion", args, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to query CPU model: %w", err)
+	}
+
+	return &resp.Return.Model, nil
 }
 
 // Status returns the current VM status.
@@ -280,9 +308,28 @@ func (m *Monitor) MigrateSetCapabilities(caps map[string]bool) error {
 }
 
 // Migrate starts a migration stream.
-func (m *Monitor) Migrate(uri string) error {
+func (m *Monitor) Migrate(name string) error {
 	// Query the status.
-	args := map[string]string{"uri": uri}
+
+	type migrateArgsChannel struct {
+		ChannelType string            `json:"channel-type"`
+		Address     map[string]string `json:"addr"`
+	}
+
+	type migrateArgs struct {
+		Channels []migrateArgsChannel `json:"channels"`
+	}
+
+	args := migrateArgs{}
+	args.Channels = []migrateArgsChannel{{
+		ChannelType: "main",
+		Address: map[string]string{
+			"transport": "socket",
+			"type":      "fd",
+			"str":       name,
+		},
+	}}
+
 	err := m.run("migrate", args, nil)
 	if err != nil {
 		return err
@@ -338,9 +385,27 @@ func (m *Monitor) MigrateContinue(fromState string) error {
 }
 
 // MigrateIncoming starts the receiver of a migration stream.
-func (m *Monitor) MigrateIncoming(ctx context.Context, uri string) error {
+func (m *Monitor) MigrateIncoming(ctx context.Context, name string) error {
+	type migrateArgsChannel struct {
+		ChannelType string            `json:"channel-type"`
+		Address     map[string]string `json:"addr"`
+	}
+
+	type migrateArgs struct {
+		Channels []migrateArgsChannel `json:"channels"`
+	}
+
+	args := migrateArgs{}
+	args.Channels = []migrateArgsChannel{{
+		ChannelType: "main",
+		Address: map[string]string{
+			"transport": "socket",
+			"type":      "fd",
+			"str":       name,
+		},
+	}}
+
 	// Query the status.
-	args := map[string]string{"uri": uri}
 	err := m.run("migrate-incoming", args, nil)
 	if err != nil {
 		return err
@@ -1015,6 +1080,24 @@ func (m *Monitor) Eject(id string) error {
 	return nil
 }
 
+// UpdateBlockSize updates the size of a disk.
+func (m *Monitor) UpdateBlockSize(id string) error {
+	var args struct {
+		NodeName string `json:"node-name"`
+		Size     int64  `json:"size"`
+	}
+
+	args.NodeName = id
+	args.Size = 1
+
+	err := m.run("block_resize", args, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // SetBlockThrottle applies an I/O limit on a disk.
 func (m *Monitor) SetBlockThrottle(id string, bytesRead int, bytesWrite int, iopsRead int, iopsWrite int) error {
 	var args struct {
@@ -1040,4 +1123,22 @@ func (m *Monitor) SetBlockThrottle(id string, bytesRead int, bytesWrite int, iop
 	}
 
 	return nil
+}
+
+// CheckPCIDevice checks if the deviceID exists as a bridged PCI device.
+func (m *Monitor) CheckPCIDevice(deviceID string) (bool, error) {
+	pciDevs, err := m.QueryPCI()
+	if err != nil {
+		return false, err
+	}
+
+	for _, pciDev := range pciDevs {
+		for _, bridgeDev := range pciDev.Bridge.Devices {
+			if bridgeDev.DevID == deviceID {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }

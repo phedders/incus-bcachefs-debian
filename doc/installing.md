@@ -71,6 +71,7 @@ There are three options currently available to Debian users.
 
     On such systems, just running `apt install incus` will get Incus installed.
     To run virtual machines, also run `apt install qemu-system`.
+    If migrating from LXD, also run `apt install incus-tools` to get the `lxd-to-incus` command.
 
 1. Native `incus` backported package
 
@@ -78,6 +79,7 @@ There are three options currently available to Debian users.
 
    On such systems, just running `apt install incus/bookworm-backports` will get Incus installed.
    To run virtual machines, also run `apt install qemu-system`.
+   If migrating from LXD, also run `apt install incus-tools` to get the `lxd-to-incus` command.
 
    ****NOTE:**** Users of backported packages should not file bugs in the Debian Bug Tracker, instead please reach out [through our forum](https://discuss.linuxcontainers.org) or directly to the Debian packager.
 
@@ -164,6 +166,26 @@ Finally, you can add users to the `incus-admin` group to provide non-root access
 For any NixOS specific issues, please [file an issue](https://github.com/NixOS/nixpkgs/issues/new/choose) in the package repository.
 ```
 
+```{group-tab} Rocky Linux
+RPM packages and their dependencies are not yet available from the Extra Packages for Enterprise Linux (EPEL) repository, but via the [`neil/incus`](https://copr.fedorainfracloud.org/coprs/neil/incus/) Community Project (COPR) repository for Rocky Linux 9.
+
+Ensure that the EPEL repository is installed for package dependencies and then install the COPR repository:
+
+    dnf -y install epel-release
+    dnf copr enable neil/incus
+
+Ensure that the `CodeReady Builder` (`CRB`) is available for other package dependencies:
+
+    dnf config-manager --enable crb
+
+Then install Incus and optionally, Incus tools:
+
+    dnf install incus incus-tools
+
+Note that this is not an official project of Incus nor Rocky Linux.
+Please report packaging issues [here](https://github.com/NeilHanlon/incus-rpm/issues).
+```
+
 ```{group-tab} Ubuntu
 There are two options currently available to Ubuntu users.
 
@@ -172,6 +194,7 @@ There are two options currently available to Ubuntu users.
     A native `incus` package is currently available in Ubuntu 24.04 LTS and later.
     On such systems, just running `apt install incus` will get Incus installed.
     To run virtual machines, also run `apt install qemu-system`.
+    If migrating from LXD, also run `apt install incus-tools` to get the `lxd-to-incus` command.
 
 1. Zabbly package repository
 
@@ -210,11 +233,27 @@ The builds for other operating systems include only the client, not the server.
 
 ```{group-tab} macOS
 
+**Homebrew**
+
 Incus publishes builds of the Incus client for macOS through [Homebrew](https://brew.sh/).
 
 To install the feature branch of Incus, run:
 
     brew install incus
+
+**Colima**
+
+Incus is supported as a runtime on [Colima](https://github.com/abiosoft/colima).
+
+Install Colima with:
+
+    brew install colima
+
+Start Colima with Incus as runtime with:
+
+    colima start --runtime incus
+
+For any Colima related issues, please [file an issue](https://github.com/abiosoft/colima/issues/new/choose) in the project repository.
 ```
 
 ```{group-tab} Windows
@@ -322,17 +361,15 @@ In addition, for normal operation, you'll also likely need
 
     sudo zypper install dnsmasq squashfs xz rsync tar attr acl qemu qemu-img qemu-spice qemu-hw-display-virtio-gpu-pci iptables ebtables nftables
 
-As OpenSUSE stores QEMU firmware files using an unusual filename and location, you will need to create some symlinks for them:
-
-    sudo mkdir /usr/share/OVMF
-    sudo ln -s /usr/share/qemu/ovmf-x86_64-4m-code.bin /usr/share/OVMF/OVMF_CODE.4MB.fd
-    sudo ln -s /usr/share/qemu/ovmf-x86_64-4m-vars.bin /usr/share/OVMF/OVMF_VARS.4MB.fd
-    sudo ln -s /usr/share/qemu/ovmf-x86_64-ms-4m-vars.bin /usr/share/OVMF/OVMF_VARS.4MB.ms.fd
-    sudo ln -s /usr/share/qemu/ovmf-x86_64-ms-4m-code.bin /usr/share/OVMF/OVMF_CODE.4MB.ms.fd
 ```
 
 
 ````
+
+```{note}
+On ARM64 CPUs you need to install AAVMF instead of OVMF for UEFI to work with virtual machines.
+In some distributions this is done through a separate package.
+```
 
 ### From source: Build the latest version
 
