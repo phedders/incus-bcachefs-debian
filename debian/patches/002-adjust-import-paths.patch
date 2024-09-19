@@ -2,10 +2,10 @@ From: Mathias Gibbens <gibmat@debian.org>
 Description: Adjust import paths to reflect Debian packaging
 Forwarded: not-needed
 diff --git a/cmd/incusd/daemon.go b/cmd/incusd/daemon.go
-index 1494a4f87..08c28b088 100644
+index e6a4e2a5d..8aad5e1d8 100644
 --- a/cmd/incusd/daemon.go
 +++ b/cmd/incusd/daemon.go
-@@ -23,7 +23,7 @@ import (
+@@ -24,7 +24,7 @@ import (
  	dqliteClient "github.com/cowsql/go-cowsql/client"
  	"github.com/cowsql/go-cowsql/driver"
  	"github.com/gorilla/mux"
@@ -15,7 +15,7 @@ index 1494a4f87..08c28b088 100644
  
  	internalIO "github.com/lxc/incus/v6/internal/io"
 diff --git a/cmd/incusd/instance_console.go b/cmd/incusd/instance_console.go
-index 51b58b658..9d7aebfd7 100644
+index 5025aa416..02e6c02fc 100644
 --- a/cmd/incusd/instance_console.go
 +++ b/cmd/incusd/instance_console.go
 @@ -15,7 +15,7 @@ import (
@@ -119,20 +119,20 @@ index c008882b1..2741c25c1 100644
  	"github.com/lxc/incus/v6/internal/linux"
  	"github.com/lxc/incus/v6/internal/server/apparmor"
 diff --git a/internal/server/instance/drivers/driver_lxc.go b/internal/server/instance/drivers/driver_lxc.go
-index 6c3d180bc..7f4601a12 100644
+index 9bd4ef491..80b8f6335 100644
 --- a/internal/server/instance/drivers/driver_lxc.go
 +++ b/internal/server/instance/drivers/driver_lxc.go
-@@ -29,7 +29,7 @@ import (
- 	"github.com/flosch/pongo2"
+@@ -30,7 +30,7 @@ import (
  	"github.com/google/uuid"
  	"github.com/gorilla/websocket"
+ 	"github.com/kballard/go-shellquote"
 -	liblxc "github.com/lxc/go-lxc"
 +	liblxc "gopkg.in/lxc/go-lxc.v2"
  	"github.com/pkg/sftp"
  	"golang.org/x/sync/errgroup"
  	"golang.org/x/sys/unix"
 diff --git a/internal/server/instance/instance_interface.go b/internal/server/instance/instance_interface.go
-index e1180f99b..7fb705148 100644
+index 6fa0b6b03..41b84b8ab 100644
 --- a/internal/server/instance/instance_interface.go
 +++ b/internal/server/instance/instance_interface.go
 @@ -8,7 +8,7 @@ import (
@@ -145,7 +145,7 @@ index e1180f99b..7fb705148 100644
  	"google.golang.org/protobuf/proto"
  
 diff --git a/internal/server/instance/instance_utils.go b/internal/server/instance/instance_utils.go
-index e9e2b63a0..527be80c1 100644
+index 77c6fca50..fe6e75c9e 100644
 --- a/internal/server/instance/instance_utils.go
 +++ b/internal/server/instance/instance_utils.go
 @@ -17,7 +17,7 @@ import (
@@ -158,7 +158,7 @@ index e9e2b63a0..527be80c1 100644
  	"github.com/lxc/incus/v6/client"
  	"github.com/lxc/incus/v6/internal/instance"
 diff --git a/internal/server/seccomp/seccomp.go b/internal/server/seccomp/seccomp.go
-index 307be1bf4..d8a931e85 100644
+index 504904b2d..d16824758 100644
 --- a/internal/server/seccomp/seccomp.go
 +++ b/internal/server/seccomp/seccomp.go
 @@ -464,7 +464,7 @@ import (
