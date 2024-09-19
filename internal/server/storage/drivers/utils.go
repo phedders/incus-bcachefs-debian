@@ -331,7 +331,11 @@ func ensureVolumeBlockFile(vol Volume, path string, sizeBytes int64, allowUnsafe
 	}
 
 	// Get rounded block size to avoid QEMU boundary issues.
-	sizeBytes = vol.driver.roundVolumeBlockSizeBytes(sizeBytes)
+	var err error
+	sizeBytes, err = vol.driver.roundVolumeBlockSizeBytes(vol, sizeBytes)
+	if err != nil {
+		return false, err
+	}
 
 	if util.PathExists(path) {
 		fi, err := os.Stat(path)
@@ -375,7 +379,7 @@ func ensureVolumeBlockFile(vol Volume, path string, sizeBytes int64, allowUnsafe
 
 	// If path doesn't exist, then there has been no filler function supplied to create it from another source.
 	// So instead create an empty volume (use for PXE booting a VM).
-	err := ensureSparseFile(path, sizeBytes)
+	err = ensureSparseFile(path, sizeBytes)
 	if err != nil {
 		return false, fmt.Errorf("Failed creating disk image %q as size %d: %w", path, sizeBytes, err)
 	}
@@ -936,4 +940,20 @@ func sliceAny[T any](slice []T, predicate func(T) bool) bool {
 	}
 
 	return false
+}
+
+// roundAbove returns the next multiple of `above` greater than `val`.
+func roundAbove(above, val int64) int64 {
+	if val < above {
+		val = above
+	}
+
+	rounded := int64(val/above) * above
+
+	// Ensure the rounded size is at least x.
+	if rounded < val {
+		rounded += above
+	}
+
+	return rounded
 }

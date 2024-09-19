@@ -101,6 +101,7 @@ func (d *btrfs) Info() Info {
 		PreservesInodes:              !d.state.OS.RunningInUserNS,
 		Remote:                       d.isRemote(),
 		VolumeTypes:                  []VolumeType{VolumeTypeBucket, VolumeTypeCustom, VolumeTypeImage, VolumeTypeContainer, VolumeTypeVM},
+		VolumeMultiNode:              d.isRemote(),
 		BlockBacking:                 false,
 		RunningCopyFreeze:            false,
 		DirectIO:                     true,
@@ -192,6 +193,8 @@ func (d *btrfs) Create() error {
 		}
 
 		// Confirm that the symlink is appearing (give it 10s).
+		// In case of timeout it falls back to using the volume's path
+		// instead of its UUID.
 		if tryExists(fmt.Sprintf("/dev/disk/by-uuid/%s", devUUID)) {
 			// Override the config to use the UUID.
 			d.config["source"] = devUUID
