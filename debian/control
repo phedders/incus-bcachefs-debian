@@ -66,7 +66,7 @@ Build-Depends: debhelper-compat (= 13),
                golang-gopkg-tomb.v2-dev,
                golang-gopkg-yaml.v2-dev,
                golang-k8s-utils-dev,
-               golang-starlark-dev,
+               golang-starlark-dev (>= 0.0~git20240725.42030a7),
                help2man,
                libacl1-dev,
                libcap-dev
@@ -141,7 +141,7 @@ Depends: golang-github-armon-go-proxyproto-dev,
          golang-gopkg-tomb.v2-dev,
          golang-gopkg-yaml.v2-dev,
          golang-k8s-utils-dev,
-         golang-starlark-dev,
+         golang-starlark-dev (>= 0.0~git20240725.42030a7),
          ${misc:Depends}
 Description: Powerful system container and virtual machine manager - library
  Incus is a next generation system container and virtual machine manager.
