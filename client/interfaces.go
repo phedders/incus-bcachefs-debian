@@ -215,6 +215,7 @@ type InstanceServer interface {
 	CreateNetworkLoadBalancer(networkName string, forward api.NetworkLoadBalancersPost) error
 	UpdateNetworkLoadBalancer(networkName string, listenAddress string, forward api.NetworkLoadBalancerPut, ETag string) (err error)
 	DeleteNetworkLoadBalancer(networkName string, listenAddress string) (err error)
+	GetNetworkLoadBalancerState(networkName string, listenAddress string) (lbState *api.NetworkLoadBalancerState, err error)
 
 	// Network peer functions ("network_peer" API extension)
 	GetNetworkPeerNames(networkName string) ([]string, error)
@@ -521,6 +522,9 @@ type StoragePoolVolumeCopyArgs struct {
 
 	// API extension: custom_volume_refresh
 	Refresh bool
+
+	// API extension: custom_volume_refresh_exclude_older_snapshots
+	RefreshExcludeOlder bool
 }
 
 // The StoragePoolVolumeMoveArgs struct is used to pass additional options
@@ -571,6 +575,9 @@ type InstanceCopyArgs struct {
 	// API extension: container_incremental_copy
 	// Perform an incremental copy
 	Refresh bool
+
+	// API extension: custom_volume_refresh_exclude_older_snapshots
+	RefreshExcludeOlder bool
 
 	// API extension: instance_allow_inconsistent_copy
 	AllowInconsistent bool

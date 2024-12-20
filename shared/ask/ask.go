@@ -1,4 +1,4 @@
-package cmd
+package ask
 
 import (
 	"bufio"
@@ -16,6 +16,7 @@ type Asker struct {
 	reader *bufio.Reader
 }
 
+// NewAsker returns a new Asker that utilizes the supplied reader.
 func NewAsker(reader *bufio.Reader) Asker {
 	return Asker{reader: reader}
 }
@@ -55,7 +56,7 @@ func (a *Asker) AskChoice(question string, choices []string, defaultAnswer strin
 }
 
 // AskInt asks the user to enter an integer between a min and max value.
-func (a *Asker) AskInt(question string, min int64, max int64, defaultAnswer string, validate func(int64) error) (int64, error) {
+func (a *Asker) AskInt(question string, minValue int64, maxValue int64, defaultAnswer string, validate func(int64) error) (int64, error) {
 	for {
 		answer, err := a.askQuestion(question, defaultAnswer)
 		if err != nil {
@@ -68,7 +69,7 @@ func (a *Asker) AskInt(question string, min int64, max int64, defaultAnswer stri
 			continue
 		}
 
-		if !((min == -1 || result >= min) && (max == -1 || result <= max)) {
+		if !((minValue == -1 || result >= minValue) && (maxValue == -1 || result <= maxValue)) {
 			fmt.Fprintf(os.Stderr, "Invalid input: out of range\n\n")
 			continue
 		}
@@ -95,9 +96,9 @@ func (a *Asker) AskString(question string, defaultAnswer string, validate func(s
 		}
 
 		if validate != nil {
-			error := validate(answer)
-			if error != nil {
-				fmt.Fprintf(os.Stderr, "Invalid input: %s\n\n", error)
+			err := validate(answer)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Invalid input: %s\n\n", err)
 				continue
 			}
 
@@ -113,6 +114,12 @@ func (a *Asker) AskString(question string, defaultAnswer string, validate func(s
 }
 
 // AskPassword asks the user to enter a password.
+func (a *Asker) AskPassword(question string) string {
+	return AskPassword(question)
+}
+
+// AskPassword asks the user to enter a password.
+// Deprecated: Use asker.AskPassword instead.
 func AskPassword(question string) string {
 	for {
 		fmt.Print(question)
@@ -140,6 +147,14 @@ func AskPassword(question string) string {
 // AskPasswordOnce asks the user to enter a password.
 //
 // It's the same as AskPassword, but it won't ask to enter it again.
+func (a *Asker) AskPasswordOnce(question string) string {
+	return AskPasswordOnce(question)
+}
+
+// AskPasswordOnce asks the user to enter a password.
+//
+// It's the same as AskPassword, but it won't ask to enter it again.
+// Deprecated: Use asker.AskPasswordOnce instead.
 func AskPasswordOnce(question string) string {
 	for {
 		fmt.Print(question)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/lxc/incus/v6/internal/iprange"
 	ovnNB "github.com/lxc/incus/v6/internal/server/network/ovn/schema/ovn-nb"
+	ovnSB "github.com/lxc/incus/v6/internal/server/network/ovn/schema/ovn-sb"
 	"github.com/lxc/incus/v6/shared/util"
 )
 
@@ -106,6 +107,7 @@ type OVNDHCPv4Opts struct {
 	LeaseTime          time.Duration
 	MTU                uint32
 	Netmask            string
+	DNSSearchList      []string
 }
 
 // OVNDHCPv6Opts IPv6 DHCP option set that can be created (and then applied to a switch port by resulting ID).
@@ -1252,6 +1254,11 @@ func (o *NB) UpdateLogicalSwitchDHCPv4Options(ctx context.Context, switchName OV
 
 	if opts.Router != nil {
 		dhcpOption.Options["router"] = opts.Router.String()
+	}
+
+	if len(opts.DNSSearchList) > 0 {
+		// Special quoting to allow domain names.
+		dhcpOption.Options["domain_search_list"] = fmt.Sprintf(`"%s"`, strings.Join(opts.DNSSearchList, ","))
 	}
 
 	if opts.RecursiveDNSServer != nil {
@@ -2968,8 +2975,12 @@ func (o *NB) CreateLoadBalancer(ctx context.Context, loadBalancerName OVNLoadBal
 		}
 
 		err := o.get(ctx, &lb)
-		if err == nil {
-			// Delete the load balancer.
+		if err == nil || err == ErrTooMany {
+			// Delete the load balancer (by name in case there are duplicates).
+			lb := ovnNB.LoadBalancer{
+				Name: name,
+			}
+
 			deleteOps, err := o.client.Where(&lb).Delete()
 			if err != nil {
 				return err
@@ -3306,6 +3317,47 @@ func (o *NB) DeleteLoadBalancer(ctx context.Context, loadBalancerNames ...OVNLoa
 	}
 
 	return nil
+}
+
+// GetLoadBalancer gets the OVN database record for the load balancer.
+func (o *NB) GetLoadBalancer(ctx context.Context, lbName OVNLoadBalancer) (*ovnNB.LoadBalancer, error) {
+	lb := &ovnNB.LoadBalancer{
+		Name: string(lbName),
+	}
+
+	err := o.get(ctx, lb)
+	if err != nil {
+		return nil, err
+	}
+
+	return lb, nil
+}
+
+// GetLoadBalancersByStatusUpdate locate load-balancer(s) which are affected by a particular service monitor update.
+func (o *NB) GetLoadBalancersByStatusUpdate(ctx context.Context, mon ovnSB.ServiceMonitor) ([]ovnNB.LoadBalancer, error) {
+	lbs := []ovnNB.LoadBalancer{}
+	err := o.client.WhereCache(func(lb *ovnNB.LoadBalancer) bool {
+		if len(lb.HealthCheck) == 0 {
+			return false
+		}
+
+		if lb.Protocol != nil && mon.Protocol != nil && *lb.Protocol != *mon.Protocol {
+			return false
+		}
+
+		for k, v := range lb.IPPortMappings {
+			if k == mon.IP && v == fmt.Sprintf("%s:%s", mon.LogicalPort, mon.SrcIP) {
+				return true
+			}
+		}
+
+		return false
+	}).List(ctx, &lbs)
+	if err != nil {
+		return nil, err
+	}
+
+	return lbs, nil
 }
 
 // CreateAddressSet creates address sets for IP versions 4 and 6 in the format "<addressSetPrefix>_ip<IP version>".

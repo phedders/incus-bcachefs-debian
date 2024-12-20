@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -36,7 +37,7 @@ func wipeDirectory(path string) error {
 	// List all entries.
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 
@@ -47,7 +48,7 @@ func wipeDirectory(path string) error {
 	for _, entry := range entries {
 		entryPath := filepath.Join(path, entry.Name())
 		err := os.RemoveAll(entryPath)
-		if err != nil && !os.IsNotExist(err) {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("Failed removing %q: %w", entryPath, err)
 		}
 	}
@@ -293,7 +294,7 @@ func deleteParentSnapshotDirIfEmpty(poolName string, volType VolumeType, volName
 
 		if isEmpty {
 			err := os.Remove(snapshotsPath)
-			if err != nil && !os.IsNotExist(err) {
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return fmt.Errorf("Failed to remove '%s': %w", snapshotsPath, err)
 			}
 		}
@@ -514,21 +515,20 @@ func growFileSystem(fsType string, devPath string, vol Volume) error {
 	}
 
 	return vol.MountTask(func(mountPath string, op *operations.Operation) error {
-		var msg string
 		var err error
 		switch fsType {
 		case "ext4":
-			msg, err = subprocess.TryRunCommand("resize2fs", devPath)
+			_, err = subprocess.TryRunCommand("resize2fs", devPath)
 		case "xfs":
-			msg, err = subprocess.TryRunCommand("xfs_growfs", mountPath)
+			_, err = subprocess.TryRunCommand("xfs_growfs", mountPath)
 		case "btrfs":
-			msg, err = subprocess.TryRunCommand("btrfs", "filesystem", "resize", "max", mountPath)
+			_, err = subprocess.TryRunCommand("btrfs", "filesystem", "resize", "max", mountPath)
 		default:
 			return fmt.Errorf("Unrecognised filesystem type %q", fsType)
 		}
 
 		if err != nil {
-			return fmt.Errorf("Could not grow underlying %q filesystem for %q: %s", fsType, devPath, msg)
+			return fmt.Errorf("Could not grow underlying %q filesystem for %q: %w", fsType, devPath, err)
 		}
 
 		return nil
@@ -956,4 +956,39 @@ func roundAbove(above, val int64) int64 {
 	}
 
 	return rounded
+}
+
+// clearDiskData resets a disk file or device to a zero value.
+func clearDiskData(diskPath string, disk *os.File) error {
+	st, err := disk.Stat()
+	if err != nil {
+		return err
+	}
+
+	if linux.IsBlockdev(st.Mode()) {
+		// If dealing with a block device, attempt to discard its current content.
+		// This saves space and avoids issues with leaving zero blocks to their original value.
+		_, err = subprocess.RunCommand("blkdiscard", "-f", diskPath)
+		if err != nil {
+			logger.Debugf("Unable to clear disk data on %q: %v", diskPath, err)
+		}
+	} else {
+		// Otherwise truncate the file.
+		err = disk.Truncate(0)
+		if err != nil {
+			return err
+		}
+
+		err = disk.Truncate(st.Size())
+		if err != nil {
+			return err
+		}
+
+		_, err = disk.Seek(0, 0)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

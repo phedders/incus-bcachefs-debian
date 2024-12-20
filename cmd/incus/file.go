@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand"
 	"net"
 	"os"
@@ -16,10 +18,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pkg/sftp"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/lxc/incus/v6/client"
+	incus "github.com/lxc/incus/v6/client"
 	cli "github.com/lxc/incus/v6/internal/cmd"
 	"github.com/lxc/incus/v6/internal/i18n"
 	internalIO "github.com/lxc/incus/v6/internal/io"
@@ -143,7 +146,16 @@ incus file create --type=symlink foo/bar baz
 	cmd.Flags().IntVar(&c.file.flagUID, "uid", -1, i18n.G("Set the file's uid on create")+"``")
 	cmd.Flags().StringVar(&c.file.flagMode, "mode", "", i18n.G("Set the file's perms on create")+"``")
 	cmd.Flags().StringVar(&c.flagType, "type", "file", i18n.G("The type to create (file, symlink, or directory)")+"``")
+
 	cmd.RunE = c.Run
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpFiles(toComplete, false)
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 
 	return cmd
 }
@@ -285,7 +297,14 @@ func (c *cmdFileCreate) Run(cmd *cobra.Command, args []string) error {
 		}, fileArgs.Content)
 	}
 
-	err = resource.server.CreateInstanceFile(resource.name, targetPath, fileArgs)
+	var paths []string
+	if c.flagType != "symlink" {
+		paths = []string{targetPath}
+	} else {
+		paths = []string{targetPath, symlinkTargetPath}
+	}
+
+	err = c.file.sftpCreateFile(resource, paths, fileArgs, false)
 	if err != nil {
 		progress.Done("")
 		return err
@@ -300,6 +319,8 @@ func (c *cmdFileCreate) Run(cmd *cobra.Command, args []string) error {
 type cmdFileDelete struct {
 	global *cmdGlobal
 	file   *cmdFile
+
+	flagForce bool
 }
 
 func (c *cmdFileDelete) Command() *cobra.Command {
@@ -310,7 +331,13 @@ func (c *cmdFileDelete) Command() *cobra.Command {
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Delete files in instances`))
 
+	cmd.Flags().BoolVarP(&c.flagForce, "force", "f", false, i18n.G("Force deleting files, directories, and subdirectories")+"``")
+
 	cmd.RunE = c.Run
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return c.global.cmpFiles(toComplete, false)
+	}
 
 	return cmd
 }
@@ -328,14 +355,41 @@ func (c *cmdFileDelete) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Store clients.
+	sftpClients := map[string]*sftp.Client{}
+
+	defer func() {
+		for _, sftpClient := range sftpClients {
+			_ = sftpClient.Close()
+		}
+	}()
+
 	for _, resource := range resources {
 		pathSpec := strings.SplitN(resource.name, "/", 2)
 		if len(pathSpec) != 2 {
 			return fmt.Errorf(i18n.G("Invalid path %s"), resource.name)
 		}
 
-		// Delete the file
-		err = resource.server.DeleteInstanceFile(pathSpec[0], pathSpec[1])
+		sftpConn, ok := sftpClients[pathSpec[0]]
+		if !ok {
+			sftpConn, err = resource.server.GetInstanceFileSFTP(pathSpec[0])
+			if err != nil {
+				return err
+			}
+
+			sftpClients[pathSpec[0]] = sftpConn
+		}
+
+		if c.flagForce {
+			err = sftpConn.RemoveAll(pathSpec[1])
+			if err != nil {
+				return err
+			}
+
+			return nil
+		}
+
+		err = sftpConn.Remove(pathSpec[1])
 		if err != nil {
 			return err
 		}
@@ -360,6 +414,14 @@ func (c *cmdFileEdit) Command() *cobra.Command {
 		`Edit files in instances`))
 
 	cmd.RunE = c.Run
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpFiles(toComplete, false)
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 
 	return cmd
 }
@@ -434,7 +496,16 @@ func (c *cmdFilePull) Command() *cobra.Command {
 
 	cmd.Flags().BoolVarP(&c.file.flagMkdir, "create-dirs", "p", false, i18n.G("Create any directories necessary"))
 	cmd.Flags().BoolVarP(&c.file.flagRecursive, "recursive", "r", false, i18n.G("Recursively transfer files"))
+
 	cmd.RunE = c.Run
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpFiles(toComplete, false)
+		}
+
+		return c.global.cmpFiles(toComplete, true)
+	}
 
 	return cmd
 }
@@ -451,7 +522,7 @@ func (c *cmdFilePull) Run(cmd *cobra.Command, args []string) error {
 
 	targetIsDir := false
 	sb, err := os.Stat(target)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 
@@ -656,7 +727,16 @@ func (c *cmdFilePush) Command() *cobra.Command {
 	cmd.Flags().IntVar(&c.file.flagUID, "uid", -1, i18n.G("Set the file's uid on push")+"``")
 	cmd.Flags().IntVar(&c.file.flagGID, "gid", -1, i18n.G("Set the file's gid on push")+"``")
 	cmd.Flags().StringVar(&c.file.flagMode, "mode", "", i18n.G("Set the file's perms on push")+"``")
+
 	cmd.RunE = c.Run
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+
+		return c.global.cmpFiles(toComplete, true)
+	}
 
 	return cmd
 }
@@ -882,13 +962,102 @@ func (c *cmdFilePush) Run(cmd *cobra.Command, args []string) error {
 		}, f)
 
 		logger.Infof("Pushing %s to %s (%s)", f.Name(), fpath, args.Type)
-		err = resource.server.CreateInstanceFile(resource.name, fpath, args)
+		err = c.file.sftpCreateFile(resource, []string{fpath}, args, true)
 		if err != nil {
 			progress.Done("")
 			return err
 		}
 
 		progress.Done("")
+	}
+
+	return nil
+}
+
+func (c *cmdFile) setOwnerMode(sftpConn *sftp.Client, targetPath string, args incus.InstanceFileArgs) error {
+	// Get the current stat information.
+	st, err := sftpConn.Stat(targetPath)
+	if err != nil {
+		return err
+	}
+
+	fileStat, ok := st.Sys().(*sftp.FileStat)
+	if !ok {
+		return fmt.Errorf("Invalid filestat data for %q", targetPath)
+	}
+
+	// Set owner.
+	if args.UID >= 0 || args.GID >= 0 {
+		if args.UID == -1 {
+			args.UID = int64(fileStat.UID)
+		}
+
+		if args.GID == -1 {
+			args.GID = int64(fileStat.GID)
+		}
+
+		err = sftpConn.Chown(targetPath, int(args.UID), int(args.GID))
+		if err != nil {
+			return err
+		}
+	}
+
+	// Set mode.
+	if args.Mode >= 0 {
+		err = sftpConn.Chmod(targetPath, fs.FileMode(args.Mode))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *cmdFile) sftpCreateFile(resource remoteResource, targetPath []string, args incus.InstanceFileArgs, push bool) error {
+	sftpConn, err := resource.server.GetInstanceFileSFTP(resource.name)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = sftpConn.Close() }()
+
+	switch args.Type {
+	case "file":
+		file, err := sftpConn.OpenFile(targetPath[0], os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+		if err != nil {
+			return err
+		}
+
+		defer func() { _ = file.Close() }()
+
+		if push {
+			_, err = io.Copy(file, args.Content)
+			if err != nil {
+				return err
+			}
+		}
+
+		err = c.setOwnerMode(sftpConn, targetPath[0], args)
+		if err != nil {
+			return err
+		}
+
+	case "directory":
+		err := sftpConn.MkdirAll(targetPath[0])
+		if err != nil {
+			return err
+		}
+
+		err = c.setOwnerMode(sftpConn, targetPath[0], args)
+		if err != nil {
+			return err
+		}
+
+	case "symlink":
+		err = sftpConn.Symlink(targetPath[1], targetPath[0])
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -1156,10 +1325,23 @@ func (c *cmdFileMount) Command() *cobra.Command {
 		`incus file mount foo/root fooroot
    To mount /root from the instance foo onto the local fooroot directory.`))
 
-	cmd.RunE = c.Run
 	cmd.Flags().StringVar(&c.flagListen, "listen", "", i18n.G("Setup SSH SFTP listener on address:port instead of mounting"))
 	cmd.Flags().BoolVar(&c.flagAuthNone, "no-auth", false, i18n.G("Disable authentication when using SSH SFTP listener"))
 	cmd.Flags().StringVar(&c.flagAuthUser, "auth-user", "", i18n.G("Set authentication user when using SSH SFTP listener"))
+
+	cmd.RunE = c.Run
+
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return c.global.cmpFiles(toComplete, false)
+		}
+
+		if len(args) == 1 {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 
 	return cmd
 }

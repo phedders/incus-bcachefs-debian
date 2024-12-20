@@ -2,14 +2,16 @@ package pci
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/lxc/incus/v6/internal/revert"
+	"github.com/lxc/incus/v6/shared/revert"
 	"github.com/lxc/incus/v6/shared/util"
 )
 
@@ -68,7 +70,7 @@ func DeviceUnbind(pciDev Device) error {
 	driverUnbindPath := fmt.Sprintf("/sys/bus/pci/devices/%s/driver/unbind", pciDev.SlotName)
 	err := os.WriteFile(driverUnbindPath, []byte(pciDev.SlotName), 0600)
 	if err != nil {
-		if !os.IsNotExist(err) || !util.PathExists(fmt.Sprintf("/sys/bus/pci/devices/%s/", pciDev.SlotName)) {
+		if !errors.Is(err, fs.ErrNotExist) || !util.PathExists(fmt.Sprintf("/sys/bus/pci/devices/%s/", pciDev.SlotName)) {
 			return fmt.Errorf("Failed unbinding device %q via %q: %w", pciDev.SlotName, driverUnbindPath, err)
 		}
 	}
@@ -108,7 +110,7 @@ func DeviceDriverOverride(pciDev Device, driverOverride string) error {
 
 	// Unbind the device from the host (ignore if not bound).
 	err := DeviceUnbind(pciDev)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 

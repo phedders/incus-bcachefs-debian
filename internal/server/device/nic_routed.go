@@ -2,13 +2,13 @@ package device
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/lxc/incus/v6/internal/revert"
 	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
 	"github.com/lxc/incus/v6/internal/server/instance"
 	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
@@ -16,6 +16,7 @@ import (
 	"github.com/lxc/incus/v6/internal/server/network"
 	localUtil "github.com/lxc/incus/v6/internal/server/util"
 	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/revert"
 	"github.com/lxc/incus/v6/shared/util"
 	"github.com/lxc/incus/v6/shared/validate"
 )
@@ -354,13 +355,13 @@ func (d *nicRouted) Start() (*deviceConfig.RunConfig, error) {
 
 	// Attempt to disable IPv6 router advertisement acceptance from instance.
 	err = localUtil.SysctlSet(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", saveData["host_name"]), "0")
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 
 	// Prevent source address spoofing by requiring a return path.
 	err = localUtil.SysctlSet(fmt.Sprintf("net/ipv4/conf/%s/rp_filter", saveData["host_name"]), "1")
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 

@@ -1,20 +1,22 @@
 package device
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/google/uuid"
 
-	"github.com/lxc/incus/v6/internal/revert"
 	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
 	pcidev "github.com/lxc/incus/v6/internal/server/device/pci"
 	"github.com/lxc/incus/v6/internal/server/instance"
 	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
 	"github.com/lxc/incus/v6/internal/server/resources"
 	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/revert"
 	"github.com/lxc/incus/v6/shared/util"
 )
 
@@ -128,7 +130,7 @@ func (d *gpuMdev) startVM() (*deviceConfig.RunConfig, error) {
 
 			err = os.WriteFile(filepath.Join(fmt.Sprintf("/sys/bus/pci/devices/%s/mdev_supported_types/%s/create", pciAddress, d.config["mdev"])), []byte(mdevUUID), 0200)
 			if err != nil {
-				if os.IsNotExist(err) {
+				if errors.Is(err, fs.ErrNotExist) {
 					return nil, fmt.Errorf("The requested profile %q does not exist", d.config["mdev"])
 				}
 

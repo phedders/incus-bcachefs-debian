@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io/fs"
 	"math/rand"
 	"net"
 	"net/http"
@@ -19,7 +21,6 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/mdlayher/netx/eui64"
 
-	"github.com/lxc/incus/v6/internal/revert"
 	"github.com/lxc/incus/v6/internal/server/db"
 	"github.com/lxc/incus/v6/internal/server/db/cluster"
 	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
@@ -34,6 +35,7 @@ import (
 	internalUtil "github.com/lxc/incus/v6/internal/util"
 	"github.com/lxc/incus/v6/shared/api"
 	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/revert"
 	"github.com/lxc/incus/v6/shared/util"
 	"github.com/lxc/incus/v6/shared/validate"
 )
@@ -552,7 +554,7 @@ func (d *nicBridged) Start() (*deviceConfig.RunConfig, error) {
 	// Disable IPv6 on host-side veth interface (prevents host-side interface getting link-local address)
 	// which isn't needed because the host-side interface is connected to a bridge.
 	err = localUtil.SysctlSet(fmt.Sprintf("net/ipv6/conf/%s/disable_ipv6", saveData["host_name"]), "1")
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 
@@ -574,7 +576,7 @@ func (d *nicBridged) Start() (*deviceConfig.RunConfig, error) {
 
 	// Attempt to disable router advertisement acceptance.
 	err = localUtil.SysctlSet(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", saveData["host_name"]), "0")
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 
@@ -811,6 +813,12 @@ func (d *nicBridged) Stop() (*deviceConfig.RunConfig, error) {
 
 // postStop is run after the device is removed from the instance.
 func (d *nicBridged) postStop() error {
+	// Handle the case where validation fails but the device still must be removed.
+	bridgeName := d.config["parent"]
+	if bridgeName == "" && d.config["network"] != "" {
+		bridgeName = d.config["network"]
+	}
+
 	defer func() {
 		_ = d.volatileSet(map[string]string{
 			"host_name": "",
@@ -823,9 +831,9 @@ func (d *nicBridged) postStop() error {
 
 	if d.config["host_name"] != "" && network.InterfaceExists(d.config["host_name"]) {
 		// Detach host-side end of veth pair from bridge (required for openvswitch particularly).
-		err := network.DetachInterface(d.state, d.config["parent"], d.config["host_name"])
+		err := network.DetachInterface(d.state, bridgeName, d.config["host_name"])
 		if err != nil {
-			return fmt.Errorf("Failed to detach interface %q from %q: %w", d.config["host_name"], d.config["parent"], err)
+			return fmt.Errorf("Failed to detach interface %q from %q: %w", d.config["host_name"], bridgeName, err)
 		}
 
 		// Removing host-side end of veth pair will delete the peer end too.
@@ -841,7 +849,7 @@ func (d *nicBridged) postStop() error {
 	routes = append(routes, util.SplitNTrimSpace(d.config["ipv6.routes"], ",", -1, true)...)
 	routes = append(routes, util.SplitNTrimSpace(d.config["ipv4.routes.external"], ",", -1, true)...)
 	routes = append(routes, util.SplitNTrimSpace(d.config["ipv6.routes.external"], ",", -1, true)...)
-	networkNICRouteDelete(d.config["parent"], routes...)
+	networkNICRouteDelete(bridgeName, routes...)
 
 	if util.IsTrue(d.config["security.mac_filtering"]) || util.IsTrue(d.config["security.ipv4_filtering"]) || util.IsTrue(d.config["security.ipv6_filtering"]) {
 		d.removeFilters(d.config)
@@ -852,25 +860,31 @@ func (d *nicBridged) postStop() error {
 
 // Remove is run when the device is removed from the instance or the instance is deleted.
 func (d *nicBridged) Remove() error {
-	if d.config["parent"] != "" {
+	// Handle the case where validation fails but the device still must be removed.
+	bridgeName := d.config["parent"]
+	if bridgeName == "" && d.config["network"] != "" {
+		bridgeName = d.config["network"]
+	}
+
+	if bridgeName != "" {
 		dnsmasq.ConfigMutex.Lock()
 		defer dnsmasq.ConfigMutex.Unlock()
 
-		if network.InterfaceExists(d.config["parent"]) {
-			err := d.networkClearLease(d.inst.Name(), d.config["parent"], d.config["hwaddr"], clearLeaseAll)
+		if network.InterfaceExists(bridgeName) {
+			err := d.networkClearLease(d.inst.Name(), bridgeName, d.config["hwaddr"], clearLeaseAll)
 			if err != nil {
 				return fmt.Errorf("Failed clearing leases: %w", err)
 			}
 		}
 
 		// Remove dnsmasq config if it exists (doesn't return error if file is missing).
-		err := dnsmasq.RemoveStaticEntry(d.config["parent"], d.inst.Project().Name, d.inst.Name(), d.Name())
+		err := dnsmasq.RemoveStaticEntry(bridgeName, d.inst.Project().Name, d.inst.Name(), d.Name())
 		if err != nil {
 			return err
 		}
 
 		// Reload dnsmasq to apply new settings if dnsmasq is running.
-		err = dnsmasq.Kill(d.config["parent"], true)
+		err = dnsmasq.Kill(bridgeName, true)
 		if err != nil {
 			return err
 		}
@@ -907,7 +921,7 @@ func (d *nicBridged) rebuildDnsmasqEntry() error {
 	if (util.IsTrue(d.config["security.ipv4_filtering"]) && ipv4Address == "") || (util.IsTrue(d.config["security.ipv6_filtering"]) && ipv6Address == "") {
 		deviceStaticFileName := dnsmasq.StaticAllocationFileName(d.inst.Project().Name, d.inst.Name(), d.Name())
 		_, curIPv4, curIPv6, err := dnsmasq.DHCPStaticAllocation(d.config["parent"], deviceStaticFileName)
-		if err != nil && !os.IsNotExist(err) {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 
@@ -1008,7 +1022,7 @@ func (d *nicBridged) removeFilters(m deviceConfig.Device) {
 	deviceStaticFileName := dnsmasq.StaticAllocationFileName(d.inst.Project().Name, d.inst.Name(), d.Name())
 	_, IPv4Alloc, IPv6Alloc, err := dnsmasq.DHCPStaticAllocation(m["parent"], deviceStaticFileName)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return
 		}
 

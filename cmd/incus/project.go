@@ -80,6 +80,10 @@ func (c *cmdProject) Command() *cobra.Command {
 	projectSwitchCmd := cmdProjectSwitch{global: c.global, project: c}
 	cmd.AddCommand(projectSwitchCmd.Command())
 
+	// Get current project
+	projectGetCurrentCmd := cmdProjectGetCurrent{global: c.global, project: c}
+	cmd.AddCommand(projectGetCurrentCmd.Command())
+
 	// Workaround for subcommand usage errors. See: https://github.com/spf13/cobra/issues/706
 	cmd.Args = cobra.NoArgs
 	cmd.Run = func(cmd *cobra.Command, args []string) { _ = cmd.Usage() }
@@ -111,7 +115,7 @@ incus project create p1 < config.yaml
 
 	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
-			return c.global.cmpRemotes(false)
+			return c.global.cmpRemotes(toComplete, false)
 		}
 
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -532,7 +536,7 @@ u - Used By`))
 
 	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
-			return c.global.cmpRemotes(false)
+			return c.global.cmpRemotes(toComplete, false)
 		}
 
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -687,7 +691,7 @@ func (c *cmdProjectList) Run(cmd *cobra.Command, args []string) error {
 	for _, project := range projects {
 		line := []string{}
 		for _, column := range columns {
-			if column.Name == "NAME" {
+			if column.Name == i18n.G("NAME") {
 				if project.Name == info.Project {
 					project.Name = fmt.Sprintf("%s (%s)", project.Name, i18n.G("current"))
 				}
@@ -706,7 +710,7 @@ func (c *cmdProjectList) Run(cmd *cobra.Command, args []string) error {
 		header = append(header, column.Name)
 	}
 
-	return cli.RenderTable(c.flagFormat, header, data, projects)
+	return cli.RenderTable(os.Stdout, c.flagFormat, header, data, projects)
 }
 
 // Rename.
@@ -1143,5 +1147,49 @@ func (c *cmdProjectInfo) Run(cmd *cobra.Command, args []string) error {
 		i18n.G("USAGE"),
 	}
 
-	return cli.RenderTable(c.flagFormat, header, data, projectState)
+	return cli.RenderTable(os.Stdout, c.flagFormat, header, data, projectState)
+}
+
+// Get current project.
+type cmdProjectGetCurrent struct {
+	global  *cmdGlobal
+	project *cmdProject
+}
+
+// Command generates the command definition.
+func (c *cmdProjectGetCurrent) Command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = usage("get-current")
+	cmd.Short = i18n.G("Show the current project")
+	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+		`Show the current project`))
+
+	cmd.RunE = c.Run
+
+	return cmd
+}
+
+// Run runs the actual command logic.
+func (c *cmdProjectGetCurrent) Run(cmd *cobra.Command, args []string) error {
+	conf := c.global.conf
+
+	// Quick checks.
+	exit, err := c.global.CheckArgs(cmd, args, 0, 0)
+	if exit {
+		return err
+	}
+
+	// Show the current project
+	remote, ok := conf.Remotes[conf.DefaultRemote]
+	if !ok {
+		return fmt.Errorf(i18n.G("Remote %s doesn't exist"), conf.DefaultRemote)
+	}
+
+	if remote.Project == "" {
+		fmt.Println(api.ProjectDefaultName)
+	} else {
+		fmt.Println(remote.Project)
+	}
+
+	return nil
 }

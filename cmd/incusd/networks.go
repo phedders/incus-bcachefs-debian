@@ -16,8 +16,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/lxc/incus/v6/client"
-	"github.com/lxc/incus/v6/internal/revert"
+	incus "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/internal/server/auth"
 	"github.com/lxc/incus/v6/internal/server/cluster"
 	clusterRequest "github.com/lxc/incus/v6/internal/server/cluster/request"
@@ -38,6 +37,7 @@ import (
 	"github.com/lxc/incus/v6/internal/version"
 	"github.com/lxc/incus/v6/shared/api"
 	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/revert"
 	"github.com/lxc/incus/v6/shared/util"
 )
 
@@ -248,6 +248,11 @@ func networksGet(d *Daemon, r *http.Request) response.Response {
 			}
 
 			if !recursion {
+				// Check if project allows access to network.
+				if !project.NetworkAllowed(reqProject.Config, networkName, true) {
+					continue
+				}
+
 				resultString = append(resultString, fmt.Sprintf("/%s/networks/%s", version.APIVersion, networkName))
 			} else {
 				netInfo, err := doNetworkGet(s, r, s.ServerClustered, projectName, reqProject.Config, networkName)
@@ -438,7 +443,7 @@ func networksPost(d *Daemon, r *http.Request) response.Response {
 		})
 		if err != nil {
 			if err == db.ErrAlreadyDefined {
-				return response.BadRequest(fmt.Errorf("The network is already defined on member %q", targetNode))
+				return response.Conflict(fmt.Errorf("Network %q is already defined on member %q", req.Name, targetNode))
 			}
 
 			return response.SmartError(err)
@@ -532,7 +537,7 @@ func networksPost(d *Daemon, r *http.Request) response.Response {
 
 	// Non-clustered network creation.
 	if netInfo != nil {
-		return response.BadRequest(fmt.Errorf("The network already exists"))
+		return response.Conflict(fmt.Errorf("Network %q already exists", req.Name))
 	}
 
 	revert := revert.New()
@@ -711,10 +716,7 @@ func networksPostCluster(ctx context.Context, s *state.State, projectName string
 
 		// Clone the network config for this node so we don't modify it and potentially end up sending
 		// this node's config to another node.
-		nodeConfig := make(map[string]string, len(netConfig))
-		for k, v := range netConfig {
-			nodeConfig[k] = v
-		}
+		nodeConfig := util.CloneMap(netConfig)
 
 		// Merge node specific config items into global config.
 		for key, value := range nodeConfigs[server.Environment.ServerName] {
@@ -1054,7 +1056,7 @@ func networkDelete(d *Daemon, r *http.Request) response.Response {
 	clusterNotification := isClusterNotification(r)
 	if !clusterNotification {
 		// Quick checks.
-		inUse, err := n.IsUsed()
+		inUse, err := n.IsUsed(false)
 		if err != nil {
 			return response.SmartError(err)
 		}
@@ -1203,7 +1205,7 @@ func networkPost(d *Daemon, r *http.Request) response.Response {
 	}
 
 	// Check network isn't in use.
-	inUse, err := n.IsUsed()
+	inUse, err := n.IsUsed(false)
 	if err != nil {
 		return response.InternalError(fmt.Errorf("Failed checking network in use: %w", err))
 	}
