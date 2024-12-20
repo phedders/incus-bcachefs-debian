@@ -1,3 +1,15 @@
+incus (6.0.3-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #1090375)
+    - Includes fix for CVE-2024-6156
+    - Rebase d/p/002-adjust-import-paths.patch
+  * d/control:
+    - Set minimum required version of golang-starlark-dev
+    - Adjust recommended and suggested packages
+  * Mention the swtpm-tools package in d/README.Debian
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 20 Dec 2024 02:44:01 +0000
+
 incus (6.0.2-1) unstable; urgency=medium
 
   * New upstream release
