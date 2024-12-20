@@ -782,6 +782,10 @@ func (r *ProtocolIncus) CopyInstance(source InstanceServer, instance api.Instanc
 			}
 		}
 
+		if args.RefreshExcludeOlder && !source.HasExtension("custom_volume_refresh_exclude_older_snapshots") {
+			return nil, fmt.Errorf("The source server is missing the required \"custom_volume_refresh_exclude_older_snapshots\" API extension")
+		}
+
 		if args.AllowInconsistent {
 			if !r.HasExtension("instance_allow_inconsistent_copy") {
 				return nil, fmt.Errorf("The source server is missing the required \"instance_allow_inconsistent_copy\" API extension")
@@ -796,6 +800,7 @@ func (r *ProtocolIncus) CopyInstance(source InstanceServer, instance api.Instanc
 		req.Source.Live = args.Live
 		req.Source.InstanceOnly = args.InstanceOnly
 		req.Source.Refresh = args.Refresh
+		req.Source.RefreshExcludeOlder = args.RefreshExcludeOlder
 		req.Source.AllowInconsistent = args.AllowInconsistent
 	}
 
@@ -868,6 +873,7 @@ func (r *ProtocolIncus) CopyInstance(source InstanceServer, instance api.Instanc
 		req.Source.Type = "migration"
 		req.Source.Mode = "push"
 		req.Source.Refresh = args.Refresh
+		req.Source.RefreshExcludeOlder = args.RefreshExcludeOlder
 
 		op, err := r.CreateInstance(req)
 		if err != nil {
@@ -1690,7 +1696,7 @@ func (r *ProtocolIncus) GetInstanceFileSFTP(instanceName string) (*sftp.Client, 
 	}
 
 	// Get a SFTP client.
-	client, err := sftp.NewClientPipe(conn, conn)
+	client, err := sftp.NewClientPipe(conn, conn, sftp.MaxPacketUnchecked(128*1024))
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -2522,6 +2528,10 @@ func (r *ProtocolIncus) ConsoleInstance(instanceName string, console api.Instanc
 		return nil, fmt.Errorf("The server is missing the required \"console_vga_type\" API extension")
 	}
 
+	if console.Force && !r.HasExtension("console_force") {
+		return nil, fmt.Errorf(`The server is missing the required "console_force" API extension`)
+	}
+
 	// Send the request
 	op, _, err := r.queryOperation("POST", fmt.Sprintf("%s/%s/console", path, url.PathEscape(instanceName)), console, "")
 	if err != nil {
@@ -2608,6 +2618,10 @@ func (r *ProtocolIncus) ConsoleInstanceDynamic(instanceName string, console api.
 
 	if console.Type == "vga" && !r.HasExtension("console_vga_type") {
 		return nil, nil, fmt.Errorf("The server is missing the required \"console_vga_type\" API extension")
+	}
+
+	if console.Force && !r.HasExtension("console_force") {
+		return nil, nil, fmt.Errorf(`The server is missing the required "console_force" API extension`)
 	}
 
 	// Send the request.

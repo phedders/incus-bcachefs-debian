@@ -2,8 +2,10 @@ package drivers
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"os/exec"
@@ -13,13 +15,13 @@ import (
 
 	"github.com/lxc/incus/v6/internal/instancewriter"
 	"github.com/lxc/incus/v6/internal/linux"
-	"github.com/lxc/incus/v6/internal/revert"
 	"github.com/lxc/incus/v6/internal/rsync"
 	"github.com/lxc/incus/v6/internal/server/backup"
 	"github.com/lxc/incus/v6/internal/server/migration"
 	"github.com/lxc/incus/v6/internal/server/operations"
 	"github.com/lxc/incus/v6/shared/api"
 	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/revert"
 	"github.com/lxc/incus/v6/shared/subprocess"
 	"github.com/lxc/incus/v6/shared/util"
 	"github.com/lxc/incus/v6/shared/validate"
@@ -67,6 +69,18 @@ func (d *lvm) CreateVolume(vol Volume, filler *VolumeFiller, op *operations.Oper
 				devPath, err = d.GetVolumeDiskPath(vol)
 				if err != nil {
 					return err
+				}
+
+				// Check the block size for image volumes.
+				if vol.volType == VolumeTypeImage {
+					blockSize, err := d.getBlockSize(devPath)
+					if err != nil {
+						return err
+					}
+
+					if blockSize != 512 {
+						return fmt.Errorf("Underlying storage uses %d bytes sector size when virtual machine images require 512 bytes", blockSize)
+					}
 				}
 			}
 
@@ -160,7 +174,7 @@ func (d *lvm) CreateVolumeFromCopy(vol Volume, srcVol Volume, copySnapshots bool
 
 // CreateVolumeFromMigration creates a volume being sent via a migration.
 func (d *lvm) CreateVolumeFromMigration(vol Volume, conn io.ReadWriteCloser, volTargetArgs migration.VolumeTargetArgs, preFiller *VolumeFiller, op *operations.Operation) error {
-	if d.clustered && volTargetArgs.ClusterMoveSourceName != "" {
+	if d.clustered && volTargetArgs.ClusterMoveSourceName != "" && volTargetArgs.StoragePool == "" {
 		err := vol.EnsureMountPath()
 		if err != nil {
 			return err
@@ -227,7 +241,7 @@ func (d *lvm) DeleteVolume(vol Volume, op *operations.Operation) error {
 		// Remove the volume from the storage device.
 		mountPath := vol.MountPath()
 		err = os.RemoveAll(mountPath)
-		if err != nil && !os.IsNotExist(err) {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("Error removing LVM logical volume mount path %q: %w", mountPath, err)
 		}
 
@@ -682,7 +696,7 @@ func (d *lvm) ListVolumes() ([]Volume, error) {
 		return nil, fmt.Errorf("Failed getting volume list: %v: %w", strings.TrimSpace(string(errMsg)), err)
 	}
 
-	volList := make([]Volume, len(vols))
+	volList := make([]Volume, 0, len(vols))
 	for _, v := range vols {
 		volList = append(volList, v)
 	}
@@ -901,7 +915,7 @@ func (d *lvm) RenameVolume(vol Volume, newVolName string, op *operations.Operati
 
 // MigrateVolume sends a volume for migration.
 func (d *lvm) MigrateVolume(vol Volume, conn io.ReadWriteCloser, volSrcArgs *migration.VolumeSourceArgs, op *operations.Operation) error {
-	if d.clustered && volSrcArgs.ClusterMove {
+	if d.clustered && volSrcArgs.ClusterMove && !volSrcArgs.StorageMove {
 		// Ensure the volume allows shared access.
 		if vol.volType == VolumeTypeVM || vol.IsCustomBlock() {
 			// Block volume.
@@ -1021,7 +1035,7 @@ func (d *lvm) DeleteVolumeSnapshot(snapVol Volume, op *operations.Operation) err
 	// Remove the snapshot mount path from the storage device.
 	snapPath := snapVol.MountPath()
 	err = os.RemoveAll(snapPath)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("Error removing LVM snapshot mount path %q: %w", snapPath, err)
 	}
 

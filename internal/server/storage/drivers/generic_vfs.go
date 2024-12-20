@@ -2,8 +2,10 @@ package drivers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +14,6 @@ import (
 	"github.com/lxc/incus/v6/internal/instancewriter"
 	"github.com/lxc/incus/v6/internal/linux"
 	"github.com/lxc/incus/v6/internal/migration"
-	"github.com/lxc/incus/v6/internal/revert"
 	"github.com/lxc/incus/v6/internal/rsync"
 	localMigration "github.com/lxc/incus/v6/internal/server/migration"
 	"github.com/lxc/incus/v6/internal/server/operations"
@@ -23,6 +24,7 @@ import (
 	"github.com/lxc/incus/v6/shared/archive"
 	"github.com/lxc/incus/v6/shared/ioprogress"
 	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/revert"
 	"github.com/lxc/incus/v6/shared/util"
 )
 
@@ -105,7 +107,7 @@ func genericVFSVolumeSnapshots(d Driver, vol Volume, op *operations.Operation) (
 	ents, err := os.ReadDir(snapshotDir)
 	if err != nil {
 		// If the snapshots directory doesn't exist, there are no snapshots.
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return snapshots, nil
 		}
 
@@ -330,6 +332,12 @@ func genericVFSCreateVolumeFromMigration(d Driver, initVolume func(vol Volume) (
 
 		defer func() { _ = to.Close() }()
 
+		// Reset the disk.
+		err = clearDiskData(path, to)
+		if err != nil {
+			return err
+		}
+
 		// Setup progress tracker.
 		fromPipe := io.ReadCloser(conn)
 		if wrapper != nil {
@@ -453,7 +461,7 @@ func genericVFSCreateVolumeFromMigration(d Driver, initVolume func(vol Volume) (
 func genericVFSHasVolume(vol Volume) (bool, error) {
 	_, err := os.Lstat(vol.MountPath())
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return false, nil
 		}
 
@@ -591,7 +599,7 @@ func genericVFSBackupVolume(d Driver, vol Volume, tarWriter *instancewriter.Inst
 
 				return filepath.Walk(mountPath, func(srcPath string, fi os.FileInfo, err error) error {
 					if err != nil {
-						if os.IsNotExist(err) {
+						if errors.Is(err, fs.ErrNotExist) {
 							logger.Warnf("File vanished during export: %q, skipping", srcPath)
 							return nil
 						}
@@ -785,6 +793,13 @@ func genericVFSBackupUnpack(d Driver, sysOS *sys.OS, vol Volume, snapshots []str
 						logMsg = "Unpacking custom block volume"
 					}
 
+					// Reset the disk.
+					err = clearDiskData(targetPath, to)
+					if err != nil {
+						return err
+					}
+
+					// Copy the data.
 					d.Logger().Debug(logMsg, logger.Ctx{"source": srcFile, "target": targetPath})
 					_, err = io.Copy(NewSparseFileWrapper(to), tr)
 					if err != nil {

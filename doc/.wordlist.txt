@@ -17,6 +17,7 @@ AXFR
 backend
 backends
 backported
+Backports
 balancer
 balancers
 benchmarking
@@ -134,6 +135,7 @@ kbit
 KiB
 kibi
 Kibit
+Kubernetes
 KVM
 lookups
 Loongarch
@@ -181,6 +183,7 @@ OpenID
 OpenMetrics
 OpenSSL
 OpenSUSE
+openSUSE
 OpenTofu
 OSD
 overcommit
@@ -189,6 +192,7 @@ overlayfs
 OVMF
 OVN
 OVS
+PackageHub
 Pbit
 PCI
 PCIe
@@ -296,6 +300,7 @@ UIDs
 unconfigured
 unevictable
 unixgram
+uncomment
 unmanaged
 unmount
 unmounting

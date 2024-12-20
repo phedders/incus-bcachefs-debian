@@ -1,7 +1,9 @@
 package drivers
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,13 +13,13 @@ import (
 
 	"github.com/lxc/incus/v6/internal/linux"
 	"github.com/lxc/incus/v6/internal/migration"
-	"github.com/lxc/incus/v6/internal/revert"
 	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
 	localMigration "github.com/lxc/incus/v6/internal/server/migration"
 	"github.com/lxc/incus/v6/internal/server/operations"
 	internalUtil "github.com/lxc/incus/v6/internal/util"
 	"github.com/lxc/incus/v6/internal/version"
 	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/revert"
 	"github.com/lxc/incus/v6/shared/subprocess"
 	"github.com/lxc/incus/v6/shared/units"
 	"github.com/lxc/incus/v6/shared/util"
@@ -236,7 +238,7 @@ func (d *btrfs) Create() error {
 
 				// Delete the current directory to replace by subvolume.
 				err := os.Remove(cleanSource)
-				if err != nil && !os.IsNotExist(err) {
+				if err != nil && !errors.Is(err, fs.ErrNotExist) {
 					return fmt.Errorf("Failed to remove %q: %w", cleanSource, err)
 				}
 			}
@@ -311,7 +313,7 @@ func (d *btrfs) Delete(op *operations.Operation) error {
 	// Delete any loop file we may have used.
 	loopPath := loopFilePath(d.name)
 	err = os.Remove(loopPath)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("Failed removing loop file %q: %w", loopPath, err)
 	}
 

@@ -1,11 +1,13 @@
 package network
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/big"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"slices"
 	"sort"
@@ -16,10 +18,10 @@ import (
 	"github.com/flosch/pongo2"
 	"github.com/mdlayher/netx/eui64"
 	ovsClient "github.com/ovn-org/libovsdb/client"
+	ovsdbModel "github.com/ovn-org/libovsdb/model"
 
-	"github.com/lxc/incus/v6/client"
+	incus "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/internal/iprange"
-	"github.com/lxc/incus/v6/internal/revert"
 	"github.com/lxc/incus/v6/internal/server/cluster"
 	"github.com/lxc/incus/v6/internal/server/cluster/request"
 	"github.com/lxc/incus/v6/internal/server/db"
@@ -31,6 +33,7 @@ import (
 	"github.com/lxc/incus/v6/internal/server/locking"
 	"github.com/lxc/incus/v6/internal/server/network/acl"
 	networkOVN "github.com/lxc/incus/v6/internal/server/network/ovn"
+	ovnSB "github.com/lxc/incus/v6/internal/server/network/ovn/schema/ovn-sb"
 	"github.com/lxc/incus/v6/internal/server/network/ovs"
 	"github.com/lxc/incus/v6/internal/server/project"
 	"github.com/lxc/incus/v6/internal/server/state"
@@ -38,6 +41,7 @@ import (
 	internalUtil "github.com/lxc/incus/v6/internal/util"
 	"github.com/lxc/incus/v6/shared/api"
 	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/revert"
 	"github.com/lxc/incus/v6/shared/util"
 	"github.com/lxc/incus/v6/shared/validate"
 )
@@ -350,9 +354,10 @@ func (n *ovn) getExternalSubnetInUse(uplinkNetworkName string) ([]externalSubnet
 // Validate network config.
 func (n *ovn) Validate(config map[string]string) error {
 	rules := map[string]func(value string) error{
-		"network":       validate.IsAny,
-		"bridge.hwaddr": validate.Optional(validate.IsNetworkMAC),
-		"bridge.mtu":    validate.Optional(validate.IsNetworkMTU),
+		"network":                    validate.IsAny,
+		"bridge.hwaddr":              validate.Optional(validate.IsNetworkMAC),
+		"bridge.mtu":                 validate.Optional(validate.IsNetworkMTU),
+		"bridge.external_interfaces": validate.Optional(validateExternalInterfaces),
 		"ipv4.address": validate.Optional(func(value string) error {
 			if validate.IsOneOf("none", "auto")(value) == nil {
 				return nil
@@ -360,7 +365,8 @@ func (n *ovn) Validate(config map[string]string) error {
 
 			return validate.IsNetworkAddressCIDRV4(value)
 		}),
-		"ipv4.dhcp": validate.Optional(validate.IsBool),
+		"ipv4.dhcp":        validate.Optional(validate.IsBool),
+		"ipv4.dhcp.ranges": validate.Optional(validate.IsListOf(validate.IsNetworkRangeV4)),
 		"ipv6.address": validate.Optional(func(value string) error {
 			if validate.IsOneOf("none", "auto")(value) == nil {
 				return nil
@@ -410,7 +416,7 @@ func (n *ovn) Validate(config map[string]string) error {
 	_, ipv6Net, _ := net.ParseCIDR(config["ipv6.address"])
 	if ipv6Net != nil {
 		ones, _ := ipv6Net.Mask.Size()
-		if ones < 64 {
+		if ones > 64 {
 			return fmt.Errorf("IPv6 subnet must be at least a /64")
 		}
 	}
@@ -1956,13 +1962,57 @@ func (n *ovn) getDHCPv4Reservations() ([]iprange.Range, error) {
 
 	var dhcpReserveIPv4s []iprange.Range
 	if routerIntPortIPv4 != nil {
-		dhcpReserveIPv4s = []iprange.Range{{Start: routerIntPortIPv4}, {Start: dhcpalloc.GetIP(ipv4Net, -2)}}
+		if n.config["ipv4.dhcp.ranges"] == "" {
+			dhcpReserveIPv4s = []iprange.Range{{Start: routerIntPortIPv4}, {Start: dhcpalloc.GetIP(ipv4Net, -2)}}
+		} else {
+			allowedNets := []*net.IPNet{n.DHCPv4Subnet()}
+			dhcpRanges, err := parseIPRanges(n.config["ipv4.dhcp.ranges"], allowedNets...)
+			if err != nil {
+				return nil, err
+			}
+
+			lastIP := routerIntPortIPv4
+
+			sort.Slice(dhcpRanges, func(i, j int) bool {
+				return bytes.Compare(dhcpRanges[i].Start, dhcpRanges[j].Start) < 0
+			})
+
+			for _, dhcpRange := range dhcpRanges {
+				startRangeAddr, err := netip.ParseAddr(dhcpRange.Start.String())
+				if err != nil {
+					return nil, err
+				}
+
+				endRangeAddr, err := netip.ParseAddr(dhcpRange.End.String())
+				if err != nil {
+					return nil, err
+				}
+
+				prevStartRangeIP, nextEndRangeIP := startRangeAddr.Prev().String(), endRangeAddr.Next().String()
+				complementRange := iprange.Range{Start: lastIP, End: net.ParseIP(prevStartRangeIP)}
+
+				lastIP = net.ParseIP(nextEndRangeIP)
+				dhcpReserveIPv4s = append(dhcpReserveIPv4s, complementRange)
+			}
+
+			dhcpReserveIPv4s = append(dhcpReserveIPv4s, iprange.Range{Start: lastIP, End: dhcpalloc.GetIP(ipv4Net, -2)})
+		}
 	}
 
 	err = UsedByInstanceDevices(n.state, n.Project(), n.Name(), n.Type(), func(inst db.InstanceArgs, nicName string, nicConfig map[string]string) error {
 		ip := net.ParseIP(nicConfig["ipv4.address"])
 		if ip != nil {
-			dhcpReserveIPv4s = append(dhcpReserveIPv4s, iprange.Range{Start: ip})
+			containsIP := false
+			for _, reservedDhcpRange := range dhcpReserveIPv4s {
+				containsIP = reservedDhcpRange.ContainsIP(ip)
+				if containsIP {
+					break
+				}
+			}
+
+			if !containsIP {
+				dhcpReserveIPv4s = append(dhcpReserveIPv4s, iprange.Range{Start: ip})
+			}
 		}
 
 		return nil
@@ -2352,6 +2402,115 @@ func (n *ovn) setup(update bool) error {
 		revert.Add(func() { _ = n.ovnnb.DeleteLogicalSwitch(context.TODO(), n.getIntSwitchName()) })
 	}
 
+	// Add any listed existing external interface.
+	if n.config["bridge.external_interfaces"] != "" {
+		for _, entry := range strings.Split(n.config["bridge.external_interfaces"], ",") {
+			entry = strings.TrimSpace(entry)
+
+			// Test for extended configuration of external interface.
+			entryParts := strings.Split(entry, "/")
+			ifParent := ""
+			vlanID := 0
+
+			if len(entryParts) == 3 {
+				vlanID, err = strconv.Atoi(entryParts[2])
+				if err != nil || vlanID < 1 || vlanID > 4094 {
+					vlanID = 0
+					n.logger.Warn("Ignoring invalid VLAN ID", logger.Ctx{"interface": entry, "vlanID": entryParts[2]})
+				} else {
+					entry = strings.TrimSpace(entryParts[0])
+					ifParent = strings.TrimSpace(entryParts[1])
+				}
+			}
+
+			iface, err := net.InterfaceByName(entry)
+			if err != nil {
+				if vlanID == 0 {
+					n.logger.Warn("Skipping attaching missing external interface", logger.Ctx{"interface": entry})
+					continue
+				}
+
+				// If the interface doesn't exist and VLAN ID was provided, create the missing interface.
+				ok, err := VLANInterfaceCreate(ifParent, entry, strconv.Itoa(vlanID), false)
+				if ok {
+					iface, err = net.InterfaceByName(entry)
+				}
+
+				if !ok || err != nil {
+					return fmt.Errorf("Failed to create external interface %q", entry)
+				}
+			} else if vlanID > 0 {
+				// If the interface exists and VLAN ID was provided, ensure it has the same parent and VLAN ID and is not attached to a different network.
+				linkInfo, err := ip.GetLinkInfoByName(entry)
+				if err != nil {
+					return fmt.Errorf("Failed to get link info for external interface %q", entry)
+				}
+
+				if linkInfo.Info.Kind != "vlan" || linkInfo.Link != ifParent || linkInfo.Info.Data.ID != vlanID || !(linkInfo.Master == "" || linkInfo.Master == n.name) {
+					return fmt.Errorf("External interface %q already in use", entry)
+				}
+			}
+
+			unused := true
+			addrs, err := iface.Addrs()
+			if err == nil {
+				for _, addr := range addrs {
+					ipAddr, _, err := net.ParseCIDR(addr.String())
+					if ipAddr != nil && err == nil && ipAddr.IsGlobalUnicast() {
+						unused = false
+						break
+					}
+				}
+			}
+
+			if !unused {
+				return fmt.Errorf("Only unconfigured network interfaces can be bridged")
+			}
+
+			lspName := networkOVN.OVNSwitchPort(fmt.Sprintf("%s-external-n%d-%s", n.getNetworkPrefix(), n.state.DB.Cluster.GetNodeID(), entry))
+			err = n.ovnnb.CreateLogicalSwitchPort(context.TODO(), n.getIntSwitchName(), lspName, &networkOVN.OVNSwitchPortOpts{
+				IPV4:        "none",
+				IPV6:        "none",
+				Promiscuous: true,
+			}, false)
+			if err != nil {
+				return fmt.Errorf("Failed to create logical switch port for %s: %w", entry, err)
+			}
+
+			revert.Add(func() {
+				_ = n.ovnnb.DeleteLogicalSwitchPort(context.TODO(), n.getIntSwitchName(), lspName)
+			})
+
+			// Attach host side veth interface to bridge.
+			integrationBridge := n.state.GlobalConfig.NetworkOVNIntegrationBridge()
+
+			vswitch, err := n.state.OVS()
+			if err != nil {
+				return fmt.Errorf("Failed to connect to OVS: %w", err)
+			}
+
+			err = vswitch.CreateBridgePort(context.TODO(), integrationBridge, entry, true)
+			if err != nil {
+				return err
+			}
+
+			revert.Add(func() { _ = vswitch.DeleteBridgePort(context.TODO(), integrationBridge, entry) })
+
+			// Link OVS port to OVN logical port.
+			err = vswitch.AssociateInterfaceOVNSwitchPort(context.TODO(), entry, string(lspName))
+			if err != nil {
+				return err
+			}
+
+			// Make sure the port is up.
+			link := &ip.Link{Name: entry}
+			err = link.SetUp()
+			if err != nil {
+				return fmt.Errorf("Failed to bring up the host interface %s: %w", entry, err)
+			}
+		}
+	}
+
 	// Setup IP allocation config on logical switch.
 	err = n.ovnnb.UpdateLogicalSwitchIPAllocation(context.TODO(), n.getIntSwitchName(), &networkOVN.OVNIPAllocationOpts{
 		PrefixIPv4:  routerIntPortIPv4Net,
@@ -2449,13 +2608,14 @@ func (n *ovn) setup(update bool) error {
 		}
 
 		opts := &networkOVN.OVNDHCPv4Opts{
-			ServerID:   routerIntPortIPv4,
-			ServerMAC:  routerMAC,
-			Router:     routerIntPortIPv4,
-			DomainName: n.getDomainName(),
-			LeaseTime:  time.Duration(time.Hour * 1),
-			MTU:        bridgeMTU,
-			Netmask:    dhcpV4Netmask,
+			ServerID:      routerIntPortIPv4,
+			ServerMAC:     routerMAC,
+			Router:        routerIntPortIPv4,
+			DomainName:    n.getDomainName(),
+			LeaseTime:     time.Duration(time.Hour * 1),
+			MTU:           bridgeMTU,
+			Netmask:       dhcpV4Netmask,
+			DNSSearchList: n.getDNSSearchList(),
 		}
 
 		if uplinkNet != nil {
@@ -2977,6 +3137,111 @@ func (n *ovn) Start() error {
 		return err
 	}
 
+	err = n.loadBalancerBGPSetupPrefixes()
+	if err != nil {
+		return fmt.Errorf("Failed applying BGP prefixes for load balancers: %w", err)
+	}
+
+	// Setup event handler for monitored services.
+	handler := networkOVN.EventHandler{
+		Tables: []string{"Service_Monitor"},
+		Hook: func(action string, table string, oldObject ovsdbModel.Model, newObject ovsdbModel.Model) {
+			// Skip invalid notifications.
+			if oldObject == nil && newObject == nil {
+				return
+			}
+
+			// Get the object.
+			dbObject := newObject
+			if dbObject == nil {
+				dbObject = oldObject
+			}
+
+			srvStatus, ok := dbObject.(*ovnSB.ServiceMonitor)
+			if !ok {
+				return
+			}
+
+			// Check if this is our network.
+			if !strings.HasPrefix(srvStatus.LogicalPort, fmt.Sprintf("incus-net%d-instance-", n.id)) {
+				return
+			}
+
+			// Locate affected load-balancers.
+			lbs, err := n.ovnnb.GetLoadBalancersByStatusUpdate(context.TODO(), *srvStatus)
+			if err != nil {
+				return
+			}
+
+			for _, lb := range lbs {
+				// Check for status of all backends on this load-balancer.
+				online, err := n.ovnsb.CheckLoadBalancerOnline(context.TODO(), lb)
+				if err != nil {
+					return
+				}
+
+				// Parse the name.
+				fields := strings.Split(lb.Name, "-")
+				listenAddr := net.ParseIP(fields[3])
+				if listenAddr == nil {
+					return
+				}
+
+				// Check if we have a matching UDP load-balancer.
+				fields[4] = "udp"
+				lbUDP, _ := n.ovnnb.GetLoadBalancer(context.TODO(), networkOVN.OVNLoadBalancer(strings.Join(fields, "-")))
+				if lbUDP != nil {
+					// UDP backends can't be checked, so have to assume online.
+					online = true
+				}
+
+				// Prepare advertisement.
+				ipVersion := uint(4)
+				if listenAddr.To4() == nil {
+					ipVersion = 6
+				}
+
+				bgpOwner := fmt.Sprintf("network_%d_load_balancer", n.id)
+				nextHopAddr := n.bgpNextHopAddress(ipVersion)
+				natEnabled := util.IsTrue(n.config[fmt.Sprintf("ipv%d.nat", ipVersion)])
+				_, netSubnet, _ := net.ParseCIDR(n.config[fmt.Sprintf("ipv%d.address", ipVersion)])
+
+				routeSubnetSize := 128
+				if ipVersion == 4 {
+					routeSubnetSize = 32
+				}
+
+				// Don't export internal address forwards (those inside the NAT enabled network's subnet).
+				if natEnabled && netSubnet != nil && netSubnet.Contains(listenAddr) {
+					return
+				}
+
+				_, ipRouteSubnet, err := net.ParseCIDR(fmt.Sprintf("%s/%d", listenAddr.String(), routeSubnetSize))
+				if err != nil {
+					return
+				}
+
+				// Update the BGP state.
+				if online {
+					err = n.state.BGP.AddPrefix(*ipRouteSubnet, nextHopAddr, bgpOwner)
+					if err != nil {
+						return
+					}
+				} else {
+					err = n.state.BGP.RemovePrefix(*ipRouteSubnet, nextHopAddr)
+					if err != nil {
+						return
+					}
+				}
+			}
+		},
+	}
+
+	err = networkOVN.AddOVNSBHandler(fmt.Sprintf("network_%d", n.id), handler)
+	if err != nil {
+		return err
+	}
+
 	revert.Success()
 
 	// Ensure network is marked as available now its started.
@@ -3004,6 +3269,12 @@ func (n *ovn) Stop() error {
 
 	// Clear BGP.
 	err = n.bgpClear(n.config)
+	if err != nil {
+		return err
+	}
+
+	// Clear event handler for monitored services.
+	err = networkOVN.RemoveOVNSBHandler(fmt.Sprintf("network_%d", n.id))
 	if err != nil {
 		return err
 	}
@@ -3320,6 +3591,11 @@ func (n *ovn) Update(newNetwork api.NetworkPut, targetNode string, clientType re
 	err = n.bgpSetup(oldNetwork.Config)
 	if err != nil {
 		return err
+	}
+
+	err = n.loadBalancerBGPSetupPrefixes()
+	if err != nil {
+		return fmt.Errorf("Failed applying BGP prefixes for load balancers: %w", err)
 	}
 
 	revert.Success()
@@ -5279,6 +5555,61 @@ func (n *ovn) LoadBalancerUpdate(listenAddress string, req api.NetworkLoadBalanc
 	return nil
 }
 
+// LoadBalancerState returns the current state of the load balancer.
+func (n *ovn) LoadBalancerState(lb api.NetworkLoadBalancer) (*api.NetworkLoadBalancerState, error) {
+	lbState := &api.NetworkLoadBalancerState{}
+
+	if util.IsTrue(lb.Config["healthcheck"]) {
+		lbState.BackendHealth = map[string]api.NetworkLoadBalancerStateBackendHealth{}
+
+		for _, backend := range lb.Backends {
+			backendHealth := api.NetworkLoadBalancerStateBackendHealth{}
+			backendHealth.Address = backend.TargetAddress
+			backendHealth.Ports = []api.NetworkLoadBalancerStateBackendHealthPort{}
+
+			for _, lbPort := range lb.Ports {
+				if !slices.Contains(lbPort.TargetBackend, backend.Name) {
+					continue
+				}
+
+				// Check valid listen port(s) supplied.
+				listenPortRanges := util.SplitNTrimSpace(lbPort.ListenPort, ",", -1, true)
+				if len(listenPortRanges) <= 0 {
+					return nil, fmt.Errorf("Missing listen port in port specification %q", lbPort.ListenPort)
+				}
+
+				for _, pr := range listenPortRanges {
+					portFirst, portRange, err := ParsePortRange(pr)
+					if err != nil {
+						return nil, fmt.Errorf("Invalid listen port in port specification %q: %w", lbPort.ListenPort, err)
+					}
+
+					for i := int64(0); i < portRange; i++ {
+						port := portFirst + i
+
+						status, err := n.ovnsb.GetServiceHealth(context.TODO(), backend.TargetAddress, lbPort.Protocol, int(port))
+						if err != nil {
+							return nil, fmt.Errorf("Failed retrieving OVN load-balancer health: %w", err)
+						}
+
+						portHealth := api.NetworkLoadBalancerStateBackendHealthPort{
+							Protocol: lbPort.Protocol,
+							Port:     int(port),
+							Status:   status,
+						}
+
+						backendHealth.Ports = append(backendHealth.Ports, portHealth)
+					}
+				}
+			}
+
+			lbState.BackendHealth[backend.Name] = backendHealth
+		}
+	}
+
+	return lbState, nil
+}
+
 // LoadBalancerDelete deletes a network load balancer.
 func (n *ovn) LoadBalancerDelete(listenAddress string, clientType request.ClientType) error {
 	if clientType == request.ClientTypeNormal {
@@ -5352,14 +5683,14 @@ func (n *ovn) getHealthCheck(loadBalancer api.NetworkLoadBalancerPut) (*networkO
 	// Get IPv4 checker.
 	var checkerIPV4 net.IP
 	_, ipv4Net, err := n.parseRouterIntPortIPv4Net()
-	if err == nil {
+	if err == nil && ipv4Net != nil {
 		checkerIPV4 = dhcpalloc.GetIP(ipv4Net, -2)
 	}
 
 	// Get IPv6 checker.
 	var checkerIPV6 net.IP
 	_, ipv6Net, err := n.parseRouterIntPortIPv6Net()
-	if err == nil {
+	if err == nil && ipv6Net != nil {
 		checkerIPV6 = dhcpalloc.GetIP(ipv6Net, -2)
 	}
 
@@ -6236,6 +6567,103 @@ func (n *ovn) forPeers(f func(targetOVNNet *ovn) error) error {
 		err = f(targetOVNNet)
 		if err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+// loadBalancerBGPSetupPrefixes exports external load balancer addresses as prefixes.
+func (n *ovn) loadBalancerBGPSetupPrefixes() error {
+	var listenAddresses map[int64]string
+
+	err := n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+		var err error
+
+		// Retrieve network forwards before clearing existing prefixes, and separate them by IP family.
+		listenAddresses, err = tx.GetNetworkLoadBalancerListenAddresses(ctx, n.ID(), true)
+
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("Failed loading network forwards: %w", err)
+	}
+
+	listenAddressesByFamily := map[uint][]string{
+		4: make([]string, 0),
+		6: make([]string, 0),
+	}
+
+	for _, listenAddress := range listenAddresses {
+		if strings.Contains(listenAddress, ":") {
+			listenAddressesByFamily[6] = append(listenAddressesByFamily[6], listenAddress)
+		} else {
+			listenAddressesByFamily[4] = append(listenAddressesByFamily[4], listenAddress)
+		}
+	}
+
+	// Use load balancer specific owner string (different from the network prefixes) so that these can be
+	// reapplied independently of the network's own prefixes.
+	bgpOwner := fmt.Sprintf("network_%d_load_balancer", n.id)
+
+	// Clear existing address load balancer prefixes for network.
+	err = n.state.BGP.RemovePrefixByOwner(bgpOwner)
+	if err != nil {
+		return err
+	}
+
+	// Add the new prefixes.
+	for _, ipVersion := range []uint{4, 6} {
+		nextHopAddr := n.bgpNextHopAddress(ipVersion)
+		natEnabled := util.IsTrue(n.config[fmt.Sprintf("ipv%d.nat", ipVersion)])
+		_, netSubnet, _ := net.ParseCIDR(n.config[fmt.Sprintf("ipv%d.address", ipVersion)])
+
+		routeSubnetSize := 128
+		if ipVersion == 4 {
+			routeSubnetSize = 32
+		}
+
+		// Export external forward listen addresses.
+		for _, listenAddress := range listenAddressesByFamily[ipVersion] {
+			listenAddr := net.ParseIP(listenAddress)
+
+			// Don't export internal address forwards (those inside the NAT enabled network's subnet).
+			if natEnabled && netSubnet != nil && netSubnet.Contains(listenAddr) {
+				continue
+			}
+
+			// Check health of load-balancer (if enabled).
+			online := false
+			for _, protocol := range []string{"tcp", "udp"} {
+				lb, err := n.ovnnb.GetLoadBalancer(context.TODO(), networkOVN.OVNLoadBalancer(fmt.Sprintf("incus-net%d-lb-%s-%s", n.id, listenAddr.String(), protocol)))
+				if err != nil {
+					continue
+				}
+
+				lbOnline, err := n.ovnsb.CheckLoadBalancerOnline(context.TODO(), *lb)
+				if err != nil {
+					continue
+				}
+
+				if lbOnline {
+					online = true
+					break
+				}
+			}
+
+			if !online {
+				continue
+			}
+
+			_, ipRouteSubnet, err := net.ParseCIDR(fmt.Sprintf("%s/%d", listenAddr.String(), routeSubnetSize))
+			if err != nil {
+				return err
+			}
+
+			err = n.state.BGP.AddPrefix(*ipRouteSubnet, nextHopAddr, bgpOwner)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

@@ -74,8 +74,10 @@ var InstanceConfigKeysAny = map[string]func(value string) error{
 
 	// gendoc:generate(entity=instance, group=boot, key=boot.host_shutdown_action)
 	// Action to take on host shut down
+	//
+	// Valid values are: `stop`, `force-stop` or `stateful-stop`
 	// ---
-	//  type: integer
+	//  type: string
 	//  defaultdesc: stop
 	//  liveupdate: yes
 	//  shortdesc: What action to take on the instance when the host is shut down
@@ -195,7 +197,7 @@ var InstanceConfigKeysAny = map[string]func(value string) error{
 	//  type: string
 	//  liveupdate: yes
 	//  shortdesc: Which NUMA nodes to place the instance CPUs on
-	"limits.cpu.nodes": validate.Optional(validate.Or(validate.IsValidCPUSet, validate.IsOneOf("balanced"))),
+	"limits.cpu.nodes": validate.Optional(validate.Or(validate.IsValidCPUSet, validate.IsOneOf("0", "balanced"))),
 
 	// gendoc:generate(entity=instance, group=resource-limits, key=limits.disk.priority)
 	// Controls how much priority to give to the instance's I/O requests when under load.
@@ -295,7 +297,9 @@ var InstanceConfigKeysAny = map[string]func(value string) error{
 	"security.protection.delete": validate.Optional(validate.IsBool),
 
 	// gendoc:generate(entity=instance, group=snapshots, key=snapshots.schedule)
-	// Specify either a cron expression (`<minute> <hour> <dom> <month> <dow>`), a comma-separated list of schedule aliases (`@hourly`, `@daily`, `@midnight`, `@weekly`, `@monthly`, `@annually`, `@yearly`), or leave empty to disable automatic snapshots.
+	// Specify either a cron expression (`<minute> <hour> <dom> <month> <dow>`), a comma-and-space-separated list of schedule aliases (`@startup`, `@hourly`, `@daily`, `@midnight`, `@weekly`, `@monthly`, `@annually`, `@yearly`), or leave empty to disable automatic snapshots.
+	//
+	// Note that unlike most other configuration keys, this one must be comma-and-space-separated and not just comma-separated as cron expression can themselves contain commas.
 	//
 	// ---
 	//  type: string
@@ -373,7 +377,7 @@ var InstanceConfigKeysAny = map[string]func(value string) error{
 	// ---
 	//  type: string
 	//  shortdesc: Instance NUMA node
-	"volatile.cpu.nodes": validate.Optional(validate.IsValidCPUSet),
+	"volatile.cpu.nodes": validate.Optional(validate.Or(validate.IsValidCPUSet, validate.IsOneOf("0", "balanced"))),
 
 	// gendoc:generate(entity=instance, group=volatile, key=volatile.evacuate.origin)
 	// The cluster member that the instance lived on before evacuation.
@@ -395,6 +399,13 @@ var InstanceConfigKeysAny = map[string]func(value string) error{
 	//  type: string
 	//  shortdesc: Instance marked itself as ready
 	"volatile.last_state.ready": validate.IsBool,
+
+	// gendoc:generate(entity=instance, group=volatile, key=volatile.rebalance.last_move)
+	//
+	// ---
+	//  type: integer
+	//  shortdesc: Timestamp of last move by automatic live-migration
+	"volatile.rebalance.last_move": validate.Optional(validate.IsInt64),
 
 	// gendoc:generate(entity=instance, group=volatile, key=volatile.uuid)
 	// The instance UUID is globally unique across all servers and projects.
@@ -1046,7 +1057,7 @@ var InstanceConfigKeysVM = map[string]func(value string) error{
 	// User keys can be used in search.
 	// ---
 	//  type: string
-	//  liveupdate: no
+	//  liveupdate: yes
 	//  shortdesc: Free-form user key/value storage
 
 	// gendoc:generate(entity=instance, group=miscellaneous, key=agent.nic_config)

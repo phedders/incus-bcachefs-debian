@@ -439,6 +439,20 @@ var APIExtensions = []string{
 	"storage_lvm_metadatasize",
 	"ovn_nic_promiscuous",
 	"ovn_nic_ip_address_none",
+	"instances_state_os_info",
+	"network_load_balancer_state",
+	"instance_nic_macvlan_mode",
+	"storage_lvm_cluster_create",
+	"network_ovn_external_interfaces",
+	"instances_scriptlet_get_instances_count",
+	"cluster_rebalance",
+	"custom_volume_refresh_exclude_older_snapshots",
+	"storage_initial_owner",
+	"storage_live_migration",
+	"instance_console_screenshot",
+	"image_import_alias",
+	"authorization_scriptlet",
+	"console_force",
 }
 
 // APIExtensionsCount returns the number of available API extensions.

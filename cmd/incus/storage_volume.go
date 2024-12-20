@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 
-	"github.com/lxc/incus/v6/client"
+	incus "github.com/lxc/incus/v6/client"
 	cli "github.com/lxc/incus/v6/internal/cmd"
 	"github.com/lxc/incus/v6/internal/i18n"
 	"github.com/lxc/incus/v6/internal/instance"
@@ -347,10 +347,11 @@ type cmdStorageVolumeCopy struct {
 	storage       *cmdStorage
 	storageVolume *cmdStorageVolume
 
-	flagMode          string
-	flagVolumeOnly    bool
-	flagTargetProject string
-	flagRefresh       bool
+	flagMode                string
+	flagVolumeOnly          bool
+	flagTargetProject       string
+	flagRefresh             bool
+	flagRefreshExcludeOlder bool
 }
 
 func (c *cmdStorageVolumeCopy) Command() *cobra.Command {
@@ -367,6 +368,7 @@ func (c *cmdStorageVolumeCopy) Command() *cobra.Command {
 	cmd.Flags().BoolVar(&c.flagVolumeOnly, "volume-only", false, i18n.G("Copy the volume without its snapshots"))
 	cmd.Flags().StringVar(&c.flagTargetProject, "target-project", "", i18n.G("Copy to a project different from the source")+"``")
 	cmd.Flags().BoolVar(&c.flagRefresh, "refresh", false, i18n.G("Refresh and update the existing storage volume copies"))
+	cmd.Flags().BoolVar(&c.flagRefreshExcludeOlder, "refresh-exclude-older", false, i18n.G("During refresh, exclude source snapshots earlier than latest target snapshot"))
 	cmd.RunE = c.Run
 
 	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -514,6 +516,7 @@ func (c *cmdStorageVolumeCopy) Run(cmd *cobra.Command, args []string) error {
 		args.Mode = mode
 		args.VolumeOnly = c.flagVolumeOnly
 		args.Refresh = c.flagRefresh
+		args.RefreshExcludeOlder = c.flagRefreshExcludeOlder
 
 		if c.flagTargetProject != "" {
 			dstServer = dstServer.UseProject(c.flagTargetProject)
@@ -1476,7 +1479,7 @@ func (c *cmdStorageVolumeInfo) Run(cmd *cobra.Command, args []string) error {
 			i18n.G("Expires at"),
 		}
 
-		_ = cli.RenderTable(cli.TableFormatTable, snapHeader, snapData, volSnapshots)
+		_ = cli.RenderTable(os.Stdout, cli.TableFormatTable, snapHeader, snapData, volSnapshots)
 	}
 
 	// List backups
@@ -1528,7 +1531,7 @@ func (c *cmdStorageVolumeInfo) Run(cmd *cobra.Command, args []string) error {
 			i18n.G("Optimized Storage"),
 		}
 
-		_ = cli.RenderTable(cli.TableFormatTable, backupHeader, backupData, volBackups)
+		_ = cli.RenderTable(os.Stdout, cli.TableFormatTable, backupHeader, backupData, volBackups)
 	}
 
 	return nil
@@ -1662,7 +1665,7 @@ func (c *cmdStorageVolumeList) Run(cmd *cobra.Command, args []string) error {
 		headers = append(headers, column.Name)
 	}
 
-	return cli.RenderTable(c.flagFormat, headers, data, rawData)
+	return cli.RenderTable(os.Stdout, c.flagFormat, headers, data, rawData)
 }
 
 func (c *cmdStorageVolumeList) parseColumns(clustered bool) ([]volumeColumn, error) {
@@ -2635,7 +2638,7 @@ func (c *cmdStorageVolumeSnapshotList) listSnapshots(d incus.InstanceServer, poo
 		header = append(header, column.Name)
 	}
 
-	return cli.RenderTable(c.flagFormat, header, data, snapshots)
+	return cli.RenderTable(os.Stdout, c.flagFormat, header, data, snapshots)
 }
 
 type storageVolumeSnapshotColumn struct {

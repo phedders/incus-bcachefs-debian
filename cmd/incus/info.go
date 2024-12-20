@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 
-	"github.com/lxc/incus/v6/client"
+	incus "github.com/lxc/incus/v6/client"
 	cli "github.com/lxc/incus/v6/internal/cmd"
 	"github.com/lxc/incus/v6/internal/i18n"
 	"github.com/lxc/incus/v6/internal/instance"
@@ -666,6 +667,17 @@ func (c *cmdInfo) instanceInfo(d incus.InstanceServer, remote config.Remote, nam
 			fmt.Printf(i18n.G("Started: %s")+"\n", inst.State.StartedAt.Local().Format(dateLayout))
 		}
 
+		// Operating System info
+		if inst.State.OSInfo != nil {
+			fmt.Println("\n" + i18n.G("Operating System:"))
+			osInfo := fmt.Sprintf("  %s: %s\n", i18n.G("OS"), inst.State.OSInfo.OS)
+			osInfo += fmt.Sprintf("  %s: %s\n", i18n.G("OS Version"), inst.State.OSInfo.OSVersion)
+			osInfo += fmt.Sprintf("  %s: %s\n", i18n.G("Kernel Version"), inst.State.OSInfo.KernelVersion)
+			osInfo += fmt.Sprintf("  %s: %s\n", i18n.G("Hostname"), inst.State.OSInfo.Hostname)
+			osInfo += fmt.Sprintf("  %s: %s\n", i18n.G("FQDN"), inst.State.OSInfo.FQDN)
+			fmt.Print(osInfo)
+		}
+
 		fmt.Println("\n" + i18n.G("Resources:"))
 		// Processes
 		fmt.Printf("  "+i18n.G("Processes: %d")+"\n", inst.State.Processes)
@@ -814,7 +826,7 @@ func (c *cmdInfo) instanceInfo(d incus.InstanceServer, remote config.Remote, nam
 			i18n.G("Stateful"),
 		}
 
-		_ = cli.RenderTable(cli.TableFormatTable, snapHeader, snapData, inst.Snapshots)
+		_ = cli.RenderTable(os.Stdout, cli.TableFormatTable, snapHeader, snapData, inst.Snapshots)
 	}
 
 	// List backups
@@ -866,7 +878,7 @@ func (c *cmdInfo) instanceInfo(d incus.InstanceServer, remote config.Remote, nam
 			i18n.G("Optimized Storage"),
 		}
 
-		_ = cli.RenderTable(cli.TableFormatTable, backupHeader, backupData, inst.Backups)
+		_ = cli.RenderTable(os.Stdout, cli.TableFormatTable, backupHeader, backupData, inst.Backups)
 	}
 
 	if showLog {
