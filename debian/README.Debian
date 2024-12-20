@@ -78,6 +78,9 @@ package(s) and the incus-agent package. Then, restart the Incus service. You
 will now be able to create virtual machine instances by passing the `--vm` flag
 in your creation command.
 
+If you wish to expose a TPM to the virtual machine, for example when installing
+Windows 11, you will also need to install the swtpm-tools package.
+
 Known issues
 ============
 
