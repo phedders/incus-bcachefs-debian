@@ -167,10 +167,13 @@ Depends: ${misc:Depends},
          squashfs-tools,
          uidmap,
          xz-utils
-Recommends: apparmor, dnsmasq-base, incus-agent, minio-client
+Recommends: apparmor, dnsmasq-base
 # First line of suggested packages will enable additional Incus storage backends
+# Second line are packages needed to run VMs
+# Third line are additional tools
 Suggests: btrfs-progs, ceph-common, lvm2, zfsutils-linux,
-          incus-tools, gdisk
+          incus-agent, qemu-system-x86, swtpm-tools,
+          incus-tools, gdisk, minio-client
 Built-Using: ${misc:Built-Using}
 Description: Powerful system container and virtual machine manager - daemon
  Incus is a next generation system container and virtual machine manager.
