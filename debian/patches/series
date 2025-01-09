@@ -1,3 +1,4 @@
 001-skip-TestConvertNetworkConfig.patch
 002-adjust-import-paths.patch
-0003-Compile-against-go-criu-v7.patch
+003-Compile-against-go-criu-v7.patch
+004-minio-client-binary-name.patch
