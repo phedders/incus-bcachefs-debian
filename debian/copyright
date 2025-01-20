@@ -5,7 +5,7 @@ Source: https://github.com/lxc/incus
 Files: *
 Copyright:
  2014 Canonical Ltd
- 2023-2024 LinuxContainers
+ 2023-2025 LinuxContainers
 License: Apache-2.0
 
 Files: shared/cgo/incus_bpf.h
@@ -45,7 +45,7 @@ Comment: A fork+minimalized version of code specifically for Incus' use; see int
 Files: debian/*
 Copyright:
  2023 Free Ekanayaka
- 2023-2024 Mathias Gibbens
+ 2023-2025 Mathias Gibbens
 License: Apache-2.0
 Comment: Debian packaging is licensed under the same terms as upstream
 
