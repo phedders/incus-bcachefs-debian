@@ -55,6 +55,19 @@ paths or devices to any instance as well as tweak the security features on any
 instance. Therefore, you should only give access to users who would be trusted with
 root access to the host.
 
+Init scripts
+============
+
+Both systemd and SysV init scripts are provided, but the SysV scripts aren't as
+well-tested as the systemd ones. Bug reports and patches are welcome to improve
+the Incus experience on non-systemd installs.
+
+When installing Incus on a non-systemd host, you must ensure that a cgroup v2
+hierarchy is mounted prior to starting Incus. One possible way to do this is to
+add a line like the following to your /etc/fstab:
+
+    cgroup2   /sys/fs/cgroup   cgroup2   rw,nosuid,nodev,noexec   0 0
+
 Storage backends
 ================
 

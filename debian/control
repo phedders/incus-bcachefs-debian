@@ -154,6 +154,7 @@ Description: Powerful system container and virtual machine manager - library
 
 Package: incus
 Architecture: linux-any
+Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends},
          ${shlibs:Depends},
          attr,

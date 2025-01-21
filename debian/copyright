@@ -49,6 +49,11 @@ Copyright:
 License: Apache-2.0
 Comment: Debian packaging is licensed under the same terms as upstream
 
+Files: debian/incus.init debian/incus.incus-startup.init debian/incus.incus-user.init
+Copyright: 2024 Kwok Guy
+License: Apache-2.0
+Comment: Copied from https://github.com/MoltenArmor/incus-init-scripts
+
 License: Apache-2.0
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
