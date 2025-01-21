@@ -172,7 +172,7 @@ Recommends: apparmor, dnsmasq-base
 # Second line are packages needed to run VMs
 # Third line are additional tools
 Suggests: btrfs-progs, ceph-common, lvm2, zfsutils-linux,
-          incus-agent, qemu-system-x86, swtpm-tools,
+          incus-agent, qemu-system-x86, swtpm-tools, virtiofsd,
           incus-tools, gdisk, minio-client
 Built-Using: ${misc:Built-Using}
 Description: Powerful system container and virtual machine manager - daemon

@@ -1,6 +1,7 @@
 incus (6.0.3-2) UNRELEASED; urgency=medium
 
   * Update years in d/copyright
+  * Cherry-pick upstream fix to remove virtfs-proxy-helper dependency
   * Add a patch to adjust the MinIO client's binary name to reflect Debian
     packaging
 

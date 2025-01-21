@@ -2,3 +2,4 @@
 002-adjust-import-paths.patch
 003-Compile-against-go-criu-v7.patch
 004-minio-client-binary-name.patch
+005-cherry-pick-remove-virtfs-proxy-helper.patch
