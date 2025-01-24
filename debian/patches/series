@@ -3,3 +3,4 @@
 003-Compile-against-go-criu-v7.patch
 004-minio-client-binary-name.patch
 005-cherry-pick-remove-virtfs-proxy-helper.patch
+006-cherry-pick-fix-qemu-device_id-warning.patch

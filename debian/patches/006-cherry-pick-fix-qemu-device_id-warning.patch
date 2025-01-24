@@ -1,0 +1,27 @@
+From c984c6880214909e9c64f85f1311f1fa42e2d013 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?St=C3=A9phane=20Graber?= <stgraber@stgraber.org>
+Date: Thu, 23 Jan 2025 18:00:46 -0500
+Subject: [PATCH] incusd/instance/qemu: Fix device_id warning on 9.2.x
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Closes #1536
+
+Signed-off-by: Stéphane Graber <stgraber@stgraber.org>
+---
+ internal/server/instance/drivers/driver_qemu.go | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/internal/server/instance/drivers/driver_qemu.go b/internal/server/instance/drivers/driver_qemu.go
+index ee2b85bedcf..434269031f4 100644
+--- a/internal/server/instance/drivers/driver_qemu.go
++++ b/internal/server/instance/drivers/driver_qemu.go
+@@ -4287,6 +4287,7 @@ func (d *qemu) addDriveConfig(qemuDev map[string]any, bootIndexes map[string]int
+ 	qemuDev["serial"] = fmt.Sprintf("%s%s", qemuBlockDevIDPrefix, escapedDeviceName)
+ 
+ 	if bus == "virtio-scsi" {
++		qemuDev["device_id"] = d.blockNodeName(escapedDeviceName)
+ 		qemuDev["channel"] = 0
+ 		qemuDev["lun"] = 1
+ 		qemuDev["bus"] = "qemu_scsi.0"

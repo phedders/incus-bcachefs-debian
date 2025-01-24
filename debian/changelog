@@ -6,6 +6,7 @@ incus (6.0.3-2) UNRELEASED; urgency=medium
   [ Mathias Gibbens ]
   * Update years in d/copyright
   * Cherry-pick upstream fix to remove virtfs-proxy-helper dependency
+  * Cherry-pick upstream fix for qemu device_id warning
   * Add a patch to adjust the MinIO client's binary name to reflect Debian
     packaging
 
