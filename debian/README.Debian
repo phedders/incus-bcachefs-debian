@@ -9,8 +9,8 @@ section. Otherwise, after installing Incus you must perform an initial configura
 Migrating from LXD
 ==================
 
-Incus includes a tool named `lxd-to-incus` which can be used to convert an existing
-LXD installation into an Incus one.
+Incus includes a tool named `lxd-to-incus`, included in the "incus-tools" package,
+which can be used to convert an existing LXD installation into an Incus one.
 
 For this to work properly, you should install Incus but not initialize it. Instead,
 make sure that both `incus info` and `lxc info` both work properly, then run
@@ -100,6 +100,23 @@ in your creation command.
 
 If you wish to expose a TPM to the virtual machine, for example when installing
 Windows 11, you will also need to install the swtpm-tools package.
+
+RHEL8/9 (and derivatives)
+-------------------------
+
+RHEL8/9 do not ship the 9p kernel module, which is used to dynamically mount
+instance-specific agent configuration and the incus-agent binary into VMs. To work
+around this, Incus 0.5.1 added a new agent drive, providing those files through
+what looks like a CD-ROM drive rather than being retrieved over a networked
+filesystem.
+
+For example, to run CentOS 9-Stream, one now needs to do:
+
+    incus create images:centos/9-Stream centos --vm
+    incus config device add centos agent disk source=agent:config
+    incus start centos
+
+For further details, please see the Incus 0.5.1 release notes (https://discuss.linuxcontainers.org/t/incus-0-5-1-has-been-released/18848).
 
 Known issues
 ============
