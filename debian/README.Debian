@@ -68,6 +68,13 @@ add a line like the following to your /etc/fstab:
 
     cgroup2   /sys/fs/cgroup   cgroup2   rw,nosuid,nodev,noexec   0 0
 
+Logging
+=======
+
+By default, the Incus daemon will log to /var/log/incus/incus.log. If you wish to log
+instead to the host system's configured rsyslog daemon, set USE_SYSLOG=yes in
+/etc/default/incus and restart the service.
+
 Storage backends
 ================
 
