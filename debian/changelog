@@ -1,3 +1,12 @@
+incus (6.0.3-3) UNRELEASED; urgency=medium
+
+  * Update organization of binary packages:
+    - bin:incus provides all dependencies to run both containers and VMs
+    - bin:incus-base has just what is necessary for running containers
+    - bin:incus-tools and bin:incus-migrate combined into bin:incus-extra
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 28 Feb 2025 01:57:24 +0000
+
 incus (6.0.3-2) unstable; urgency=medium
 
   [ Kwok Guy ]

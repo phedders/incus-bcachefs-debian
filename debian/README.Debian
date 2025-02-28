@@ -1,3 +1,15 @@
+Installation
+============
+
+To install Incus with support for creating both containers and virtual machines, run:
+
+    sudo apt install incus
+
+If you only wish to create containers in Incus and don't want the additional dependencies
+required for running virtual machines, you can install just the base package:
+
+    sudo apt install incus-base
+
 Incus initialization
 ====================
 
@@ -9,7 +21,7 @@ section. Otherwise, after installing Incus you must perform an initial configura
 Migrating from LXD
 ==================
 
-Incus includes a tool named `lxd-to-incus`, included in the "incus-tools" package,
+Incus includes a tool named `lxd-to-incus`, included in the "incus-extra" package,
 which can be used to convert an existing LXD installation into an Incus one.
 
 For this to work properly, you should install Incus but not initialize it. Instead,
@@ -92,14 +104,11 @@ the Incus service so it picks up the additional storage backend(s).
 Virtual machines
 ================
 
-Incus optionally can create virtual machine instances utilizing QEMU. To enable
-this capability, on the host system install the desired qemu-system-<arch>
-package(s) and the incus-agent package. Then, restart the Incus service. You
-will now be able to create virtual machine instances by passing the `--vm` flag
-in your creation command.
-
-If you wish to expose a TPM to the virtual machine, for example when installing
-Windows 11, you will also need to install the swtpm-tools package.
+Incus optionally can create virtual machine instances that match the host's
+architecture utilizing QEMU. To enable this capability, on the host system
+ensure that the "incus" package is installed and then restart the Incus service.
+You will now be able to create virtual machine instances by passing the `--vm`
+flag in your creation command.
 
 RHEL8/9 (and derivatives)
 -------------------------

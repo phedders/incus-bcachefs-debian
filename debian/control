@@ -153,6 +153,34 @@ Description: Powerful system container and virtual machine manager - library
  their regular development workflow. Rather, they should use `go get`.
 
 Package: incus
+# Technically this package is arch:all, but to use architecture restrictions for
+# the qemu-system-* dependencies, we need to use a variant of arch:all
+Architecture: linux-any
+Depends: ${misc:Depends},
+         incus-agent (= ${binary:Version}),
+         incus-base (= ${binary:Version}),
+         qemu-system-arm [arm64 armel armhf],
+         qemu-system-mips [mips64el],
+         qemu-system-ppc [ppc64el],
+         qemu-system-riscv [riscv64],
+         qemu-system-s390x [s390x],
+         qemu-system-x86 [amd64 i386],
+         swtpm,
+         virtiofsd
+Suggests: gdisk
+Built-Using: ${misc:Built-Using}
+Description: Powerful system container and virtual machine manager
+ Incus is a next generation system container and virtual machine manager.
+ It offers a unified user experience around full Linux systems running
+ inside containers or virtual machines.
+ .
+ It's image based with pre-made images available for a wide number of
+ Linux distributions and is built around a very powerful, yet pretty
+ simple, REST API.
+ .
+ This metapackage will install everything needed to run containers and VMs.
+
+Package: incus-base
 Architecture: linux-any
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends},
@@ -170,12 +198,12 @@ Depends: ${misc:Depends},
          xz-utils
 Recommends: apparmor, dnsmasq-base
 # First line of suggested packages will enable additional Incus storage backends
-# Second line are packages needed to run VMs
-# Third line are additional tools
+# Second line lists additional optional tools
 Suggests: btrfs-progs, ceph-common, lvm2, zfsutils-linux,
-          incus-agent, qemu-system-x86, swtpm-tools, virtiofsd,
-          incus-tools, gdisk, minio-client
+          incus-extra, minio-client
 Built-Using: ${misc:Built-Using}
+Breaks: incus (<< 6.0.3-3~)
+Replaces: incus (<< 6.0.3-3~)
 Description: Powerful system container and virtual machine manager - daemon
  Incus is a next generation system container and virtual machine manager.
  It offers a unified user experience around full Linux systems running
@@ -185,7 +213,7 @@ Description: Powerful system container and virtual machine manager - daemon
  Linux distributions and is built around a very powerful, yet pretty
  simple, REST API.
  .
- This package contains the Incus daemon.
+ This package contains only what is needed to run containers.
 
 Package: incus-client
 # The incus binary doesn't depend on liblxc1, so it can be built for any architecture
@@ -204,12 +232,17 @@ Description: Powerful system container and virtual machine manager - client
  .
  This package contains the Incus command line client.
 
-Package: incus-tools
+Package: incus-extra
 Architecture: linux-any
 Depends: ${misc:Depends},
-         ${shlibs:Depends}
+         ${shlibs:Depends},
+         rsync
 Built-Using: ${misc:Built-Using}
-# lxd-tools also ships a `fuidshift` binary; we expect src:lxd to only provide bin:golang-github-canonical-lxd-dev after the trixie release, so just use a simple Conflicts here
+Breaks: incus-tools (<< 6.0.3-3~),
+        incus-migrate (<< 6.0.3-3~)
+Replaces: incus-tools (<< 6.0.3-3~),
+          incus-migrate (<< 6.0.3-3~)
+# lxd-tools also ships a `fuidshift` binary; we expect src:lxd to be RM'ed after the trixie release, so just use a simple Conflicts here
 Conflicts: lxd-tools
 Description: Powerful system container and virtual machine manager - extra tools
  Incus is a next generation system container and virtual machine manager.
@@ -221,21 +254,8 @@ Description: Powerful system container and virtual machine manager - extra tools
   - lxc-to-incus - A tool to migrate LXC containers to Incus
   - lxd-to-incus - A tool to migrate LXD containers to Incus
   - incus-benchmark - A benchmarking tool for Incus
+  - incus-migrate - A tool to turn any filesystem into an Incus instance
   - incus-simplestreams - Maintain an Incus-compatible simplestreams tree
-
-Package: incus-migrate
-Architecture: linux-any
-Depends: ${misc:Depends},
-         ${shlibs:Depends},
-         rsync
-Built-Using: ${misc:Built-Using}
-Description: Incus physical to instance migration tool
- This tool lets you turn any Linux filesystem (including your current one)
- into a Incus instance on a remote Incus host.
- .
- It will setup a clean mount tree made of the root filesystem and any
- additional mount you list, then transfer this through Incus's migration
- API to create a new instance from it.
 
 Package: incus-agent
 Architecture: linux-any
