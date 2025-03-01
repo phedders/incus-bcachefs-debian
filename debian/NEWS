@@ -1,4 +1,4 @@
-incus (6.0.3-3) UNRELEASED; urgency=medium
+incus (6.0.3-3) unstable; urgency=medium
 
     The organization of binary packages for Incus has been adjusted to more
     closely match the packaging provided by upstream via the Zabbly repos.
@@ -13,4 +13,4 @@ incus (6.0.3-3) UNRELEASED; urgency=medium
     Additionally, the previous packages "incus-tools" and "incus-migrate" have
     been merged into a single package, "incus-extra".
 
- -- Mathias Gibbens <gibmat@debian.org>  Fri, 28 Feb 2025 01:57:24 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 01 Mar 2025 17:16:21 +0000

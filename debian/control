@@ -154,7 +154,7 @@ Description: Powerful system container and virtual machine manager - library
 
 Package: incus
 # Technically this package is arch:all, but to use architecture restrictions for
-# the qemu-system-* dependencies, we need to use a variant of arch:all
+# the qemu-system-* dependencies, we must use a variant of arch:any
 Architecture: linux-any
 Depends: ${misc:Depends},
          incus-agent (= ${binary:Version}),
@@ -169,7 +169,7 @@ Depends: ${misc:Depends},
          virtiofsd
 Suggests: gdisk
 Built-Using: ${misc:Built-Using}
-Description: Powerful system container and virtual machine manager
+Description: Powerful system container and virtual machine manager - daemon
  Incus is a next generation system container and virtual machine manager.
  It offers a unified user experience around full Linux systems running
  inside containers or virtual machines.
@@ -204,7 +204,7 @@ Suggests: btrfs-progs, ceph-common, lvm2, zfsutils-linux,
 Built-Using: ${misc:Built-Using}
 Breaks: incus (<< 6.0.3-3~)
 Replaces: incus (<< 6.0.3-3~)
-Description: Powerful system container and virtual machine manager - daemon
+Description: Powerful system container and virtual machine manager - daemon (container-only)
  Incus is a next generation system container and virtual machine manager.
  It offers a unified user experience around full Linux systems running
  inside containers or virtual machines.
