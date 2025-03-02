@@ -1,4 +1,4 @@
-incus (6.0.3-4) UNRELEASED; urgency=medium
+incus (6.0.3-4) unstable; urgency=medium
 
   * d/control:
     - Update Standards-Version to 4.7.2 (no changes needed)
@@ -6,7 +6,7 @@ incus (6.0.3-4) UNRELEASED; urgency=medium
     - Set minimum required version of qemu
   * Cherry-pick upstream fix to allow virtiofsd on non-x86 architectures
 
- -- Mathias Gibbens <gibmat@debian.org>  Sat, 01 Mar 2025 17:27:29 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 02 Mar 2025 23:07:28 +0000
 
 incus (6.0.3-3) unstable; urgency=medium
 
