@@ -3,6 +3,7 @@ incus (6.0.3-4) UNRELEASED; urgency=medium
   * d/control:
     - Update Standards-Version to 4.7.2 (no changes needed)
     - Limit virtiofsd dependency to 64bit architectures
+    - Set minimum required version of qemu
 
  -- Mathias Gibbens <gibmat@debian.org>  Sat, 01 Mar 2025 17:27:29 +0000
 

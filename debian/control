@@ -159,12 +159,12 @@ Architecture: linux-any
 Depends: ${misc:Depends},
          incus-agent (= ${binary:Version}),
          incus-base (= ${binary:Version}),
-         qemu-system-arm [arm64 armel armhf],
-         qemu-system-mips [mips64el],
-         qemu-system-ppc [ppc64el],
-         qemu-system-riscv [riscv64],
-         qemu-system-s390x [s390x],
-         qemu-system-x86 [amd64 i386],
+         qemu-system-arm (>= 1:8.0) [arm64 armel armhf],
+         qemu-system-mips (>= 1:8.0) [mips64el],
+         qemu-system-ppc (>= 1:8.0) [ppc64el],
+         qemu-system-riscv (>= 1:8.0) [riscv64],
+         qemu-system-s390x (>= 1:8.0) [s390x],
+         qemu-system-x86 (>= 1:8.0) [amd64 i386],
          swtpm,
          virtiofsd [!armel !armhf !i386]
 Suggests: gdisk
