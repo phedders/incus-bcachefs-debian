@@ -166,7 +166,7 @@ Depends: ${misc:Depends},
          qemu-system-s390x [s390x],
          qemu-system-x86 [amd64 i386],
          swtpm,
-         virtiofsd
+         virtiofsd [!armel !armhf !i386]
 Suggests: gdisk
 Built-Using: ${misc:Built-Using}
 Description: Powerful system container and virtual machine manager - daemon
