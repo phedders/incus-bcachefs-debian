@@ -14,6 +14,12 @@
 # This script has not been tested on hosts with cgroup v1.
 # The host system must have a cgroup v2 hierarchy mounted.
 
+# Under runit-init the incus service already handles this,
+# so we exit immediately if incus runit service is enabled
+if [ -f /etc/runit/stopit ] && [ -e /etc/service/incus ]; then
+    exit 0
+fi
+
 DESC='System containers startup/shutdown'
 NAME=incus-startup
 
