@@ -1,3 +1,10 @@
+incus (6.0.3-5) UNRELEASED; urgency=medium
+
+  [ Martin Steigerwald ]
+  * Runit support for Incus (Closes: #1084990)
+
+ -- Mathias Gibbens <gibmat@debian.org>  Wed, 12 Mar 2025 01:38:54 +0000
+
 incus (6.0.3-4) unstable; urgency=medium
 
   * d/control:

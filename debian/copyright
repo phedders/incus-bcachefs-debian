@@ -54,6 +54,10 @@ Copyright: 2024 Kwok Guy
 License: Apache-2.0
 Comment: Copied from https://github.com/MoltenArmor/incus-init-scripts
 
+Files: debian/runit-incus-user/* debian/runit-incus/*
+Copyright: 2025 Martin Steigerwald <martin@lichtvoll.de>
+License: Apache-2.0
+
 License: Apache-2.0
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
