@@ -70,9 +70,9 @@ root access to the host.
 Init scripts
 ============
 
-Both systemd and SysV init scripts are provided, but the SysV scripts aren't as
-well-tested as the systemd ones. Bug reports and patches are welcome to improve
-the Incus experience on non-systemd installs.
+systemd, SysV, and runit init scripts are provided, but the SysV and runit scripts
+aren't as well-tested as the systemd ones. Bug reports and patches are welcome to
+improve the Incus experience on non-systemd installs.
 
 When installing Incus on a non-systemd host, you must ensure that a cgroup v2
 hierarchy is mounted prior to starting Incus. One possible way to do this is to
@@ -86,6 +86,9 @@ Logging
 By default, the Incus daemon will log to /var/log/incus/incus.log. If you wish to log
 instead to the host system's configured rsyslog daemon, set USE_SYSLOG=yes in
 /etc/default/incus and restart the service.
+
+When using the runit scripts, Incus logs will always be written to
+/var/log/runit/incus/current.
 
 Storage backends
 ================
