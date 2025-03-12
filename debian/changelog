@@ -3,6 +3,11 @@ incus (6.0.3-5) UNRELEASED; urgency=medium
   [ Martin Steigerwald ]
   * Runit support for Incus (Closes: #1084990)
 
+  [ Mathias Gibbens ]
+  * d/control:
+    - Update minimum required version of lxcfs to ensure its runit scripts
+      will be available
+
  -- Mathias Gibbens <gibmat@debian.org>  Wed, 12 Mar 2025 01:38:54 +0000
 
 incus (6.0.3-4) unstable; urgency=medium
