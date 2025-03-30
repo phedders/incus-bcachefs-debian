@@ -6,3 +6,4 @@
 006-cherry-pick-fix-qemu-device_id-warning.patch
 007-cherry-pick-allow-virtiofsd-non-x86.patch
 008-apparmor-4x-userns.patch
+009-cherry-pick-ovmf-selection.patch
