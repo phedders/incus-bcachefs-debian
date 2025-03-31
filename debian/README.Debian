@@ -74,11 +74,21 @@ systemd, SysV, and runit init scripts are provided, but the SysV and runit scrip
 aren't as well-tested as the systemd ones. Bug reports and patches are welcome to
 improve the Incus experience on non-systemd installs.
 
+Non-systemd required configuration
+----------------------------------
+
 When installing Incus on a non-systemd host, you must ensure that a cgroup v2
 hierarchy is mounted prior to starting Incus. One possible way to do this is to
 add a line like the following to your /etc/fstab:
 
     cgroup2   /sys/fs/cgroup   cgroup2   rw,nosuid,nodev,noexec   0 0
+
+Additionally, the "incus-user" service is not automatically started after install to allow
+the local administrator to first run `incus admin init`. After performing initialization,
+you can then enable/start the "incus-user" service. This is needed because if "incus-user"
+starts before Incus has been configured it will create a minimal empty profile which then
+conflicts with running `incus admin init`. (Hosts running systemd avoid this by relying on
+socket-based activation for the "incus" and "incus-user" services.)
 
 Logging
 =======

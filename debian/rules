@@ -59,9 +59,9 @@ override_dh_install:
 	dh_installsysusers --name incus
 
 override_dh_installinit:
-	dh_installinit --name incus
-	dh_installinit --name incus-user --no-stop-on-upgrade --no-restart-after-upgrade
-	dh_installinit --name incus-startup --no-stop-on-upgrade --no-restart-after-upgrade
+	dh_installinit --name incus --no-stop-on-upgrade --no-restart-after-upgrade
+	dh_installinit --name incus-user --no-stop-on-upgrade --no-restart-after-upgrade --no-start
+	dh_installinit --name incus-startup --no-stop-on-upgrade --no-restart-after-upgrade --no-start
 
 override_dh_installsystemd:
 	# Handle start / restart manually in incus.postinst
