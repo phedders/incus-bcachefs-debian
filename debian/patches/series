@@ -7,3 +7,4 @@
 007-cherry-pick-allow-virtiofsd-non-x86.patch
 008-apparmor-4x-userns.patch
 009-cherry-pick-ovmf-selection.patch
+010-cherry-pick-qemu-10-fixes.patch

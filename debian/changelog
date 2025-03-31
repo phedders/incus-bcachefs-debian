@@ -11,6 +11,7 @@ incus (6.0.3-5) UNRELEASED; urgency=medium
     - Replace Built-Using with Static-Built-Using
   * Add apparmor 4.x userns patch
   * Cherry-pick upstream commit for selecting SecureBoot capable OVMF
+  * Cherry-pick upstream fix for qemu 10
   * Update d/README.Debian to reflect addition of runit scripts
   * Fix lintian warning old-fsf-address-in-copyright-file in d/copyright
 
