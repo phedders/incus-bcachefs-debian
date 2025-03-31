@@ -1,4 +1,4 @@
-incus (6.0.3-5) UNRELEASED; urgency=medium
+incus (6.0.3-5) unstable; urgency=medium
 
   [ Martin Steigerwald ]
   * Runit support for Incus (Closes: #1084990)
@@ -16,7 +16,7 @@ incus (6.0.3-5) UNRELEASED; urgency=medium
   * Update d/README.Debian to reflect addition of runit scripts
   * Fix lintian warning old-fsf-address-in-copyright-file in d/copyright
 
- -- Mathias Gibbens <gibmat@debian.org>  Wed, 12 Mar 2025 01:38:54 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Mon, 31 Mar 2025 22:36:28 +0000
 
 incus (6.0.3-4) unstable; urgency=medium
 
