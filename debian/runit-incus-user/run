@@ -9,4 +9,4 @@ sv start lxcfs
 test -e /etc/environment && . /etc/environment
 test -e /etc/default/incus && . /etc/default/incus
 
-exec /usr/libexec/incus/incus-user --group incus 
+exec /usr/libexec/incus/incus-user --group incus
