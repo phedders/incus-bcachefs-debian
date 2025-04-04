@@ -1,10 +1,4 @@
 001-skip-TestConvertNetworkConfig.patch
 002-adjust-import-paths.patch
 003-Compile-against-go-criu-v7.patch
-004-minio-client-binary-name.patch
-005-cherry-pick-remove-virtfs-proxy-helper.patch
-006-cherry-pick-fix-qemu-device_id-warning.patch
-007-cherry-pick-allow-virtiofsd-non-x86.patch
-008-apparmor-4x-userns.patch
-009-cherry-pick-ovmf-selection.patch
-010-cherry-pick-qemu-10-fixes.patch
+004-apparmor-4x-userns.patch

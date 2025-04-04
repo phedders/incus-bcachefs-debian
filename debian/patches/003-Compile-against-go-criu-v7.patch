@@ -7,7 +7,7 @@ Subject: Compile against go-criu v7
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/internal/server/instance/drivers/driver_lxc.go b/internal/server/instance/drivers/driver_lxc.go
-index 7f4601a..22f286c 100644
+index edea4288e..d7275bbc8 100644
 --- a/internal/server/instance/drivers/driver_lxc.go
 +++ b/internal/server/instance/drivers/driver_lxc.go
 @@ -25,7 +25,7 @@ import (

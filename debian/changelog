@@ -1,6 +1,7 @@
 incus (6.0.4-1) UNRELEASED; urgency=medium
 
   * New upstream release
+    - Rebase patches and drop upstream cherry-picked commits
   * d/control:
     - Update Build-Depends and Depends
     - Add lego to list of Suggested packages for incus-base
