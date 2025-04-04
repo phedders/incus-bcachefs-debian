@@ -222,6 +222,7 @@ func networkCreateVethPair(hostName string, m deviceConfig.Device) (string, uint
 		Peer: ip.Link{
 			Name: network.RandomDevName("veth"),
 		},
+		Master: m["vrf"],
 	}
 
 	// Set the MTU on both ends.
@@ -308,6 +309,7 @@ func networkCreateTap(hostName string, m deviceConfig.Device) (uint32, error) {
 		Name:       hostName,
 		Mode:       "tap",
 		MultiQueue: true,
+		Master:     m["vrf"],
 	}
 
 	err := tuntap.Add()
@@ -461,7 +463,7 @@ func networkNICRouteDelete(routeDev string, routes ...string) {
 	}
 
 	if !network.InterfaceExists(routeDev) {
-		return //Routes will already be gone if device doesn't exist.
+		return // Routes will already be gone if device doesn't exist.
 	}
 
 	for _, r := range routes {

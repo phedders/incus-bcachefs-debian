@@ -9,9 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"unsafe"
-
-	"golang.org/x/sys/unix"
 
 	internalInstance "github.com/lxc/incus/v6/internal/instance"
 	"github.com/lxc/incus/v6/internal/linux"
@@ -32,7 +29,7 @@ const lvmBlockVolSuffix = ".block"
 // lvmISOVolSuffix suffix used for iso content type volumes.
 const lvmISOVolSuffix = ".iso"
 
-// lvmSnapshotSeparator separator character used between volume name and snaphot name in logical volume names.
+// lvmSnapshotSeparator separator character used between volume name and snapshot name in logical volume names.
 const lvmSnapshotSeparator = "-"
 
 // lvmEscapedHyphen used to escape hyphens in volume names to avoid conflicts with lvmSnapshotSeparator.
@@ -40,6 +37,15 @@ const lvmEscapedHyphen = "--"
 
 // lvmThinpoolDefaultName is the default name for the thinpool volume.
 const lvmThinpoolDefaultName = "IncusThinPool"
+
+type lvmSourceType int
+
+const (
+	lvmSourceTypeUnknown lvmSourceType = iota
+	lvmSourceTypeDefault
+	lvmSourceTypePhysicalDevice
+	lvmSourceTypeVolumeGroup
+)
 
 // usesThinpool indicates whether the config specifies to use a thin pool or not.
 func (d *lvm) usesThinpool() bool {
@@ -400,6 +406,12 @@ func (d *lvm) createLogicalVolume(vgName, thinPoolName string, vol Volume, makeT
 		if err != nil {
 			return fmt.Errorf("Error making filesystem on LVM logical volume: %w", err)
 		}
+	} else if !d.usesThinpool() {
+		// Make sure we get an empty LV.
+		err := linux.ClearBlock(volDevPath, 0)
+		if err != nil {
+			return err
+		}
 	}
 
 	isRecent, err := d.lvmVersionIsAtLeast(lvmVersion, "2.02.99")
@@ -541,7 +553,7 @@ func (d *lvm) lvmFullVolumeName(volType VolumeType, contentType ContentType, vol
 	}
 
 	// Escape the volume name to a name suitable for using as a logical volume.
-	lvName := strings.Replace(strings.Replace(volName, "-", lvmEscapedHyphen, -1), internalInstance.SnapshotDelimiter, lvmSnapshotSeparator, -1)
+	lvName := strings.ReplaceAll(strings.ReplaceAll(volName, "-", lvmEscapedHyphen), internalInstance.SnapshotDelimiter, lvmSnapshotSeparator)
 
 	return fmt.Sprintf("%s_%s%s", volType, lvName, contentTypeSuffix)
 }
@@ -809,7 +821,7 @@ func (d *lvm) parseLogicalVolumeSnapshot(parent Volume, lvmVolName string) strin
 	// named volume that just has escaped "-" characters in it.
 	if strings.HasPrefix(lvmVolName, snapPrefix) && !strings.HasPrefix(lvmVolName, badPrefix) {
 		// Remove volume name prefix (including snapshot delimiter) and unescape snapshot name.
-		return strings.Replace(strings.TrimPrefix(lvmVolName, snapPrefix), lvmEscapedHyphen, "-", -1)
+		return strings.ReplaceAll(strings.TrimPrefix(lvmVolName, snapPrefix), lvmEscapedHyphen, "-")
 	}
 
 	return ""
@@ -883,21 +895,17 @@ func (d *lvm) deactivateVolume(vol Volume) (bool, error) {
 	return false, nil
 }
 
-func (d *lvm) getBlockSize(path string) (int, error) {
-	// Open the block device.
-	f, err := os.Open(path)
-	if err != nil {
-		return -1, err
+// getSourceType determines the source type based on the config["source"] value.
+func (d *lvm) getSourceType() lvmSourceType {
+	defaultSource := loopFilePath(d.name)
+
+	if d.config["source"] == "" || d.config["source"] == defaultSource {
+		return lvmSourceTypeDefault
+	} else if filepath.IsAbs(d.config["source"]) {
+		return lvmSourceTypePhysicalDevice
+	} else if d.config["source"] != "" {
+		return lvmSourceTypeVolumeGroup
 	}
 
-	defer func() { _ = f.Close() }()
-
-	// Query the physical block size.
-	var res int32
-	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(f.Fd()), unix.BLKPBSZGET, uintptr(unsafe.Pointer(&res)))
-	if errno != 0 {
-		return -1, fmt.Errorf("Failed to BLKPBSZGET: %w", unix.Errno(errno))
-	}
-
-	return int(res), nil
+	return lvmSourceTypeUnknown
 }

@@ -91,28 +91,30 @@ Please report packaging issues [here](https://github.com/chimera-linux/cports/is
 ```{group-tab} Debian
 There are three options currently available to Debian users.
 
-1. Native `incus` package
+1. Native `incus` and `incus-base` packages
 
-    A native `incus` package is currently available in the Debian testing and unstable repositories.
-    This package will be featured in the upcoming Debian 13 (`trixie`) release.
+    Native `incus` and `incus-base` packages are currently available in the Debian testing and unstable repositories.
+    These packages will be featured in the upcoming Debian 13 (`trixie`) release.
 
-    On such systems, just running `apt install incus` will get Incus installed.
-    To run virtual machines, also run `apt install qemu-system`.
-    If migrating from LXD, also run `apt install incus-tools` to get the `lxd-to-incus` command.
+    Debian's packaging will track the Incus LTS releases, as these better align with Debian's release cycle and support policies.
 
-1. Native `incus` backported package
+    On such systems, running `apt install incus` will get Incus installed with all dependencies required for running containers and virtual machines.
+    If you only wish to run containers in Incus, you can run just `apt install incus-base`.
+    If migrating from LXD, also run `apt install incus-extra` to get the `lxd-to-incus` command.
 
-   A native `incus` backported package is currently available for Debian 12 (`bookworm`) users.
+1. Native `incus` and `incus-base` backported packages
 
-   On such systems, just running `apt install incus/bookworm-backports` will get Incus installed.
-   To run virtual machines, also run `apt install qemu-system`.
-   If migrating from LXD, also run `apt install incus-tools` to get the `lxd-to-incus` command.
+   Native `incus` and `incus-base` backported packages are currently available for Debian 12 (`bookworm`) users.
+
+   On such systems, running `apt install incus/bookworm-backports` will get Incus installed with all dependencies required for running containers and virtual machines.
+   If you only wish to run containers in Incus, you can run just `apt install incus-base/bookworm-backports`.
+   If migrating from LXD, also run `apt install incus-extra/bookworm-backports` to get the `lxd-to-incus` command.
 
    ****NOTE:**** Users of backported packages should not file bugs in the Debian Bug Tracker, instead please reach out [through our forum](https://discuss.linuxcontainers.org) or directly to the Debian packager.
 
 1. Zabbly package repository
 
-    [Zabbly](https://zabbly.com) provides up to date and supported Incus packages for Debian stable releases (11 and 12).
+    [Zabbly](https://zabbly.com) provides up to date and supported Incus packages for Debian stable releases (11 and 12) and the upcoming Debian 13 (`trixie`) release.
     Those packages contain everything needed to use all Incus features.
 
     Up to date installation instructions may be found here: [`https://github.com/zabbly/incus`](https://github.com/zabbly/incus)
@@ -181,6 +183,10 @@ Incus initialization can be done manually using `incus admin init`, or through t
 Finally, you can add users to the `incus-admin` group to provide non-root access to the Incus socket. In your NixOS configuration:
 
     users.users.YOUR_USERNAME.extraGroups = ["incus-admin"];
+
+Instead of giving the users a full Incus daemon access, you can add users to the `incus` group, which will only grant access to the Incus user socket. In your NixOS configuration:
+
+    users.users.YOUR_USERNAME.extraGroups = ["incus"];
 
 For any NixOS specific issues, please [file an issue](https://github.com/NixOS/nixpkgs/issues/new/choose) in the package repository.
 ```

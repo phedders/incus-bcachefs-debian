@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -13,10 +14,13 @@ import (
 	"github.com/digitalocean/go-qemu/qmp"
 
 	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/util"
 )
 
-var monitors = map[string]*Monitor{}
-var monitorsLock sync.Mutex
+var (
+	monitors     = map[string]*Monitor{}
+	monitorsLock sync.Mutex
+)
 
 // RingbufSize is the size of the agent serial ringbuffer in bytes.
 var RingbufSize = 16
@@ -194,7 +198,7 @@ func (m *Monitor) RunJSON(request []byte, resp any, logCommand bool) error {
 	var log *os.File
 	var err error
 	if logCommand && m.logFile != "" {
-		log, err = os.OpenFile(m.logFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+		log, err = os.OpenFile(m.logFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
 		if err != nil {
 			return err
 		}
@@ -308,7 +312,10 @@ func Connect(path string, serialCharDev string, eventHandler func(name string, d
 	monitor.chDisconnect = make(chan struct{}, 1)
 	monitor.eventHandler = eventHandler
 	monitor.serialCharDev = serialCharDev
-	monitor.logFile = logFile
+
+	if util.PathExists(filepath.Dir(logFile)) {
+		monitor.logFile = logFile
+	}
 
 	// Default to generating a shutdown event when the monitor disconnects so that devices can be
 	// cleaned up. This will be disabled after a shutdown event is received from QEMU itself to avoid

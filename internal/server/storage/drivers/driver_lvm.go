@@ -29,11 +29,15 @@ import (
 
 const lvmVgPoolMarker = "incus_pool" // Indicator tag used to mark volume groups as in use.
 
-var lvmExtentSize map[string]int64
-var lvmExtentSizeMu sync.Mutex
+var (
+	lvmExtentSize   map[string]int64
+	lvmExtentSizeMu sync.Mutex
+)
 
-var lvmLoaded bool
-var lvmVersion string
+var (
+	lvmLoaded  bool
+	lvmVersion string
+)
 
 type lvm struct {
 	common
@@ -105,7 +109,12 @@ func (d *lvm) init(s *state.State, name string, config map[string]string, log lo
 	if d.clustered && d.config != nil {
 		_, exists := d.config["lvm.vg_name"]
 		if !exists {
-			d.config["lvm.vg_name"] = d.name
+			sourceType := d.getSourceType()
+			if sourceType == lvmSourceTypeDefault || sourceType == lvmSourceTypePhysicalDevice {
+				d.config["lvm.vg_name"] = d.name
+			} else if sourceType == lvmSourceTypeVolumeGroup {
+				d.config["lvm.vg_name"] = d.config["source"]
+			}
 		}
 	}
 }
@@ -138,6 +147,7 @@ func (d *lvm) Info() Info {
 		MountedRoot:                  false,
 		Buckets:                      !d.isRemote(),
 		Deactivate:                   d.isRemote(),
+		ZeroUnpack:                   !d.usesThinpool(),
 	}
 }
 
@@ -155,7 +165,6 @@ func (d *lvm) FillConfig() error {
 func (d *lvm) Create() error {
 	d.config["volatile.initial_source"] = d.config["source"]
 
-	defaultSource := loopFilePath(d.name)
 	var err error
 	var pvExists, vgExists bool
 	var pvName string
@@ -171,8 +180,11 @@ func (d *lvm) Create() error {
 
 	var usingLoopFile bool
 
-	if d.config["source"] == "" || d.config["source"] == defaultSource {
+	sourceType := d.getSourceType()
+
+	if sourceType == lvmSourceTypeDefault {
 		usingLoopFile = true
+		defaultSource := loopFilePath(d.name)
 
 		// We are using an internal loopback file.
 		d.config["source"] = defaultSource
@@ -234,7 +246,7 @@ func (d *lvm) Create() error {
 		if vgExists {
 			return fmt.Errorf("A volume group already exists called %q", d.config["lvm.vg_name"])
 		}
-	} else if filepath.IsAbs(d.config["source"]) {
+	} else if sourceType == lvmSourceTypePhysicalDevice {
 		// We are using an existing physical device.
 		srcPath := d.config["source"]
 
@@ -279,7 +291,7 @@ func (d *lvm) Create() error {
 		if err != nil {
 			return err
 		}
-	} else if d.config["source"] != "" {
+	} else if sourceType == lvmSourceTypeVolumeGroup {
 		// We are using an existing volume group, so physical must exist already.
 		pvExists = true
 
@@ -513,7 +525,6 @@ func (d *lvm) Delete(op *operations.Operation) error {
 		if removeVg {
 			// When deleting a shared VG, it may take more than a minute for the previously released shared locks to clear.
 			_, err := subprocess.TryRunCommandAttemptsDuration(240, 500*time.Millisecond, "vgremove", "-f", d.config["lvm.vg_name"])
-
 			if err != nil {
 				return fmt.Errorf("Failed to delete the volume group for the lvm storage pool: %w", err)
 			}
@@ -651,7 +662,7 @@ func (d *lvm) Update(changedConfig map[string]string) error {
 		}
 
 		// Resize loop file
-		f, err := os.OpenFile(loopPath, os.O_RDWR, 0600)
+		f, err := os.OpenFile(loopPath, os.O_RDWR, 0o600)
 		if err != nil {
 			return err
 		}

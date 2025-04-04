@@ -168,6 +168,8 @@ type InstanceServer interface {
 	CreateInstanceTemplateFile(instanceName string, templateName string, content io.ReadSeeker) (err error)
 	DeleteInstanceTemplateFile(name string, templateName string) (err error)
 
+	GetInstanceDebugMemory(name string, format string) (rc io.ReadCloser, err error)
+
 	// Event handling functions
 	GetEvents() (listener *EventListener, err error)
 	GetEventsAllProjects() (listener *EventListener, err error)
@@ -611,8 +613,7 @@ type InstanceConsoleArgs struct {
 
 // The InstanceConsoleLogArgs struct is used to pass additional options during a
 // instance console log request.
-type InstanceConsoleLogArgs struct {
-}
+type InstanceConsoleLogArgs struct{}
 
 // The InstanceExecArgs struct is used to pass additional options during instance exec.
 type InstanceExecArgs struct {

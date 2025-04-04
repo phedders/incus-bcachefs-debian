@@ -52,6 +52,7 @@ func (d *nicMACVLAN) validateConfig(instConf instance.ConfigReader) error {
 		"boot.priority",
 		"gvrp",
 		"mode",
+		"io.bus",
 	}
 
 	// Check that if network proeperty is set that conflicting keys are not present.
@@ -219,7 +220,7 @@ func (d *nicMACVLAN) Start() (*deviceConfig.RunConfig, error) {
 
 	if d.inst.Type() == instancetype.VM {
 		// Enable all multicast processing which is required for IPv6 NDP functionality.
-		link.AllMutlicast = true
+		link.AllMulticast = true
 
 		// Bring the interface up on host side.
 		link.Up = true
@@ -263,6 +264,10 @@ func (d *nicMACVLAN) Start() (*deviceConfig.RunConfig, error) {
 		{Key: "flags", Value: "up"},
 		{Key: "link", Value: saveData["host_name"]},
 		{Key: "hwaddr", Value: d.config["hwaddr"]},
+	}
+
+	if d.config["io.bus"] == "usb" {
+		runConf.UseUSBBus = true
 	}
 
 	if d.inst.Type() == instancetype.VM {
