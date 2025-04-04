@@ -1,3 +1,11 @@
+incus (6.0.4-1) UNRELEASED; urgency=medium
+
+  * New upstream release
+  * d/control:
+    - Update Build-Depends and Depends
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 04 Apr 2025 02:19:41 +0000
+
 incus (6.0.3-5) unstable; urgency=medium
 
   [ Martin Steigerwald ]
