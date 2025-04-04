@@ -204,7 +204,7 @@ Recommends: apparmor (>= 4.1.0~),
 # First line of suggested packages will enable additional Incus storage backends
 # Second line lists additional optional tools
 Suggests: btrfs-progs, ceph-common, lvm2, zfsutils-linux,
-          incus-extra, minio-client
+          incus-extra, lego, minio-client
 Static-Built-Using: ${misc:Static-Built-Using}
 Breaks: ${runit:Breaks}
 # The following line is a hack for an academic /usr-move problem (#1099444);
