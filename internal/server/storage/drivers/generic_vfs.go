@@ -25,6 +25,7 @@ import (
 	"github.com/lxc/incus/v6/shared/ioprogress"
 	"github.com/lxc/incus/v6/shared/logger"
 	"github.com/lxc/incus/v6/shared/revert"
+	"github.com/lxc/incus/v6/shared/units"
 	"github.com/lxc/incus/v6/shared/util"
 )
 
@@ -325,18 +326,18 @@ func genericVFSCreateVolumeFromMigration(d Driver, initVolume func(vol Volume) (
 			wrapper = localMigration.ProgressTracker(op, "block_progress", volName)
 		}
 
+		// Reset the disk.
+		err := linux.ClearBlock(path, 0)
+		if err != nil {
+			return err
+		}
+
 		to, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
 		if err != nil {
 			return fmt.Errorf("Error opening file for writing %q: %w", path, err)
 		}
 
 		defer func() { _ = to.Close() }()
-
-		// Reset the disk.
-		err = clearDiskData(path, to)
-		if err != nil {
-			return err
-		}
 
 		// Setup progress tracker.
 		fromPipe := io.ReadCloser(conn)
@@ -350,7 +351,12 @@ func genericVFSCreateVolumeFromMigration(d Driver, initVolume func(vol Volume) (
 		d.Logger().Debug("Receiving block volume started", logger.Ctx{"volName": volName, "path": path})
 		defer d.Logger().Debug("Receiving block volume stopped", logger.Ctx{"volName": volName, "path": path})
 
-		_, err = io.Copy(NewSparseFileWrapper(to), fromPipe)
+		toPipe := io.Writer(to)
+		if !d.Info().ZeroUnpack {
+			toPipe = NewSparseFileWrapper(to)
+		}
+
+		_, err = io.Copy(toPipe, fromPipe)
 		if err != nil {
 			return fmt.Errorf("Error copying from migration connection to %q: %w", path, err)
 		}
@@ -375,8 +381,9 @@ func genericVFSCreateVolumeFromMigration(d Driver, initVolume func(vol Volume) (
 		}
 
 		// Snapshots are sent first by the sender, so create these first.
-		for _, snapName := range volTargetArgs.Snapshots {
-			fullSnapshotName := GetSnapshotVolumeName(vol.name, snapName)
+		for _, snapshot := range volTargetArgs.Snapshots {
+			fullSnapshotName := GetSnapshotVolumeName(vol.name, snapshot.GetName())
+
 			snapVol := NewVolume(d, d.Name(), vol.volType, vol.contentType, fullSnapshotName, vol.config, vol.poolConfig)
 
 			if snapVol.contentType != ContentTypeBlock || snapVol.volType != VolumeTypeCustom { // Receive the filesystem snapshot first (as it is sent first).
@@ -391,6 +398,21 @@ func genericVFSCreateVolumeFromMigration(d Driver, initVolume func(vol Volume) (
 				err = recvBlockVol(snapVol.name, conn, pathBlock)
 				if err != nil {
 					return err
+				}
+
+				volSize, err := units.ParseByteSizeString(migration.GetSnapshotConfigValue(snapshot, "size"))
+				if err != nil {
+					return err
+				}
+
+				// During migration (e.g., LVM → dir), the block file may be smaller because
+				// recvBlockVol uses SparseFileWrapper, which omits trailing zero bytes and does not truncate.
+				// enlargeVolumeBlockFile ensures the block file matches the source volume size by applying truncation.
+				if volSize > 0 {
+					err = enlargeVolumeBlockFile(pathBlock, volSize)
+					if err != nil {
+						return err
+					}
 				}
 			}
 
@@ -444,6 +466,16 @@ func genericVFSCreateVolumeFromMigration(d Driver, initVolume func(vol Volume) (
 			err = recvBlockVol(vol.name, conn, pathBlock)
 			if err != nil {
 				return err
+			}
+
+			// During migration (e.g., LVM → dir), the block file may be smaller because
+			// recvBlockVol uses SparseFileWrapper, which omits trailing zero bytes and does not truncate.
+			// enlargeVolumeBlockFile ensures the block file matches the source volume size by applying truncation.
+			if volTargetArgs.VolumeSize > 0 {
+				err = enlargeVolumeBlockFile(pathBlock, volTargetArgs.VolumeSize)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -529,7 +561,7 @@ func genericVFSBackupVolume(d Driver, vol Volume, tarWriter *instancewriter.Inst
 							return err
 						}
 
-						// Skip any exluded files.
+						// Skip any excluded files.
 						if util.StringHasPrefix(srcPath, exclude...) {
 							return nil
 						}
@@ -565,7 +597,7 @@ func genericVFSBackupVolume(d Driver, vol Volume, tarWriter *instancewriter.Inst
 				fi := instancewriter.FileInfo{
 					FileName:    name,
 					FileSize:    blockDiskSize,
-					FileMode:    0600,
+					FileMode:    0o600,
 					FileModTime: time.Now(),
 				}
 
@@ -769,8 +801,14 @@ func genericVFSBackupUnpack(d Driver, sysOS *sys.OS, vol Volume, snapshots []str
 				if hdr.Name == srcFile {
 					var allowUnsafeResize bool
 
+					// Reset the disk.
+					err = linux.ClearBlock(targetPath, 0)
+					if err != nil {
+						return err
+					}
+
 					// Open block file (use O_CREATE to support drivers that use image files).
-					to, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
+					to, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0o644)
 					if err != nil {
 						return fmt.Errorf("Error opening file for writing %q: %w", targetPath, err)
 					}
@@ -793,15 +831,14 @@ func genericVFSBackupUnpack(d Driver, sysOS *sys.OS, vol Volume, snapshots []str
 						logMsg = "Unpacking custom block volume"
 					}
 
-					// Reset the disk.
-					err = clearDiskData(targetPath, to)
-					if err != nil {
-						return err
+					// Copy the data.
+					toPipe := io.Writer(to)
+					if !d.Info().ZeroUnpack {
+						toPipe = NewSparseFileWrapper(to)
 					}
 
-					// Copy the data.
 					d.Logger().Debug(logMsg, logger.Ctx{"source": srcFile, "target": targetPath})
-					_, err = io.Copy(NewSparseFileWrapper(to), tr)
+					_, err = io.Copy(toPipe, tr)
 					if err != nil {
 						return err
 					}
@@ -970,7 +1007,7 @@ func genericVFSCopyVolume(d Driver, initVolume func(vol Volume) (revert.Hook, er
 
 	// Define function to send a filesystem volume.
 	sendFSVol := func(srcPath string, targetPath string) error {
-		d.Logger().Debug("Copying fileystem volume", logger.Ctx{"sourcePath": srcPath, "targetPath": targetPath, "bwlimit": bwlimit, "rsyncArgs": rsyncArgs})
+		d.Logger().Debug("Copying filesystem volume", logger.Ctx{"sourcePath": srcPath, "targetPath": targetPath, "bwlimit": bwlimit, "rsyncArgs": rsyncArgs})
 		_, err := rsync.LocalCopy(srcPath, targetPath, bwlimit, true, rsyncArgs...)
 
 		status, _ := linux.ExitStatus(err)

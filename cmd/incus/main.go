@@ -285,6 +285,10 @@ Custom commands can be defined through aliases, use "incus alias" to control tho
 	webuiCmd := cmdWebui{global: &globalCmd}
 	app.AddCommand(webuiCmd.Command())
 
+	// debug sub-command
+	debugCmd := cmdDebug{global: &globalCmd}
+	app.AddCommand(debugCmd.Command())
+
 	// Get help command
 	app.InitDefaultHelpCmd()
 	var help *cobra.Command
@@ -387,7 +391,7 @@ func (c *cmdGlobal) PreRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if cachePath != "" {
-		err := os.MkdirAll(cachePath, 0700)
+		err := os.MkdirAll(cachePath, 0o700)
 		if err != nil && !os.IsExist(err) {
 			cachePath = ""
 		}
@@ -426,7 +430,7 @@ func (c *cmdGlobal) PreRun(cmd *cobra.Command, args []string) error {
 	// does not exist (server missing), as the user may be targeting a remote daemon.
 	if !c.flagForceLocal && !util.PathExists(c.confPath) {
 		// Create the config dir so that we don't get in here again for this user.
-		err = os.MkdirAll(c.conf.ConfigDir, 0750)
+		err = os.MkdirAll(c.conf.ConfigDir, 0o750)
 		if err != nil {
 			return err
 		}

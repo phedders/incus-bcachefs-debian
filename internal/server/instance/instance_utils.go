@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flosch/pongo2"
+	"github.com/flosch/pongo2/v6"
 	"github.com/google/uuid"
 	liblxc "github.com/lxc/go-lxc"
 
@@ -135,7 +135,7 @@ func ValidConfig(sysOS *sys.OS, config map[string]string, expanded bool, instanc
 		return err
 	}
 
-	if expanded && (util.IsFalseOrEmpty(config["security.privileged"])) && sysOS.IdmapSet == nil {
+	if instanceType == instancetype.Container && expanded && util.IsFalseOrEmpty(config["security.privileged"]) && sysOS.IdmapSet == nil {
 		return fmt.Errorf("No uid/gid allocation configured. In this mode, only privileged containers are supported")
 	}
 
@@ -467,7 +467,7 @@ func LoadFromBackup(s *state.State, projectName string, instancePath string, app
 func DeviceNextInterfaceHWAddr() (string, error) {
 	// Generate a new random MAC address using the usual prefix
 	ret := bytes.Buffer{}
-	for _, c := range "00:16:3e:xx:xx:xx" {
+	for _, c := range "10:66:6a:xx:xx:xx" {
 		if c == 'x' {
 			c, err := rand.Int(rand.Reader, big.NewInt(16))
 			if err != nil {

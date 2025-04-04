@@ -65,6 +65,7 @@ Diátaxis
 Diffie
 Distrobuilder
 DNS
+dnsmasq
 DNSSEC
 DoS
 DRM
@@ -83,6 +84,7 @@ ES
 ESA
 ETag
 failover
+frontend
 FQDNs
 Furo
 gapped
@@ -121,6 +123,7 @@ InfluxDB
 init
 initramfs
 integrations
+IOMMU
 IOPS
 IOV
 IPAM
@@ -193,6 +196,7 @@ OVMF
 OVN
 OVS
 PackageHub
+passthrough
 Pbit
 PCI
 PCIe
@@ -221,13 +225,16 @@ qgroups
 RADOS
 RBAC
 RBD
+RDNSS
 README
 reconfiguring
 requestor
+resolvers
 RESTful
 RHEL
 rootfs
 RSA
+RTC
 rST
 runtime
 SATA
@@ -325,6 +332,7 @@ VMs
 VPD
 VPN
 VPS
+VRF
 vSwitch
 VXLAN
 WebSocket

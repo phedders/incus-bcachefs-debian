@@ -80,6 +80,8 @@ func (d *nicRouted) validateConfig(instConf instance.ConfigReader) error {
 		"ipv4.host_table",
 		"ipv6.host_table",
 		"gvrp",
+		"vrf",
+		"io.bus",
 	}
 
 	rules := nicValidationRules(requiredFields, optionalFields, instConf)
@@ -88,6 +90,7 @@ func (d *nicRouted) validateConfig(instConf instance.ConfigReader) error {
 	rules["gvrp"] = validate.Optional(validate.IsBool)
 	rules["ipv4.neighbor_probe"] = validate.Optional(validate.IsBool)
 	rules["ipv6.neighbor_probe"] = validate.Optional(validate.IsBool)
+	rules["vrf"] = validate.Optional(validate.IsAny)
 
 	err = d.config.Validate(rules)
 	if err != nil {
@@ -186,11 +189,11 @@ func (d *nicRouted) validateEnvironment() error {
 
 			if sysctlVal != "1\n" {
 				// Replace . in parent name with / for sysctl formatting.
-				return fmt.Errorf("Routed mode requires sysctl net.ipv4.conf.%s.forwarding=1", strings.Replace(d.effectiveParentName, ".", "/", -1))
+				return fmt.Errorf("Routed mode requires sysctl net.ipv4.conf.%s.forwarding=1", strings.ReplaceAll(d.effectiveParentName, ".", "/"))
 			}
 		}
 
-		// Check necessary devic specific sysctls are configured for use with l2proxy parent for routed mode.
+		// Check necessary device specific sysctls are configured for use with l2proxy parent for routed mode.
 		if d.config["ipv6.address"] != "" {
 			ipv6FwdPath := fmt.Sprintf("net/ipv6/conf/%s/forwarding", d.effectiveParentName)
 			sysctlVal, err := localUtil.SysctlGet(ipv6FwdPath)
@@ -200,7 +203,7 @@ func (d *nicRouted) validateEnvironment() error {
 
 			if sysctlVal != "1\n" {
 				// Replace . in parent name with / for sysctl formatting.
-				return fmt.Errorf("Routed mode requires sysctl net.ipv6.conf.%s.forwarding=1", strings.Replace(d.effectiveParentName, ".", "/", -1))
+				return fmt.Errorf("Routed mode requires sysctl net.ipv6.conf.%s.forwarding=1", strings.ReplaceAll(d.effectiveParentName, ".", "/"))
 			}
 
 			ipv6ProxyNdpPath := fmt.Sprintf("net/ipv6/conf/%s/proxy_ndp", d.effectiveParentName)
@@ -211,8 +214,15 @@ func (d *nicRouted) validateEnvironment() error {
 
 			if sysctlVal != "1\n" {
 				// Replace . in parent name with / for sysctl formatting.
-				return fmt.Errorf("Routed mode requires sysctl net.ipv6.conf.%s.proxy_ndp=1", strings.Replace(d.effectiveParentName, ".", "/", -1))
+				return fmt.Errorf("Routed mode requires sysctl net.ipv6.conf.%s.proxy_ndp=1", strings.ReplaceAll(d.effectiveParentName, ".", "/"))
 			}
+		}
+	}
+
+	if d.config["vrf"] != "" {
+		// Check if the vrf interface exists.
+		if !network.InterfaceExists(d.config["vrf"]) {
+			return fmt.Errorf("VRF %q doesn't exist", d.config["vrf"])
 		}
 	}
 
@@ -405,14 +415,20 @@ func (d *nicRouted) Start() (*deviceConfig.RunConfig, error) {
 			}
 		}
 
+		table := "main"
+		if d.config["vrf"] != "" {
+			table = ""
+		}
+
 		// Perform per-address host-side configuration (static routes and neighbour proxy entries).
 		for _, addrStr := range addresses {
-			// Apply host-side static routes to main routing table.
+			// Apply host-side static routes to main routing table or VRF.
 			r := ip.Route{
 				DevName: saveData["host_name"],
 				Route:   fmt.Sprintf("%s/%d", addrStr, subnetSize),
-				Table:   "main",
+				Table:   table,
 				Family:  ipFamilyArg,
+				VRF:     d.config["vrf"],
 			}
 
 			err = r.Add()
@@ -462,13 +478,14 @@ func (d *nicRouted) Start() (*deviceConfig.RunConfig, error) {
 			}
 			// Add routes
 			for _, routeStr := range routes {
-				// Apply host-side static routes to main routing table.
+				// Apply host-side static routes to main routing table or VRF.
 				r := ip.Route{
 					DevName: saveData["host_name"],
 					Route:   routeStr,
-					Table:   "main",
+					Table:   table,
 					Family:  ipFamilyArg,
 					Via:     addresses[0],
+					VRF:     d.config["vrf"],
 				}
 
 				err = r.Add()
@@ -492,6 +509,10 @@ func (d *nicRouted) Start() (*deviceConfig.RunConfig, error) {
 		{Key: "flags", Value: "up"},
 		{Key: "link", Value: peerName},
 		{Key: "hwaddr", Value: d.config["hwaddr"]},
+	}
+
+	if d.config["io.bus"] == "usb" {
+		runConf.UseUSBBus = true
 	}
 
 	if d.inst.Type() == instancetype.Container {

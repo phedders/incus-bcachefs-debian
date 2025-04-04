@@ -239,7 +239,7 @@ func (c *cmdRemoteAdd) addRemoteFromToken(addr string, server string, token stri
 		}
 
 		dnam := conf.ConfigPath("servercerts")
-		err := os.MkdirAll(dnam, 0750)
+		err := os.MkdirAll(dnam, 0o750)
 		if err != nil {
 			return fmt.Errorf(i18n.G("Could not create server cert dir"))
 		}
@@ -482,7 +482,7 @@ func (c *cmdRemoteAdd) Run(cmd *cobra.Command, args []string) error {
 		}
 
 		dnam := conf.ConfigPath("servercerts")
-		err := os.MkdirAll(dnam, 0750)
+		err := os.MkdirAll(dnam, 0o750)
 		if err != nil {
 			return fmt.Errorf(i18n.G("Could not create server cert dir"))
 		}
@@ -747,8 +747,12 @@ Pre-defined column shorthand chars:
   g - Global`))
 
 	cmd.RunE = c.Run
-	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", "table", i18n.G("Format (csv|json|table|yaml|compact)")+"``")
+	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", "table", i18n.G(`Format (csv|json|table|yaml|compact), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`)+"``")
 	cmd.Flags().StringVarP(&c.flagColumns, "columns", "c", defaultRemoteColumns, i18n.G("Columns")+"``")
+
+	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		return cli.ValidateFlagFormatForListOutput(cmd.Flag("format").Value.String())
+	}
 
 	return cmd
 }

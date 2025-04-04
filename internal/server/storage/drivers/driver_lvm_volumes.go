@@ -70,18 +70,6 @@ func (d *lvm) CreateVolume(vol Volume, filler *VolumeFiller, op *operations.Oper
 				if err != nil {
 					return err
 				}
-
-				// Check the block size for image volumes.
-				if vol.volType == VolumeTypeImage {
-					blockSize, err := d.getBlockSize(devPath)
-					if err != nil {
-						return err
-					}
-
-					if blockSize != 512 {
-						return fmt.Errorf("Underlying storage uses %d bytes sector size when virtual machine images require 512 bytes", blockSize)
-					}
-				}
 			}
 
 			allowUnsafeResize := false
@@ -468,7 +456,7 @@ func (d *lvm) SetVolumeQuota(vol Volume, size string, allowUnsafeResize bool, op
 			}
 
 			if inUse {
-				return ErrInUse // We don't allow online shrinking of filesytem volumes.
+				return ErrInUse // We don't allow online shrinking of filesystem volumes.
 			}
 
 			// Activate volume if needed.
@@ -566,6 +554,27 @@ func (d *lvm) SetVolumeQuota(vol Volume, size string, allowUnsafeResize bool, op
 			return err
 		}
 
+		// On thick pools, discard the blocks in the additional space when the volume is grown.
+		if !d.usesThinpool() && oldSizeBytes < sizeBytes {
+			// Activate the volume for discarding.
+			activated, err := d.activateVolume(vol)
+			if err != nil {
+				return err
+			}
+
+			if activated {
+				defer func() {
+					_, _ = d.deactivateVolume(vol)
+				}()
+			}
+
+			// Discard the new blocks.
+			err = linux.ClearBlock(volDevPath, oldSizeBytes)
+			if err != nil {
+				return err
+			}
+		}
+
 		// Move the VM GPT alt header to end of disk if needed (not needed in unsafe resize mode as it is
 		// expected the caller will do all necessary post resize actions themselves).
 		if vol.IsVMBlock() && !allowUnsafeResize {
@@ -581,6 +590,7 @@ func (d *lvm) SetVolumeQuota(vol Volume, size string, allowUnsafeResize bool, op
 				}()
 			}
 
+			// Move the GPT alt header.
 			err = d.moveGPTAltHeader(volDevPath)
 			if err != nil {
 				return err
@@ -656,7 +666,7 @@ func (d *lvm) ListVolumes() ([]Volume, error) {
 
 		// Unescape raw LVM name to storage volume name. Safe to do now we know we are not dealing
 		// with snapshot volumes.
-		volName = strings.Replace(volName, lvmEscapedHyphen, "-", -1)
+		volName = strings.ReplaceAll(volName, lvmEscapedHyphen, "-")
 
 		contentType := ContentTypeFS
 		if volType == VolumeTypeCustom && strings.HasSuffix(volName, lvmISOVolSuffix) {
@@ -1402,7 +1412,7 @@ func (d *lvm) RestoreVolume(vol Volume, snapshotName string, op *operations.Oper
 		err = snapVol.MountTask(func(srcMountPath string, op *operations.Operation) error {
 			if snapVol.IsVMBlock() || snapVol.contentType == ContentTypeFS {
 				bwlimit := d.config["rsync.bwlimit"]
-				d.Logger().Debug("Copying fileystem volume", logger.Ctx{"sourcePath": srcMountPath, "targetPath": mountPath, "bwlimit": bwlimit})
+				d.Logger().Debug("Copying filesystem volume", logger.Ctx{"sourcePath": srcMountPath, "targetPath": mountPath, "bwlimit": bwlimit})
 				_, err := rsync.LocalCopy(srcMountPath, mountPath, bwlimit, true)
 				if err != nil {
 					return err

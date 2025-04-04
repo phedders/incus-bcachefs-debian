@@ -69,8 +69,10 @@ Column shorthand chars:
 	return cmd
 }
 
-const defaultTopColumns = "numD"
-const defaultTopColumnsAllProjects = "enumD"
+const (
+	defaultTopColumns            = "numD"
+	defaultTopColumnsAllProjects = "enumD"
+)
 
 func (c *cmdTop) parseColumns() ([]topColumn, error) {
 	columnsShorthandMap := map[rune]topColumn{
@@ -179,6 +181,8 @@ func (c *cmdTop) Run(cmd *cobra.Command, args []string) error {
 
 	if !c.flagAllProjects {
 		d = d.UseProject(info.Project)
+	} else {
+		d = d.UseProject("")
 	}
 
 	// If clustered, get a list of targets.

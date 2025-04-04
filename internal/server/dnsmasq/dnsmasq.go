@@ -46,7 +46,7 @@ func UpdateStaticEntry(network string, projectName string, instanceName string, 
 	}
 
 	if netConfig["dns.mode"] == "" || netConfig["dns.mode"] == "managed" {
-		line += fmt.Sprintf(",%s", project.DNS(projectName, instanceName))
+		line += fmt.Sprintf(",%s", instanceName)
 	}
 
 	if line == hwaddr {
@@ -54,7 +54,7 @@ func UpdateStaticEntry(network string, projectName string, instanceName string, 
 	}
 
 	deviceStaticFileName := StaticAllocationFileName(projectName, instanceName, deviceName)
-	err := os.WriteFile(internalUtil.VarPath("networks", network, "dnsmasq.hosts", deviceStaticFileName), []byte(line+"\n"), 0644)
+	err := os.WriteFile(internalUtil.VarPath("networks", network, "dnsmasq.hosts", deviceStaticFileName), []byte(line+"\n"), 0o644)
 	if err != nil {
 		return err
 	}

@@ -144,6 +144,31 @@ func (m *Monitor) Status() (string, error) {
 	return resp.Return.Status, nil
 }
 
+// MachineDefinition returns the current QEMU machine definition name.
+func (m *Monitor) MachineDefinition() (string, error) {
+	// Prepare the request.
+	var req struct {
+		Path     string `json:"path"`
+		Property string `json:"property"`
+	}
+
+	req.Path = "/machine"
+	req.Property = "type"
+
+	// Prepare the response.
+	var resp struct {
+		Return string `json:"return"`
+	}
+
+	// Query the machine.
+	err := m.Run("qom-get", req, &resp)
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSuffix(resp.Return, "-machine"), nil
+}
+
 // SendFile adds a new file descriptor to the QMP fd table associated to name.
 func (m *Monitor) SendFile(name string, file *os.File) error {
 	// Check if disconnected.
@@ -1293,4 +1318,23 @@ func (m *Monitor) Screendump(filename string) error {
 	}
 
 	return m.Run("screendump", args, &queryResp)
+}
+
+// DumpGuestMemory dumps guest memory to a file.
+func (m *Monitor) DumpGuestMemory(path string, format string) error {
+	var args struct {
+		Paging   bool   `json:"paging"`
+		Protocol string `json:"protocol"`
+		Format   string `json:"format,omitempty"`
+		Detach   bool   `json:"detach"`
+	}
+
+	args.Protocol = "fd:" + path
+	args.Format = format
+
+	var queryResp struct {
+		Return struct{} `json:"return"`
+	}
+
+	return m.Run("dump-guest-memory", args, &queryResp)
 }

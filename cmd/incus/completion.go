@@ -14,18 +14,6 @@ import (
 	"github.com/lxc/incus/v6/shared/api"
 )
 
-func (g *cmdGlobal) appendCompletion(comps []string, comp, toComplete, remote string) []string {
-	if remote != g.conf.DefaultRemote || strings.Contains(toComplete, g.conf.DefaultRemote) {
-		comp = fmt.Sprintf("%s:%s", remote, comp)
-	}
-
-	if !strings.HasPrefix(comp, toComplete) {
-		return comps
-	}
-
-	return append(comps, comp)
-}
-
 func (g *cmdGlobal) cmpClusterGroupNames(toComplete string) ([]string, cobra.ShellCompDirective) {
 	var results []string
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
@@ -247,34 +235,6 @@ func (g *cmdGlobal) cmpImageFingerprintsFromRemote(toComplete string, remote str
 	return results, cobra.ShellCompDirectiveNoFileComp
 }
 
-func (g *cmdGlobal) cmpImageFingerprints(toComplete string) ([]string, cobra.ShellCompDirective) {
-	results := []string{}
-	var remote string
-	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
-
-	if strings.Contains(toComplete, ":") {
-		remote = strings.Split(toComplete, ":")[0]
-	} else {
-		remote = g.conf.DefaultRemote
-	}
-
-	remoteServer, _ := g.conf.GetImageServer(remote)
-
-	images, _ := remoteServer.GetImages()
-
-	for _, image := range images {
-		results = g.appendCompletion(results, image.Fingerprint, toComplete, remote)
-	}
-
-	if !strings.Contains(toComplete, ":") {
-		remotes, directives := g.cmpRemotes(toComplete, true)
-		results = append(results, remotes...)
-		cmpDirectives |= directives
-	}
-
-	return results, cmpDirectives
-}
-
 func (g *cmdGlobal) cmpInstanceAllKeys() ([]string, cobra.ShellCompDirective) {
 	keys := []string{}
 	for k := range instance.InstanceConfigKeysAny {
@@ -294,7 +254,7 @@ func (g *cmdGlobal) cmpInstanceConfigTemplates(instanceName string) ([]string, c
 	resource := resources[0]
 	client := resource.server
 
-	var instanceNameOnly = instanceName
+	instanceNameOnly := instanceName
 	if strings.Contains(instanceName, ":") {
 		instanceNameOnly = strings.Split(instanceName, ":")[1]
 	}
@@ -1122,7 +1082,7 @@ func (g *cmdGlobal) cmpStoragePoolVolumeConfigs(poolName string, volumeName stri
 	resource := resources[0]
 	client := resource.server
 
-	var pool = poolName
+	pool := poolName
 	if strings.Contains(poolName, ":") {
 		pool = strings.Split(poolName, ":")[1]
 	}
@@ -1152,7 +1112,7 @@ func (g *cmdGlobal) cmpStoragePoolVolumeInstances(poolName string, volumeName st
 	resource := resources[0]
 	client := resource.server
 
-	var pool = poolName
+	pool := poolName
 	if strings.Contains(poolName, ":") {
 		pool = strings.Split(poolName, ":")[1]
 	}
@@ -1187,7 +1147,7 @@ func (g *cmdGlobal) cmpStoragePoolVolumeProfiles(poolName string, volumeName str
 	resource := resources[0]
 	client := resource.server
 
-	var pool = poolName
+	pool := poolName
 	if strings.Contains(poolName, ":") {
 		pool = strings.Split(poolName, ":")[1]
 	}
@@ -1222,7 +1182,7 @@ func (g *cmdGlobal) cmpStoragePoolVolumeSnapshots(poolName string, volumeName st
 	resource := resources[0]
 	client := resource.server
 
-	var pool = poolName
+	pool := poolName
 	if strings.Contains(poolName, ":") {
 		pool = strings.Split(poolName, ":")[1]
 	}
@@ -1247,7 +1207,7 @@ func (g *cmdGlobal) cmpStoragePoolVolumes(poolName string) ([]string, cobra.Shel
 	resource := resources[0]
 	client := resource.server
 
-	var pool = poolName
+	pool := poolName
 	if strings.Contains(poolName, ":") {
 		pool = strings.Split(poolName, ":")[1]
 	}
