@@ -1,8 +1,9 @@
 incus (6.0.4-2) UNRELEASED; urgency=medium
 
-  * Cherry-pick upstream fix to cleanup old qemu sockets
-  * Cherry-pick upstream fix to retry agent mounts
-  * Cherry-pick upstream fix for USB hotplugging
+  * Cherry-pick upstream fixes:
+    - Cleanup old qemu sockets
+    - Retry agent mounts
+    - USB hotplugging
 
  -- Mathias Gibbens <gibmat@debian.org>  Tue, 08 Apr 2025 23:42:03 +0000
 
