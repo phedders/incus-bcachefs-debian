@@ -226,7 +226,8 @@ Package: incus-client
 Architecture: any
 Depends: ${misc:Depends},
          ${shlibs:Depends}
-Suggests: bash-completion
+Suggests: bash-completion,
+          spice-client-gtk | virt-viewer
 Static-Built-Using: ${misc:Static-Built-Using}
 Description: Powerful system container and virtual machine manager - client
  Incus is a next generation system container and virtual machine manager.
