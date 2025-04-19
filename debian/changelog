@@ -5,6 +5,7 @@ incus (6.0.4-2) UNRELEASED; urgency=medium
     - Retry agent mounts
     - USB hotplugging
   * Have incus-client Suggest "spice-client-gtk | virt-viewer"
+  * Update systemd service to wait long enough for Incus to correctly shutdown
 
  -- Mathias Gibbens <gibmat@debian.org>  Tue, 08 Apr 2025 23:42:03 +0000
 

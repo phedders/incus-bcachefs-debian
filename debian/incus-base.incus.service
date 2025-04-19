@@ -14,7 +14,7 @@ ExecStart=/usr/libexec/incus/startup
 ExecStartPost=/usr/bin/incus admin waitready --timeout=600
 KillMode=process
 TimeoutStartSec=600s
-TimeoutStopSec=30s
+TimeoutStopSec=330s
 Restart=on-failure
 LimitNOFILE=1048576
 LimitNPROC=infinity
