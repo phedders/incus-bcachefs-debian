@@ -197,6 +197,7 @@ Depends: ${misc:Depends},
          nftables | iptables,
          rsync,
          squashfs-tools,
+         squashfs-tools-ng,
          uidmap,
          xz-utils
 Recommends: apparmor (>= 4.1.0~),
