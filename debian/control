@@ -171,6 +171,7 @@ Depends: ${misc:Depends},
          swtpm,
          virtiofsd [!armel !armhf !i386]
 Suggests: gdisk
+Built-Using: ${misc:Built-Using}
 Static-Built-Using: ${misc:Static-Built-Using}
 Description: Powerful system container and virtual machine manager - daemon
  Incus is a next generation system container and virtual machine manager.
@@ -206,6 +207,7 @@ Recommends: apparmor (>= 4.1.0~),
 # Second line lists additional optional tools
 Suggests: btrfs-progs, ceph-common, lvm2, zfsutils-linux,
           incus-extra, lego, minio-client
+Built-Using: ${misc:Built-Using}
 Static-Built-Using: ${misc:Static-Built-Using}
 Breaks: ${runit:Breaks}
 # The following line is a hack for an academic /usr-move problem (#1099444);
@@ -229,6 +231,7 @@ Depends: ${misc:Depends},
          ${shlibs:Depends}
 Suggests: bash-completion,
           spice-client-gtk | virt-viewer
+Built-Using: ${misc:Built-Using}
 Static-Built-Using: ${misc:Static-Built-Using}
 Description: Powerful system container and virtual machine manager - client
  Incus is a next generation system container and virtual machine manager.
@@ -245,6 +248,7 @@ Architecture: linux-any
 Depends: ${misc:Depends},
          ${shlibs:Depends},
          rsync
+Built-Using: ${misc:Built-Using}
 Static-Built-Using: ${misc:Static-Built-Using}
 Breaks: incus-tools (<< 6.0.3-3~),
         incus-migrate (<< 6.0.3-3~)
@@ -268,6 +272,7 @@ Description: Powerful system container and virtual machine manager - extra tools
 Package: incus-agent
 Architecture: linux-any
 Depends: ${misc:Depends}
+Built-Using: ${misc:Built-Using}
 Static-Built-Using: ${misc:Static-Built-Using}
 Description: Incus guest agent
  This package provides an agent to run inside Incus virtual machine guests.
