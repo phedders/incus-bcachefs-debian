@@ -1,10 +1,14 @@
-incus (6.0.4-3) UNRELEASED; urgency=medium
+incus (6.13.0-1~exp1) experimental; urgency=medium
 
-  * Document packaging policy for LTS and Feature releases
-  * d/control:
-    - Don't Suggest ceph-common for 32bit architectures
+  * New upstream feature release
+    - Add dependency for running OCI (docker) images
+    - Update logic for building incus-agent binaries, including ones for
+      Windows
+    - Update Build-Depends and Depends
+    - Drop patches applied upstream
+    - Rebase d/p/002-adjust-import-paths.patch
 
- -- Mathias Gibbens <gibmat@debian.org>  Sun, 01 Jun 2025 03:16:35 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 01 Jun 2025 16:25:07 +0000
 
 incus (6.0.4-2) unstable; urgency=medium
 
