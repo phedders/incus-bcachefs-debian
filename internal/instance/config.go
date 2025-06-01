@@ -244,7 +244,7 @@ var InstanceConfigKeysAny = map[string]func(value string) error{
 		}
 
 		if num == 0 {
-			return fmt.Errorf("Memory limit can't be 0")
+			return errors.New("Memory limit can't be 0")
 		}
 
 		return nil
@@ -652,6 +652,42 @@ var InstanceConfigKeysContainer = map[string]func(value string) error{
 	//  shortdesc: Required driver version
 	"nvidia.require.driver": validate.IsAny,
 
+	// gendoc:generate(entity=instance, group=oci, key=oci.entrypoint)
+	// Override the entry point of an OCI container.
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: OCI container
+	//  shortdesc: OCI container entry point
+	"oci.entrypoint": validate.IsAny,
+
+	// gendoc:generate(entity=instance, group=oci, key=oci.cwd)
+	// Override the working directory of an OCI container.
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: OCI container
+	//  shortdesc: OCI container working directory
+	"oci.cwd": validate.Optional(validate.IsAbsFilePath),
+
+	// gendoc:generate(entity=instance, group=oci, key=oci.gid)
+	// Override the GID of the process run in an OCI container.
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: OCI container
+	//  shortdesc: OCI container GID
+	"oci.gid": validate.Optional(validate.IsUint32),
+
+	// gendoc:generate(entity=instance, group=oci, key=oci.uid)
+	// Override the UID of the process run in an OCI container.
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: OCI container
+	//  shortdesc: OCI container UID
+	"oci.uid": validate.Optional(validate.IsUint32),
+
 	// Caller is responsible for full validation of any raw.* value.
 
 	// gendoc:generate(entity=instance, group=raw, key=raw.lxc)
@@ -886,6 +922,14 @@ var InstanceConfigKeysContainer = map[string]func(value string) error{
 
 	"security.syscalls.whitelist": validate.IsAny,
 
+	// gendoc:generate(entity=instance, group=volatile, key=volatile.container.oci)
+	//
+	// ---
+	//  type: bool
+	//  defaultdesc: `false`
+	//  shortdesc: Whether the container is an OCI application container
+	"volatile.container.oci": validate.IsBool,
+
 	// gendoc:generate(entity=instance, group=volatile, key=volatile.last_state.idmap)
 	//
 	// ---
@@ -1087,6 +1131,20 @@ var InstanceConfigKeysVM = map[string]func(value string) error{
 	//  type: string
 	//  shortdesc: QEMU VM definition name (used for migration between versions)
 	"volatile.vm.definition": validate.Optional(validate.IsAny),
+
+	// gendoc:generate(entity=instance, group=volatile, key=volatile.vm.rtc_adjustment)
+	// Real Time Clock adjustment time to allow virtual machines to run on a different base than the host.
+	// ---
+	//  type: int64
+	//  shortdesc: Real Time Clock change adjustment
+	"volatile.vm.rtc_adjustment": validate.Optional(validate.IsInt64),
+
+	// gendoc:generate(entity=instance, group=volatile, key=volatile.vm.rtc_offset)
+	// Real Time Clock offset to allow virtual machines to run on a different base than the host.
+	// ---
+	//  type: int64
+	//  shortdesc: Real Time Clock change offset
+	"volatile.vm.rtc_offset": validate.Optional(validate.IsInt64),
 
 	// gendoc:generate(entity=instance, group=volatile, key=volatile.vsock_id)
 	//

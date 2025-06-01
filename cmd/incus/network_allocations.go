@@ -28,6 +28,7 @@ type networkAllocationColumn struct {
 	Data func(api.NetworkAllocations) string
 }
 
+// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdNetworkListAllocations) Command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Use = usage("list-allocations")
@@ -57,12 +58,12 @@ Pre-defined column shorthand chars:
 	cmd.Args = cobra.MaximumNArgs(1)
 	cmd.RunE = c.Run
 
-	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", "table", i18n.G(`Format (csv|json|table|yaml|compact), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`)+"``")
+	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", c.global.defaultListFormat(), i18n.G(`Format (csv|json|table|yaml|compact), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`)+"``")
 	cmd.Flags().StringVarP(&c.flagProject, "project", "p", api.ProjectDefaultName, i18n.G("Run again a specific project"))
 	cmd.Flags().BoolVar(&c.flagAllProjects, "all-projects", false, i18n.G("Run against all projects"))
 	cmd.Flags().StringVarP(&c.flagColumns, "columns", "c", defaultNetworkAllocationColumns, i18n.G("Columns")+"``")
 
-	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		return cli.ValidateFlagFormatForListOutput(cmd.Flag("format").Value.String())
 	}
 
@@ -126,13 +127,14 @@ func (c *cmdNetworkListAllocations) macAddressColumnData(alloc api.NetworkAlloca
 	return alloc.Hwaddr
 }
 
-func (c *cmdNetworkListAllocations) Run(cmd *cobra.Command, args []string) error {
+// Run runs the actual command logic.
+func (c *cmdNetworkListAllocations) Run(_ *cobra.Command, args []string) error {
 	remote := ""
 	if len(args) > 0 {
 		remote = args[0]
 	}
 
-	resources, err := c.global.ParseServers(remote)
+	resources, err := c.global.parseServers(remote)
 	if err != nil {
 		return err
 	}

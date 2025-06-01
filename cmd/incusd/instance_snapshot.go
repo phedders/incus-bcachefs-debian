@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,7 +24,6 @@ import (
 	"github.com/lxc/incus/v6/internal/server/request"
 	"github.com/lxc/incus/v6/internal/server/response"
 	"github.com/lxc/incus/v6/internal/server/state"
-	storagePools "github.com/lxc/incus/v6/internal/server/storage"
 	localUtil "github.com/lxc/incus/v6/internal/server/util"
 	"github.com/lxc/incus/v6/internal/version"
 	"github.com/lxc/incus/v6/shared/api"
@@ -125,11 +125,6 @@ import (
 func instanceSnapshotsGet(d *Daemon, r *http.Request) response.Response {
 	s := d.State()
 
-	instanceType, err := urlInstanceTypeDetect(r)
-	if err != nil {
-		return response.SmartError(err)
-	}
-
 	projectName := request.ProjectParam(r)
 	cname, err := url.PathUnescape(mux.Vars(r)["name"])
 	if err != nil {
@@ -137,11 +132,11 @@ func instanceSnapshotsGet(d *Daemon, r *http.Request) response.Response {
 	}
 
 	if internalInstance.IsSnapshot(cname) {
-		return response.BadRequest(fmt.Errorf("Invalid instance name"))
+		return response.BadRequest(errors.New("Invalid instance name"))
 	}
 
 	// Handle requests targeted to a container on a different node
-	resp, err := forwardedResponseIfInstanceIsRemote(s, r, projectName, cname, instanceType)
+	resp, err := forwardedResponseIfInstanceIsRemote(s, r, projectName, cname)
 	if err != nil {
 		return response.SmartError(err)
 	}
@@ -190,7 +185,7 @@ func instanceSnapshotsGet(d *Daemon, r *http.Request) response.Response {
 		}
 
 		for _, snap := range snaps {
-			render, _, err := snap.Render(storagePools.RenderSnapshotUsage(s, snap))
+			render, _, err := snap.RenderWithUsage()
 			if err != nil {
 				continue
 			}
@@ -241,11 +236,6 @@ func instanceSnapshotsGet(d *Daemon, r *http.Request) response.Response {
 func instanceSnapshotsPost(d *Daemon, r *http.Request) response.Response {
 	s := d.State()
 
-	instanceType, err := urlInstanceTypeDetect(r)
-	if err != nil {
-		return response.SmartError(err)
-	}
-
 	projectName := request.ProjectParam(r)
 	name, err := url.PathUnescape(mux.Vars(r)["name"])
 	if err != nil {
@@ -253,7 +243,7 @@ func instanceSnapshotsPost(d *Daemon, r *http.Request) response.Response {
 	}
 
 	if internalInstance.IsSnapshot(name) {
-		return response.BadRequest(fmt.Errorf("Invalid instance name"))
+		return response.BadRequest(errors.New("Invalid instance name"))
 	}
 
 	err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
@@ -279,7 +269,7 @@ func instanceSnapshotsPost(d *Daemon, r *http.Request) response.Response {
 	}
 
 	// Handle requests targeted to a container on a different node
-	resp, err := forwardedResponseIfInstanceIsRemote(s, r, projectName, name, instanceType)
+	resp, err := forwardedResponseIfInstanceIsRemote(s, r, projectName, name)
 	if err != nil {
 		return response.SmartError(err)
 	}
@@ -348,11 +338,6 @@ func instanceSnapshotsPost(d *Daemon, r *http.Request) response.Response {
 func instanceSnapshotHandler(d *Daemon, r *http.Request) response.Response {
 	s := d.State()
 
-	instanceType, err := urlInstanceTypeDetect(r)
-	if err != nil {
-		return response.SmartError(err)
-	}
-
 	projectName := request.ProjectParam(r)
 	instName, err := url.PathUnescape(mux.Vars(r)["name"])
 	if err != nil {
@@ -364,7 +349,7 @@ func instanceSnapshotHandler(d *Daemon, r *http.Request) response.Response {
 		return response.SmartError(err)
 	}
 
-	resp, err := forwardedResponseIfInstanceIsRemote(s, r, projectName, instName, instanceType)
+	resp, err := forwardedResponseIfInstanceIsRemote(s, r, projectName, instName)
 	if err != nil {
 		return response.SmartError(err)
 	}
@@ -385,7 +370,7 @@ func instanceSnapshotHandler(d *Daemon, r *http.Request) response.Response {
 
 	switch r.Method {
 	case "GET":
-		return snapshotGet(s, snapInst)
+		return snapshotGet(snapInst)
 	case "POST":
 		return snapshotPost(s, r, snapInst)
 	case "DELETE":
@@ -585,8 +570,8 @@ func snapshotPut(s *state.State, r *http.Request, snapInst instance.Instance) re
 //	    $ref: "#/responses/Forbidden"
 //	  "500":
 //	    $ref: "#/responses/InternalServerError"
-func snapshotGet(s *state.State, snapInst instance.Instance) response.Response {
-	render, _, err := snapInst.Render(storagePools.RenderSnapshotUsage(s, snapInst))
+func snapshotGet(snapInst instance.Instance) response.Response {
+	render, _, err := snapInst.RenderWithUsage()
 	if err != nil {
 		return response.SmartError(err)
 	}
@@ -683,7 +668,7 @@ func snapshotPost(s *state.State, r *http.Request, snapInst instance.Instance) r
 
 		run := func(op *operations.Operation) error {
 			ws.instance.SetOperation(op)
-			return ws.Do(s, op)
+			return ws.do(op)
 		}
 
 		if req.Target != nil {
@@ -705,7 +690,7 @@ func snapshotPost(s *state.State, r *http.Request, snapInst instance.Instance) r
 		return operations.OperationResponse(op)
 	} else if !migration {
 		if reqNew.Name == "" {
-			return response.BadRequest(fmt.Errorf("A new name for the instance must be provided"))
+			return response.BadRequest(errors.New("A new name for the instance must be provided"))
 		}
 	}
 

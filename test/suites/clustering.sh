@@ -252,8 +252,8 @@ test_clustering_membership() {
 
   # Client certificate are shared across all nodes.
   token="$(INCUS_DIR=${INCUS_ONE_DIR} incus config trust add foo -q)"
-  incus remote add cluster 10.1.1.101:8443 --accept-certificate --token "${token}"
-  incus remote set-url cluster https://10.1.1.102:8443
+  incus remote add cluster 100.64.1.101:8443 --accept-certificate --token "${token}"
+  incus remote set-url cluster https://100.64.1.102:8443
   incus network list cluster: | grep -q "${bridge}"
   incus remote remove cluster
 
@@ -686,6 +686,10 @@ test_clustering_storage() {
       driver_config="source=incustest-$(basename "${TEST_DIR}")-pool1"
   fi
 
+  if [ "${poolDriver}" = "linstor" ]; then
+      driver_config="source=incustest-$(basename "${TEST_DIR}" | sed 's/\./__/g')-pool1"
+  fi
+
   # Define storage pools on the two nodes
   driver_config_node1="${driver_config}"
   driver_config_node2="${driver_config}"
@@ -732,6 +736,8 @@ test_clustering_storage() {
       INCUS_DIR="${INCUS_TWO_DIR}" incus storage create pool1 "${poolDriver}" volume.size=25MiB
   elif [ "${poolDriver}" = "ceph" ]; then
       INCUS_DIR="${INCUS_TWO_DIR}" incus storage create pool1 "${poolDriver}" volume.size=25MiB ceph.osd.pg_num=16
+  elif [ "${poolDriver}" = "linstor" ]; then
+      INCUS_DIR="${INCUS_TWO_DIR}" incus storage create pool1 "${poolDriver}" linstor.resource_group.place_count=1
   else
       INCUS_DIR="${INCUS_TWO_DIR}" incus storage create pool1 "${poolDriver}"
   fi
@@ -748,6 +754,11 @@ test_clustering_storage() {
     source1="incustest-$(basename "${TEST_DIR}")"
     source2="${source1}"
   fi
+  if [ "${poolDriver}" = "linstor" ]; then
+    # For linstor the source field is the name of the underlying linstor resource group
+    source1="incustest-$(basename "${TEST_DIR}" | sed 's/\./__/g')"
+    source2="${source1}"
+  fi
   INCUS_DIR="${INCUS_ONE_DIR}" incus storage show pool1 --target node1 | grep source | grep -q "${source1}"
   INCUS_DIR="${INCUS_ONE_DIR}" incus storage show pool1 --target node2 | grep source | grep -q "${source2}"
 
@@ -759,8 +770,8 @@ test_clustering_storage() {
     ! INCUS_DIR="${INCUS_ONE_DIR}" incus storage show pool1 | grep -q rsync.bwlimit || false
   fi
 
-  if [ "${poolDriver}" = "ceph" ]; then
-    # Test migration of ceph-based containers
+  if [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "linstor" ]; then
+    # Test migration of ceph- and linstor-based containers
     INCUS_DIR="${INCUS_TWO_DIR}" ensure_import_testimage
     INCUS_DIR="${INCUS_ONE_DIR}" incus launch --target node2 -s pool1 testimage foo
 
@@ -789,13 +800,17 @@ test_clustering_storage() {
 
   # If the driver has the same per-node storage pool config (e.g. size), make sure it's included in the
   # member_config, and actually added to a joining node so we can validate it.
-  if [ "${poolDriver}" = "zfs" ] || [ "${poolDriver}" = "btrfs" ] || [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "lvm" ]; then
+  if [ "${poolDriver}" = "zfs" ] || [ "${poolDriver}" = "btrfs" ] || [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "lvm" ] || [ "${poolDriver}" = "linstor" ]; then
     # Spawn a third node
     setup_clustering_netns 3
     INCUS_THREE_DIR=$(mktemp -d -p "${TEST_DIR}" XXX)
     chmod +x "${INCUS_THREE_DIR}"
     ns3="${prefix}3"
     INCUS_NETNS="${ns3}" spawn_incus "${INCUS_THREE_DIR}" false
+
+    if [ "${poolDriver}" = "linstor" ]; then
+      linstor_preconfigure "${INCUS_THREE_DIR}"
+    fi
 
     key=$(echo "${driver_config}" | cut -d'=' -f1)
     value=$(echo "${driver_config}" | cut -d'=' -f2-)
@@ -809,7 +824,7 @@ test_clustering_storage() {
     # Manually send the join request.
     cert=$(sed ':a;N;$!ba;s/\n/\\n/g' "${INCUS_ONE_DIR}/cluster.crt")
     token="$(incus cluster add node3 --quiet)"
-    op=$(curl --unix-socket "${INCUS_THREE_DIR}/unix.socket" -X PUT "incus/1.0/cluster" -d "{\"server_name\":\"node3\",\"enabled\":true,\"member_config\":[${member_config}],\"server_address\":\"10.1.1.103:8443\",\"cluster_address\":\"10.1.1.101:8443\",\"cluster_certificate\":\"${cert}\",\"cluster_token\":\"${token}\"}" | jq -r .operation)
+    op=$(curl --unix-socket "${INCUS_THREE_DIR}/unix.socket" -X PUT "incus/1.0/cluster" -d "{\"server_name\":\"node3\",\"enabled\":true,\"member_config\":[${member_config}],\"server_address\":\"100.64.1.103:8443\",\"cluster_address\":\"100.64.1.101:8443\",\"cluster_certificate\":\"${cert}\",\"cluster_token\":\"${token}\"}" | jq -r .operation)
     curl --unix-socket "${INCUS_THREE_DIR}/unix.socket" "incus${op}/wait"
 
     # Ensure that node-specific config appears on all nodes,
@@ -819,13 +834,12 @@ test_clustering_storage() {
     done
 
     # Other storage backends will be finished with the third node, so we can remove it.
-    if [ "${poolDriver}" != "ceph" ]; then
+    if [ "${poolDriver}" != "ceph" ] && [ "${poolDriver}" != "linstor" ]; then
       INCUS_DIR="${INCUS_ONE_DIR}" incus cluster remove node3 --yes
     fi
   fi
 
-  if [ "${poolDriver}" = "ceph" ]; then
-
+  if [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "linstor" ]; then
     # Move the container to node3, renaming it
     INCUS_DIR="${INCUS_TWO_DIR}" incus move foo bar --target node3
     INCUS_DIR="${INCUS_TWO_DIR}" incus info bar | grep -q "Location: node3"
@@ -915,7 +929,7 @@ test_clustering_storage() {
   INCUS_DIR="${INCUS_ONE_DIR}" incus storage delete pool1
   ! INCUS_DIR="${INCUS_ONE_DIR}" incus storage list | grep -q pool1 || false
 
-  if [ "${poolDriver}" != "ceph" ]; then
+  if [ "${poolDriver}" != "ceph" ] && [ "${poolDriver}" != "linstor" ]; then
     # Create a volume on node1
     INCUS_DIR="${INCUS_ONE_DIR}" incus storage volume create data web
     INCUS_DIR="${INCUS_ONE_DIR}" incus storage volume list data | grep web | grep -q node1
@@ -1001,6 +1015,9 @@ test_clustering_storage_single_node() {
   fi
   if [ "${poolDriver}" = "ceph" ]; then
       driver_config="source=incustest-$(basename "${TEST_DIR}")-pool1"
+  fi
+  if [ "${poolDriver}" = "linstor" ]; then
+      driver_config="source=incustest-$(basename "${TEST_DIR}" | sed 's/\./__/g')-pool1"
   fi
   driver_config_node="${driver_config}"
   if [ "${poolDriver}" = "zfs" ]; then
@@ -1765,7 +1782,7 @@ test_clustering_join_api() {
   INCUS_NETNS="${ns2}" spawn_incus "${INCUS_TWO_DIR}" false
 
   token="$(incus cluster add node2 --quiet)"
-  op=$(curl --unix-socket "${INCUS_TWO_DIR}/unix.socket" -X PUT "incus/1.0/cluster" -d "{\"server_name\":\"node2\",\"enabled\":true,\"member_config\":[{\"entity\": \"storage-pool\",\"name\":\"data\",\"key\":\"source\",\"value\":\"\"}],\"server_address\":\"10.1.1.102:8443\",\"cluster_address\":\"10.1.1.101:8443\",\"cluster_certificate\":\"${cert}\",\"cluster_token\":\"${token}\"}" | jq -r .operation)
+  op=$(curl --unix-socket "${INCUS_TWO_DIR}/unix.socket" -X PUT "incus/1.0/cluster" -d "{\"server_name\":\"node2\",\"enabled\":true,\"member_config\":[{\"entity\": \"storage-pool\",\"name\":\"data\",\"key\":\"source\",\"value\":\"\"}],\"server_address\":\"100.64.1.102:8443\",\"cluster_address\":\"100.64.1.101:8443\",\"cluster_certificate\":\"${cert}\",\"cluster_token\":\"${token}\"}" | jq -r .operation)
   curl --unix-socket "${INCUS_TWO_DIR}/unix.socket" "incus${op}/wait"
 
   INCUS_DIR="${INCUS_ONE_DIR}" incus cluster show node2 | grep -q "message: Fully operational"
@@ -1942,7 +1959,7 @@ test_clustering_address() {
 
   # Add a remote using the core.https_address of the bootstrap node, and check
   # that the REST API is exposed.
-  url="https://10.1.1.101:8443"
+  url="https://100.64.1.101:8443"
   token="$(INCUS_DIR="${INCUS_ONE_DIR}" incus config trust add foo --quiet)"
   incus remote add cluster --token "${token}" --accept-certificate "${url}"
   incus storage list cluster: | grep -q data
@@ -1965,13 +1982,13 @@ test_clustering_address() {
 
   # The core.https_address config value can be changed and the REST API is still
   # accessible.
-  INCUS_DIR="${INCUS_ONE_DIR}" incus config set "core.https_address" 10.1.1.101:9999
-  url="https://10.1.1.101:9999"
+  INCUS_DIR="${INCUS_ONE_DIR}" incus config set "core.https_address" 100.64.1.101:9999
+  url="https://100.64.1.101:9999"
   incus remote set-url cluster "${url}"
   incus storage list cluster:| grep -q data
 
   # The cluster.https_address config value can't be changed.
-  ! INCUS_DIR="${INCUS_ONE_DIR}" incus config set "cluster.https_address" "10.1.1.101:8448" || false
+  ! INCUS_DIR="${INCUS_ONE_DIR}" incus config set "cluster.https_address" "100.64.1.101:8448" || false
 
   # Create a container using the REST API exposed over core.https_address.
   INCUS_DIR="${INCUS_ONE_DIR}" deps/import-busybox --alias testimage
@@ -2197,9 +2214,9 @@ test_clustering_recover() {
   sleep 5
 
   # Check the current database nodes
-  INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster list-database | grep -q "10.1.1.101:8443"
-  INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster list-database | grep -q "10.1.1.102:8443"
-  INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster list-database | grep -q "10.1.1.103:8443"
+  INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster list-database | grep -q "100.64.1.101:8443"
+  INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster list-database | grep -q "100.64.1.102:8443"
+  INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster list-database | grep -q "100.64.1.103:8443"
 
   # Create a test project, just to insert something in the database.
   INCUS_DIR="${INCUS_ONE_DIR}" incus project create p1
@@ -2221,8 +2238,8 @@ test_clustering_recover() {
   INCUS_DIR="${INCUS_ONE_DIR}" incus project list | grep -q p1
 
   # The database nodes have been updated
-  INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster list-database | grep -q "10.1.1.101:8443"
-  ! INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster list-database | grep -q "10.1.1.102:8443" || false
+  INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster list-database | grep -q "100.64.1.101:8443"
+  ! INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster list-database | grep -q "100.64.1.102:8443" || false
 
   # Cleanup the dead node.
   INCUS_DIR="${INCUS_ONE_DIR}" incus cluster remove node2 --force --yes
@@ -2514,7 +2531,7 @@ test_clustering_remove_raft_node() {
   # Remove the second node from the database but not from the raft configuration.
   retries=10
   while [ "${retries}" != "0" ]; do
-    INCUS_DIR="${INCUS_ONE_DIR}" incus admin sql global "DELETE FROM nodes WHERE address = '10.1.1.102:8443'" && break
+    INCUS_DIR="${INCUS_ONE_DIR}" incus admin sql global "DELETE FROM nodes WHERE address = '100.64.1.102:8443'" && break
     sleep 0.5
     retries=$((retries-1))
   done
@@ -2537,10 +2554,10 @@ test_clustering_remove_raft_node() {
   INCUS_DIR="${INCUS_ONE_DIR}" incus cluster show node4 | grep -q "\- database$"
 
   # The second node is still in the raft_nodes table.
-  INCUS_DIR="${INCUS_ONE_DIR}" incus admin sql local "SELECT * FROM raft_nodes" | grep -q "10.1.1.102"
+  INCUS_DIR="${INCUS_ONE_DIR}" incus admin sql local "SELECT * FROM raft_nodes" | grep -q "100.64.1.102"
 
   # Force removing the raft node.
-  INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster remove-raft-node -q "10.1.1.102"
+  INCUS_DIR="${INCUS_ONE_DIR}" incusd cluster remove-raft-node -q "100.64.1.102"
 
   # Wait for a heartbeat to propagate and a rebalance to be performed.
   sleep 12
@@ -2552,7 +2569,7 @@ test_clustering_remove_raft_node() {
   INCUS_DIR="${INCUS_ONE_DIR}" incus cluster show node4 | grep -q "\- database$"
 
   # The second node is gone from the raft_nodes_table.
-  ! INCUS_DIR="${INCUS_ONE_DIR}" incus admin sql local "SELECT * FROM raft_nodes" | grep -q "10.1.1.102" || false
+  ! INCUS_DIR="${INCUS_ONE_DIR}" incus admin sql local "SELECT * FROM raft_nodes" | grep -q "100.64.1.102" || false
 
   INCUS_DIR="${INCUS_ONE_DIR}" incus admin shutdown
   INCUS_DIR="${INCUS_THREE_DIR}" incus admin shutdown
@@ -2728,13 +2745,13 @@ test_clustering_image_refresh() {
   dir_configure "${INCUS_REMOTE_DIR}"
   INCUS_DIR="${INCUS_REMOTE_DIR}" deps/import-busybox --alias testimage --public
 
-  INCUS_DIR="${INCUS_REMOTE_DIR}" incus config set core.https_address "10.1.1.104:8443"
+  INCUS_DIR="${INCUS_REMOTE_DIR}" incus config set core.https_address "100.64.1.104:8443"
 
   # Add remotes
   token="$(INCUS_DIR="${INCUS_ONE_DIR}" incus config trust add foo --quiet)"
-  incus remote add public "https://10.1.1.104:8443" --accept-certificate --token foo --public
+  incus remote add public "https://100.64.1.104:8443" --accept-certificate --token foo --public
   token="$(INCUS_DIR="${INCUS_ONE_DIR}" incus config trust add foo --quiet)"
-  incus remote add cluster "https://10.1.1.101:8443" --accept-certificate --token "${token}"
+  incus remote add cluster "https://100.64.1.101:8443" --accept-certificate --token "${token}"
 
   INCUS_DIR="${INCUS_REMOTE_DIR}" incus init testimage c1
 
@@ -2774,7 +2791,7 @@ test_clustering_image_refresh() {
   if [ "${poolDriver}" != "dir" ]; then
     # Check image storage volume records exist.
     incus admin sql global 'select name from storage_volumes'
-    if [ "${poolDriver}" = "ceph" ]; then
+    if [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "linstor" ]; then
       incus admin sql global 'select name from storage_volumes' | grep -Fc "${old_fingerprint}" | grep -Fx 1
     else
       incus admin sql global 'select name from storage_volumes' | grep -Fc "${old_fingerprint}" | grep -Fx 3
@@ -2796,7 +2813,7 @@ test_clustering_image_refresh() {
   if [ "${poolDriver}" != "dir" ]; then
     incus admin sql global 'select name from storage_volumes'
     # Check image storage volume records actually removed from relevant members and replaced with new fingerprint.
-    if [ "${poolDriver}" = "ceph" ]; then
+    if [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "linstor" ]; then
       incus admin sql global 'select name from storage_volumes' | grep -Fc "${old_fingerprint}" | grep -Fx 0
       incus admin sql global 'select name from storage_volumes' | grep -Fc "${new_fingerprint}" | grep -Fx 1
     else
@@ -3427,7 +3444,7 @@ test_clustering_groups() {
   spawn_incus_and_join_cluster "${ns3}" "${bridge}" "${cert}" 3 1 "${INCUS_THREE_DIR}" "${INCUS_ONE_DIR}"
 
   token="$(INCUS_DIR="${INCUS_ONE_DIR}" incus config trust add foo --quiet)"
-  incus remote add cluster --token "${token}" --accept-certificate "https://10.1.1.101:8443"
+  incus remote add cluster --token "${token}" --accept-certificate "https://100.64.1.101:8443"
 
   # Initially, there is only the default group
   incus cluster group show cluster:default
@@ -3438,6 +3455,12 @@ test_clustering_groups() {
 
   # Renaming the default group is not allowed
   ! incus cluster group rename cluster:default foobar || false
+
+  # User properties can be set
+  ! incus cluster group set cluster:default invalid foo || false
+  incus cluster group set cluster:default user.foo bar
+  [ "$(incus cluster group get cluster:default user.foo)" = "bar" ] || false
+  incus cluster group unset cluster:default user.foo
 
   incus cluster list cluster:
   # Nodes need to belong to at least one group, removing it from the default group should therefore fail
@@ -3876,7 +3899,7 @@ test_clustering_openfga() {
   INCUS_DIR="${INCUS_ONE_DIR}" incus config set "oidc.issuer=http://127.0.0.1:$(cat "${TEST_DIR}/oidc.port")/"
   INCUS_DIR="${INCUS_ONE_DIR}" incus config set "oidc.client.id=device"
 
-  BROWSER=curl incus remote add --accept-certificate oidc-openfga "https://10.1.1.101:8443" --auth-type oidc
+  BROWSER=curl incus remote add --accept-certificate oidc-openfga "https://100.64.1.101:8443" --auth-type oidc
   ! incus_remote info oidc-openfga: | grep -Fq 'core.https_address' || false
 
   run_openfga
@@ -3903,7 +3926,7 @@ test_clustering_openfga() {
   # After the second node has joined there should exist only one authorization model.
   [ "$(fga model list --store-id "${OPENFGA_STORE_ID}" | jq '.authorization_models | length')" = 1 ]
 
-  BROWSER=curl incus remote add --accept-certificate node2 "https://10.1.1.102:8443" --auth-type oidc
+  BROWSER=curl incus remote add --accept-certificate node2 "https://100.64.1.102:8443" --auth-type oidc
   ! incus_remote info node2: | grep -Fq 'core.https_address' || false
 
   # Add self as server admin. Should be able to see config now.

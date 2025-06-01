@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -19,7 +20,7 @@ const connectErrorPrefix = "Unable to connect to"
 
 // RFC3493Dialer connects to the specified server and returns the connection.
 // If the connection cannot be established then an error with the connectErrorPrefix is returned.
-func RFC3493Dialer(context context.Context, network string, address string) (net.Conn, error) {
+func RFC3493Dialer(_ context.Context, network string, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, err
@@ -98,6 +99,7 @@ func finalizeTLSConfig(tlsConfig *tls.Config, tlsRemoteCert *x509.Certificate) {
 	}
 }
 
+// GetTLSConfig returns the TLS config for the provided remote certificate.
 func GetTLSConfig(tlsRemoteCert *x509.Certificate) (*tls.Config, error) {
 	tlsConfig := InitTLSConfig()
 
@@ -106,6 +108,7 @@ func GetTLSConfig(tlsRemoteCert *x509.Certificate) (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
+// GetTLSConfigMem returns the TLS config for the provided client and server certificates.
 func GetTLSConfigMem(tlsClientCert string, tlsClientKey string, tlsClientCA string, tlsRemoteCertPEM string, insecureSkipVerify bool) (*tls.Config, error) {
 	tlsConfig := InitTLSConfig()
 
@@ -124,7 +127,7 @@ func GetTLSConfigMem(tlsClientCert string, tlsClientKey string, tlsClientCA stri
 		// Ignore any content outside of the PEM bytes we care about
 		certBlock, _ := pem.Decode([]byte(tlsRemoteCertPEM))
 		if certBlock == nil {
-			return nil, fmt.Errorf("Invalid remote certificate")
+			return nil, errors.New("Invalid remote certificate")
 		}
 
 		var err error

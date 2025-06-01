@@ -78,7 +78,7 @@ func ImageDownload(ctx context.Context, r *http.Request, s *state.State, op *ope
 	fp := alias
 
 	// Attempt to resolve the alias
-	if args.Server != "" && slices.Contains([]string{"incus", "lxd", "simplestreams"}, protocol) {
+	if args.Server != "" && slices.Contains([]string{"incus", "lxd", "oci", "simplestreams"}, protocol) {
 		clientArgs := &incus.ConnectionArgs{
 			TLSServerCert: args.Certificate,
 			UserAgent:     version.UserAgent,
@@ -98,7 +98,13 @@ func ImageDownload(ctx context.Context, r *http.Request, s *state.State, op *ope
 			if ok {
 				remote = server.UseProject(args.SourceProjectName)
 			}
-		} else {
+		} else if protocol == "oci" {
+			// Setup OCI client
+			remote, err = incus.ConnectOCI(args.Server, clientArgs)
+			if err != nil {
+				return nil, false, fmt.Errorf("Failed to connect to oci server %q: %w", args.Server, err)
+			}
+		} else if protocol == "simplestreams" {
 			// Setup simplestreams client
 			remote, err = incus.ConnectSimpleStreams(args.Server, clientArgs)
 			if err != nil {
@@ -108,7 +114,7 @@ func ImageDownload(ctx context.Context, r *http.Request, s *state.State, op *ope
 
 		// For public images, handle aliases and initial metadata
 		if args.Secret == "" {
-			// Look for a matching alias
+			// Look for a matching alias.  Note, this err message is lost!
 			entry, _, err := remote.GetImageAliasType(args.Type, fp)
 			if err == nil {
 				fp = entry.Target
@@ -343,7 +349,7 @@ func ImageDownload(ctx context.Context, r *http.Request, s *state.State, op *ope
 		op.SetCanceler(canceler)
 	}
 
-	if slices.Contains([]string{"incus", "lxd", "simplestreams"}, protocol) {
+	if slices.Contains([]string{"incus", "lxd", "oci", "simplestreams"}, protocol) {
 		// Create the target files
 		dest, err := os.Create(destName)
 		if err != nil {
@@ -494,17 +500,17 @@ func ImageDownload(ctx context.Context, r *http.Request, s *state.State, op *ope
 		defer func() { _ = f.Close() }()
 
 		// Hashing
-		sha256 := sha256.New()
+		hash256 := sha256.New()
 
 		// Download the image
-		writer := internalIO.NewQuotaWriter(io.MultiWriter(f, sha256), args.Budget)
+		writer := internalIO.NewQuotaWriter(io.MultiWriter(f, hash256), args.Budget)
 		size, err := io.Copy(writer, body)
 		if err != nil {
 			return nil, false, err
 		}
 
 		// Validate hash
-		result := fmt.Sprintf("%x", sha256.Sum(nil))
+		result := fmt.Sprintf("%x", hash256.Sum(nil))
 		if result != fp {
 			return nil, false, fmt.Errorf("Hash mismatch for %q: %s != %s", args.Server, result, fp)
 		}

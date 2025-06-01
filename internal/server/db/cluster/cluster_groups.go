@@ -1,6 +1,9 @@
 package cluster
 
 import (
+	"context"
+	"database/sql"
+
 	"github.com/lxc/incus/v6/shared/api"
 )
 
@@ -17,13 +20,13 @@ import (
 //generate-database:mapper stmt -e cluster_group delete-by-Name table=cluster_groups
 //generate-database:mapper stmt -e cluster_group update table=cluster_groups
 //
-//generate-database:mapper method -i -e cluster_group GetMany table=cluster_groups
+//generate-database:mapper method -i -e cluster_group GetMany references=Config table=cluster_groups
 //generate-database:mapper method -i -e cluster_group GetOne table=cluster_groups
 //generate-database:mapper method -i -e cluster_group ID table=cluster_groups
 //generate-database:mapper method -i -e cluster_group Exists table=cluster_groups
 //generate-database:mapper method -i -e cluster_group Rename table=cluster_groups
-//generate-database:mapper method -i -e cluster_group Create table=cluster_groups
-//generate-database:mapper method -i -e cluster_group Update table=cluster_groups
+//generate-database:mapper method -i -e cluster_group Create references=Config table=cluster_groups
+//generate-database:mapper method -i -e cluster_group Update references=Config table=cluster_groups
 //generate-database:mapper method -i -e cluster_group DeleteOne-by-Name table=cluster_groups
 
 // ClusterGroup is a value object holding db-related details about a cluster group.
@@ -41,9 +44,16 @@ type ClusterGroupFilter struct {
 }
 
 // ToAPI returns an API entry.
-func (c *ClusterGroup) ToAPI() (*api.ClusterGroup, error) {
+func (c *ClusterGroup) ToAPI(ctx context.Context, tx *sql.Tx) (*api.ClusterGroup, error) {
+	// Get the config.
+	config, err := GetClusterGroupConfig(ctx, tx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	result := api.ClusterGroup{
 		ClusterGroupPut: api.ClusterGroupPut{
+			Config:      config,
 			Description: c.Description,
 			Members:     c.Nodes,
 		},

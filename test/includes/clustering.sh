@@ -6,9 +6,9 @@ setup_clustering_bridge() {
   echo "==> Setup clustering bridge ${name}"
 
   ip link add "${name}" up type bridge
-  ip addr add 10.1.1.1/16 dev "${name}"
+  ip addr add 100.64.1.1/16 dev "${name}"
 
-  iptables -w -t nat -A POSTROUTING -s 10.1.0.0/16 -d 0.0.0.0/0 -j MASQUERADE
+  iptables -w -t nat -A POSTROUTING -s 100.64.0.0/16 -d 0.0.0.0/0 -j MASQUERADE
   echo 1 > /proc/sys/net/ipv4/ip_forward
 }
 
@@ -18,7 +18,7 @@ teardown_clustering_bridge() {
   if [ -e "/sys/class/net/${name}" ]; then
       echo "==> Teardown clustering bridge ${name}"
       echo 0 > /proc/sys/net/ipv4/ip_forward
-      iptables -w -t nat -D POSTROUTING -s 10.1.0.0/16 -d 0.0.0.0/0 -j MASQUERADE
+      iptables -w -t nat -D POSTROUTING -s 100.64.0.0/16 -d 0.0.0.0/0 -j MASQUERADE
       ip link del dev "${name}"
   fi
 }
@@ -80,8 +80,8 @@ set -e
 ip link set dev lo up
 ip link set dev "${veth2}" name eth0
 ip link set eth0 up
-ip addr add "10.1.1.10${id}/16" dev eth0
-ip route add default via 10.1.1.1
+ip addr add "100.64.1.10${id}/16" dev eth0
+ip route add default via 100.64.1.1
 EOF
 }
 
@@ -133,12 +133,22 @@ spawn_incus_and_bootstrap_cluster() {
 
     cat > "${INCUS_DIR}/preseed.yaml" <<EOF
 config:
-  core.https_address: 10.1.1.101:8443
+  core.https_address: 100.64.1.101:8443
 EOF
     if [ "${port}" != "" ]; then
       cat >> "${INCUS_DIR}/preseed.yaml" <<EOF
-  cluster.https_address: 10.1.1.101:${port}
+  cluster.https_address: 100.64.1.101:${port}
 EOF
+    fi
+    if [ "${driver}" = "linstor" ]; then
+      cat >> "${INCUS_DIR}/preseed.yaml" <<EOF
+  storage.linstor.controller_connection: ${INCUS_LINSTOR_CLUSTER}
+EOF
+      if [ -n "${INCUS_LINSTOR_LOCAL_SATELLITE:-}" ]; then
+        cat >> "${INCUS_DIR}/preseed.yaml" <<EOF
+  storage.linstor.satellite.name: ${INCUS_LINSTOR_LOCAL_SATELLITE}
+EOF
+      fi
     fi
     cat >> "${INCUS_DIR}/preseed.yaml" <<EOF
   images.auto_update_interval: 0
@@ -173,6 +183,13 @@ EOF
     source: incustest-$(basename "${TEST_DIR}")
     volume.size: 25MiB
     ceph.osd.pg_num: 16
+EOF
+    fi
+    if [ "${driver}" = "linstor" ]; then
+      cat >> "${INCUS_DIR}/preseed.yaml" <<EOF
+  config:
+    source: incustest-$(basename "${TEST_DIR}" | sed 's/\./__/g')
+    linstor.resource_group.place_count: 1
 EOF
     fi
     cat >> "${INCUS_DIR}/preseed.yaml" <<EOF
@@ -231,23 +248,31 @@ spawn_incus_and_join_cluster() {
     # If a custom cluster port was given, we need to first set the REST
     # API address.
     if [ "${port}" != "8443" ]; then
-      incus config set core.https_address "10.1.1.10${index}:8443"
+      incus config set core.https_address "100.64.1.10${index}:8443"
+    fi
+
+    # If there is a satellite name override, apply it.
+    if [ "${driver}" = "linstor" ]; then
+      incus config set storage.linstor.controller_connection "${INCUS_LINSTOR_CLUSTER}"
+      if [ -n "${INCUS_LINSTOR_LOCAL_SATELLITE:-}" ]; then
+        incus config set storage.linstor.satellite.name "${INCUS_LINSTOR_LOCAL_SATELLITE}"
+      fi
     fi
 
     cat > "${INCUS_DIR}/preseed.yaml" <<EOF
 cluster:
   enabled: true
   server_name: node${index}
-  server_address: 10.1.1.10${index}:${port}
-  cluster_address: 10.1.1.10${target}:8443
+  server_address: 100.64.1.10${index}:${port}
+  cluster_address: 100.64.1.10${target}:8443
   cluster_certificate: "$cert"
   cluster_token: ${token}
   member_config:
 EOF
-    # Declare the pool only if the driver is not ceph, because
-    # the ceph pool doesn't need to be created on the joining
+    # Declare the pool only if the driver is not ceph or linstor, because
+    # the pool doesn't need to be created on the joining
     # node (it's shared with the bootstrap one).
-    if [ "${driver}" != "ceph" ]; then
+    if [ "${driver}" != "ceph" ] && [ "${driver}" != "linstor" ]; then
       cat >> "${INCUS_DIR}/preseed.yaml" <<EOF
   - entity: storage-pool
     name: data

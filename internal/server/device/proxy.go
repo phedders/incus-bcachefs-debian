@@ -3,6 +3,7 @@ package device
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -75,22 +76,99 @@ func (d *proxy) validateConfig(instConf instance.ConfigReader) error {
 	// If an empty value is supplied the default behavior is to assume "host" bind mode.
 	validateBind := func(input string) error {
 		if !slices.Contains([]string{"host", "instance", "guest", "container"}, d.config["bind"]) {
-			return fmt.Errorf("Invalid binding side given. Must be \"host\" or \"instance\"")
+			return errors.New("Invalid binding side given. Must be \"host\" or \"instance\"")
 		}
 
 		return nil
 	}
 
 	rules := map[string]func(string) error{
-		"listen":         validate.Required(validateAddr),
-		"connect":        validate.Required(validateAddr),
-		"bind":           validate.Optional(validateBind),
-		"mode":           validate.Optional(unixValidOctalFileMode),
-		"nat":            validate.Optional(validate.IsBool),
-		"gid":            validate.Optional(unixValidUserID),
-		"uid":            validate.Optional(unixValidUserID),
-		"security.uid":   validate.Optional(unixValidUserID),
-		"security.gid":   validate.Optional(unixValidUserID),
+		// gendoc:generate(entity=devices, group=proxy, key=listen)
+		//
+		// ---
+		// type: string
+		// required: yes
+		// shortdesc: The address and port to bind and listen (`<type>:<addr>:<port>[-<port>][,<port>]`)
+		"listen": validate.Required(validateAddr),
+
+		// gendoc:generate(entity=devices, group=proxy, key=connect)
+		//
+		// ---
+		// type: string
+		// required: yes
+		// shortdesc: The address and port to connect to (`<type>:<addr>:<port>[-<port>][,<port>]`)
+		"connect": validate.Required(validateAddr),
+
+		// gendoc:generate(entity=devices, group=proxy, key=bind)
+		//
+		// ---
+		// type: string
+		// required: no
+		// default: `host`
+		// shortdesc: Which side to bind on (`host`/`instance`)
+		"bind": validate.Optional(validateBind),
+
+		// gendoc:generate(entity=devices, group=proxy, key=mode)
+		//
+		// ---
+		// type: int
+		// required: no
+		// default: `0644`
+		// shortdesc: Mode for the listening Unix socket
+		"mode": validate.Optional(unixValidOctalFileMode),
+
+		// gendoc:generate(entity=devices, group=proxy, key=nat)
+		//
+		// ---
+		// type: bool
+		// required: no
+		// default: `false`
+		// shortdesc: Whether to optimize proxying via NAT (requires that the instance NIC has a static IP address)
+		"nat": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=devices, group=proxy, key=gid)
+		//
+		// ---
+		// type: int
+		// required: no
+		// default: `0`
+		// shortdesc: GID of the owner of the listening Unix socket
+		"gid": validate.Optional(unixValidUserID),
+
+		// gendoc:generate(entity=devices, group=proxy, key=uid)
+		//
+		// ---
+		// type: int
+		// required: no
+		// default: `0`
+		// shortdesc: UID of the owner of the listening Unix socket
+		"uid": validate.Optional(unixValidUserID),
+
+		// gendoc:generate(entity=devices, group=proxy, key=security.uid)
+		//
+		// ---
+		// type: int
+		// required: no
+		// default: `0`
+		// shortdesc: What UID to drop privilege to
+		"security.uid": validate.Optional(unixValidUserID),
+
+		// gendoc:generate(entity=devices, group=proxy, key=security.gid)
+		//
+		// ---
+		// type: int
+		// required: no
+		// default: `0`
+		// shortdesc: What GID to drop privilege to
+		"security.gid": validate.Optional(unixValidUserID),
+
+		// gendoc:generate(entity=devices, group=proxy, key=proxy_protocol)
+		//
+		// ---
+		// type: bool
+		// required: no
+		// default: `false`
+		// shortdesc: Whether to use the HAProxy PROXY protocol to transmit sender information
 		"proxy_protocol": validate.Optional(validate.IsBool),
 	}
 
@@ -100,7 +178,7 @@ func (d *proxy) validateConfig(instConf instance.ConfigReader) error {
 	}
 
 	if instConf.Type() == instancetype.VM && util.IsFalseOrEmpty(d.config["nat"]) {
-		return fmt.Errorf("Only NAT mode is supported for proxies on VM instances")
+		return errors.New("Only NAT mode is supported for proxies on VM instances")
 	}
 
 	listenAddr, err := network.ProxyParseAddr(d.config["listen"])
@@ -120,16 +198,16 @@ func (d *proxy) validateConfig(instConf instance.ConfigReader) error {
 
 	if (listenAddr.ConnType != "unix" && len(connectAddr.Ports) > len(listenAddr.Ports)) || (listenAddr.ConnType == "unix" && len(connectAddr.Ports) > 1) {
 		// Cannot support single address (or port) -> multiple port.
-		return fmt.Errorf("Mismatch between listen port(s) and connect port(s) count")
+		return errors.New("Mismatch between listen port(s) and connect port(s) count")
 	}
 
 	if util.IsTrue(d.config["proxy_protocol"]) && (!strings.HasPrefix(d.config["connect"], "tcp") || util.IsTrue(d.config["nat"])) {
-		return fmt.Errorf("The PROXY header can only be sent to tcp servers in non-nat mode")
+		return errors.New("The PROXY header can only be sent to tcp servers in non-nat mode")
 	}
 
 	if (!strings.HasPrefix(d.config["listen"], "unix:") || strings.HasPrefix(d.config["listen"], "unix:@")) &&
 		(d.config["uid"] != "" || d.config["gid"] != "" || d.config["mode"] != "") {
-		return fmt.Errorf("Only proxy devices for non-abstract unix sockets can carry uid, gid, or mode properties")
+		return errors.New("Only proxy devices for non-abstract unix sockets can carry uid, gid, or mode properties")
 	}
 
 	if util.IsTrue(d.config["nat"]) {
@@ -141,12 +219,12 @@ func (d *proxy) validateConfig(instConf instance.ConfigReader) error {
 				// Prevent use of NAT mode on non-default projects with networks feature.
 				// This is because OVN networks don't allow the host to communicate directly with
 				// instance NICs and so DNAT rules on the host won't work.
-				return fmt.Errorf("NAT mode cannot be used in projects that have the networks feature")
+				return errors.New("NAT mode cannot be used in projects that have the networks feature")
 			}
 		}
 
 		if d.config["bind"] != "" && d.config["bind"] != "host" {
-			return fmt.Errorf("Only host-bound proxies can use NAT")
+			return errors.New("Only host-bound proxies can use NAT")
 		}
 
 		// Support TCP <-> TCP and UDP <-> UDP only.
@@ -174,7 +252,7 @@ func (d *proxy) validateConfig(instConf instance.ConfigReader) error {
 		}
 
 		if listenIPVersion != connectIPVersion {
-			return fmt.Errorf("Cannot mix IP versions between listen and connect in nat mode")
+			return errors.New("Cannot mix IP versions between listen and connect in nat mode")
 		}
 	}
 
@@ -184,7 +262,7 @@ func (d *proxy) validateConfig(instConf instance.ConfigReader) error {
 // validateEnvironment checks the runtime environment for correctness.
 func (d *proxy) validateEnvironment() error {
 	if d.name == "" {
-		return fmt.Errorf("Device name cannot be empty")
+		return errors.New("Device name cannot be empty")
 	}
 
 	return nil
@@ -286,7 +364,7 @@ func (d *proxy) Start() (*deviceConfig.RunConfig, error) {
 			}
 
 			// Poll log file a few times until we see "Started" to indicate successful start.
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				started, err := d.checkProcStarted(logPath)
 				if err != nil {
 					_ = p.Stop()
@@ -462,7 +540,7 @@ func (d *proxy) setupNAT() error {
 		}
 
 		if hostName == "" {
-			return fmt.Errorf("Proxy cannot find bridge port host_name to enable hairpin mode")
+			return errors.New("Proxy cannot find bridge port host_name to enable hairpin mode")
 		}
 
 		// br_netfilter is enabled, so we need to enable hairpin mode on instance's bridge port otherwise
@@ -490,14 +568,6 @@ func (d *proxy) setupNAT() error {
 	}
 
 	return nil
-}
-
-func (d *proxy) rewriteHostAddr(addr string) string {
-	fields := strings.SplitN(addr, ":", 2)
-	proto := fields[0]
-	addr = fields[1]
-
-	return fmt.Sprintf("%s:%s", proto, addr)
 }
 
 func (d *proxy) setupProxyProcInfo() (*proxyProcInfo, error) {
@@ -539,18 +609,14 @@ func (d *proxy) setupProxyProcInfo() (*proxyProcInfo, error) {
 
 		connectPid = containerPid
 		connectPidFd = fmt.Sprintf("%d", containerPidFd)
-
-		listenAddr = d.rewriteHostAddr(listenAddr)
 	case "instance", "guest", "container":
 		listenPid = containerPid
 		listenPidFd = fmt.Sprintf("%d", containerPidFd)
 
 		connectPid = daemonPid
 		connectPidFd = fmt.Sprintf("%d", daemonPidFd)
-
-		connectAddr = d.rewriteHostAddr(connectAddr)
 	default:
-		return nil, fmt.Errorf("Invalid binding side given. Must be \"host\" or \"instance\"")
+		return nil, errors.New("Invalid binding side given. Must be \"host\" or \"instance\"")
 	}
 
 	listenAddrMode := "0644"
@@ -589,7 +655,7 @@ func (d *proxy) killProxyProc(pidPath string) error {
 	}
 
 	err = p.Stop()
-	if err != nil && err != subprocess.ErrNotRunning {
+	if err != nil && !errors.Is(err, subprocess.ErrNotRunning) {
 		return fmt.Errorf("Unable to kill forkproxy: %s", err)
 	}
 

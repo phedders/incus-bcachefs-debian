@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ var ImageSourceProtocol = map[int]string{
 	0: "incus",
 	1: "direct",
 	2: "simplestreams",
+	3: "oci",
 }
 
 // GetLocalImagesFingerprints returns the fingerprints of all local images.
@@ -391,7 +393,7 @@ func (c *ClusterTx) GetImageByFingerprintPrefix(ctx context.Context, fingerprint
 	case 1:
 		object = images[0]
 	default:
-		return -1, nil, fmt.Errorf("More than one image matches")
+		return -1, nil, errors.New("More than one image matches")
 	}
 
 	image.Fingerprint = object.Fingerprint
@@ -559,13 +561,11 @@ WHERE images.fingerprint = ?
 	}
 
 	if len(addresses) == 0 {
-		return "", fmt.Errorf("Image not available on any online member")
+		return "", errors.New("Image not available on any online member")
 	}
 
-	for _, address := range addresses {
-		if address == localAddress {
-			return "", nil
-		}
+	if slices.Contains(addresses, localAddress) {
+		return "", nil
 	}
 
 	return addresses[0], nil
@@ -656,7 +656,7 @@ func (c *ClusterTx) GetImageAlias(ctx context.Context, projectName string, image
 	arg2 := []any{&id, &fingerprint, &imageType, &description}
 	err = c.tx.QueryRowContext(ctx, q, arg1...).Scan(arg2...)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return -1, api.ImageAliasesEntry{}, api.StatusErrorf(http.StatusNotFound, "Image alias not found")
 		}
 
@@ -776,7 +776,7 @@ func (c *ClusterTx) SetImageCachedAndLastUseDate(ctx context.Context, projectNam
 
 // UpdateImage updates the image with the given ID.
 func (c *ClusterTx) UpdateImage(ctx context.Context, id int, fname string, sz int64, public bool, autoUpdate bool, architecture string, createdAt time.Time, expiresAt time.Time, properties map[string]string, project string, profileIds []int64) error {
-	arch, err := osarch.ArchitectureId(architecture)
+	arch, err := osarch.ArchitectureID(architecture)
 	if err != nil {
 		arch = 0
 	}
@@ -849,7 +849,7 @@ func (c *ClusterTx) UpdateImage(ctx context.Context, id int, fname string, sz in
 
 // CreateImage creates a new image.
 func (c *ClusterTx) CreateImage(ctx context.Context, project string, fp string, fname string, sz int64, public bool, autoUpdate bool, architecture string, createdAt time.Time, expiresAt time.Time, properties map[string]string, typeName string, profileIds []int64) error {
-	arch, err := osarch.ArchitectureId(architecture)
+	arch, err := osarch.ArchitectureID(architecture)
 	if err != nil {
 		arch = 0
 	}

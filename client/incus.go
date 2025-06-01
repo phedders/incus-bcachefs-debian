@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -137,7 +138,7 @@ func (r *ProtocolIncus) isSameServer(server Server) bool {
 // GetHTTPClient returns the http client used for the connection. This can be used to set custom http options.
 func (r *ProtocolIncus) GetHTTPClient() (*http.Client, error) {
 	if r.http == nil {
-		return nil, fmt.Errorf("HTTP client isn't set, bad connection")
+		return nil, errors.New("HTTP client isn't set, bad connection")
 	}
 
 	return r.http, nil
@@ -246,7 +247,7 @@ func incusParseResponse(resp *http.Response) (*api.Response, string, error) {
 
 	// Handle errors
 	if response.Type == api.ErrorResponse {
-		return &response, "", api.StatusErrorf(resp.StatusCode, response.Error)
+		return &response, "", api.StatusErrorf(resp.StatusCode, "%v", response.Error)
 	}
 
 	return &response, etag, nil
@@ -300,7 +301,7 @@ func (r *ProtocolIncus) rawQuery(method string, url string, data any, ETag strin
 			req.Header.Set("Content-Type", "application/json")
 
 			// Log the data
-			logger.Debugf(logger.Pretty(data))
+			logger.Debugf("%s", logger.Pretty(data))
 		}
 	} else {
 		// No data to be sent along with the request
@@ -386,7 +387,7 @@ func (r *ProtocolIncus) queryStruct(method string, path string, data any, ETag s
 
 	// Log the data
 	logger.Debugf("Got response struct from Incus")
-	logger.Debugf(logger.Pretty(target))
+	logger.Debugf("%s", logger.Pretty(target))
 
 	return etag, nil
 }
@@ -436,7 +437,7 @@ func (r *ProtocolIncus) queryOperation(method string, path string, data any, ETa
 
 	// Log the data
 	logger.Debugf("Got operation from Incus")
-	logger.Debugf(logger.Pretty(op.Operation))
+	logger.Debugf("%s", logger.Pretty(op.Operation))
 
 	return &op, etag, nil
 }

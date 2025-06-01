@@ -155,7 +155,7 @@ func expandAlias(conf *config.Config, args []string, app *cobra.Command) ([]stri
 	for i := len(atArgs) - 1; i >= 0; i-- {
 		_, ok := numberedArgsMap[i+1]
 		if ok {
-			atArgs = append(atArgs[:i], atArgs[i+1:]...)
+			atArgs = slices.Delete(atArgs, i, i+1)
 		}
 	}
 
@@ -167,10 +167,9 @@ func expandAlias(conf *config.Config, args []string, app *cobra.Command) ([]stri
 			// if completing we want to stop on @ARGS@ and append the completion below
 			if completion {
 				break
-			} else {
-				newArgs = append(newArgs, atArgs...)
 			}
 
+			newArgs = append(newArgs, atArgs...)
 			hasReplacedArgsVar = true
 			continue
 		}

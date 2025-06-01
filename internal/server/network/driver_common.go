@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"slices"
@@ -50,6 +51,7 @@ type forwardPortMap struct {
 	listenPorts []uint64
 	protocol    string
 	target      forwardTarget
+	snat        bool
 }
 
 type loadBalancerPortMap struct {
@@ -131,9 +133,7 @@ func (n *common) validate(config map[string]string, driverRules map[string]func(
 	rules := n.validationRules()
 
 	// Merge driver specific rules into common rules.
-	for field, validator := range driverRules {
-		rules[field] = validator
-	}
+	maps.Copy(rules, driverRules)
 
 	// Run the validator against each field.
 	for k, validator := range rules {
@@ -170,11 +170,17 @@ func (n *common) validateZoneNames(config map[string]string) error {
 	}
 
 	var err error
-	var zoneProjects map[string]string
+	var zones []dbCluster.NetworkZone
+	zoneProjects := make(map[string]string)
+
 	err = n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
-		zoneProjects, err = tx.GetNetworkZones(ctx)
+		zones, err = dbCluster.GetNetworkZones(ctx, tx.Tx())
 		if err != nil {
 			return fmt.Errorf("Failed to load all network zones: %w", err)
+		}
+
+		for _, zone := range zones {
+			zoneProjects[zone.Name] = zone.Project
 		}
 
 		return nil
@@ -192,8 +198,7 @@ func (n *common) validateZoneNames(config map[string]string) error {
 			return fmt.Errorf("Invalid %q must contain only single DNS zone name", keyName)
 		}
 
-		zoneProjectsUsed := make(map[string]struct{}, 0)
-
+		zoneProjectsUsed := make(map[string]struct{})
 		for _, keyZoneName := range keyZoneNames {
 			zoneProjectName, found := zoneProjects[keyZoneName]
 			if !found {
@@ -863,7 +868,7 @@ func (n *common) bgpGetPeers(config map[string]string) []string {
 // forwardValidate validates the forward request.
 func (n *common) forwardValidate(listenAddress net.IP, forward *api.NetworkForwardPut) ([]*forwardPortMap, error) {
 	if listenAddress == nil {
-		return nil, fmt.Errorf("Invalid listen address")
+		return nil, errors.New("Invalid listen address")
 	}
 
 	if listenAddress.IsUnspecified() {
@@ -896,6 +901,12 @@ func (n *common) forwardValidate(listenAddress net.IP, forward *api.NetworkForwa
 		}
 
 		// User keys are not validated.
+
+		// gendoc:generate(entity=network_forward, group=common, key=user.*)
+		//
+		// ---
+		//  type: string
+		//  shortdesc: User defined key/value configuration
 		if internalInstance.IsUserConfig(k) {
 			continue
 		}
@@ -904,21 +915,27 @@ func (n *common) forwardValidate(listenAddress net.IP, forward *api.NetworkForwa
 	}
 
 	// Validate default target address.
+
+	// gendoc:generate(entity=network_forward, group=common, key=target_address)
+	//
+	// ---
+	//  type: string
+	//  shortdesc: Default target address for anything not covered through a port definition
 	defaultTargetAddress := net.ParseIP(forward.Config["target_address"])
 
 	if forward.Config["target_address"] != "" {
 		if defaultTargetAddress == nil {
-			return nil, fmt.Errorf("Invalid default target address")
+			return nil, errors.New("Invalid default target address")
 		}
 
 		defaultTargetIsIP4 := defaultTargetAddress.To4() != nil
 		if listenIsIP4 != defaultTargetIsIP4 {
-			return nil, fmt.Errorf("Cannot mix IP versions in listen address and default target address")
+			return nil, errors.New("Cannot mix IP versions in listen address and default target address")
 		}
 
 		// Check default target address is within network's subnet.
 		if netSubnet != nil && !SubnetContainsIP(netSubnet, defaultTargetAddress) {
-			return nil, fmt.Errorf("Default target address is not within the network subnet")
+			return nil, errors.New("Default target address is not within the network subnet")
 		}
 	}
 
@@ -969,6 +986,7 @@ func (n *common) forwardValidate(listenAddress net.IP, forward *api.NetworkForwa
 				address: targetAddress,
 			},
 			protocol: portSpec.Protocol,
+			snat:     portSpec.SNAT,
 		}
 
 		for _, pr := range listenPortRanges {
@@ -977,7 +995,7 @@ func (n *common) forwardValidate(listenAddress net.IP, forward *api.NetworkForwa
 				return nil, fmt.Errorf("Invalid listen port in port specification %d: %w", portSpecID, err)
 			}
 
-			for i := int64(0); i < portRange; i++ {
+			for i := range portRange {
 				port := portFirst + i
 				_, found := listenPorts[portSpec.Protocol][port]
 				if found {
@@ -987,6 +1005,11 @@ func (n *common) forwardValidate(listenAddress net.IP, forward *api.NetworkForwa
 				listenPorts[portSpec.Protocol][port] = struct{}{}
 				portMap.listenPorts = append(portMap.listenPorts, uint64(port))
 			}
+		}
+
+		// Check that SNAT is only used with bridges.
+		if portSpec.SNAT && n.netType != "bridge" {
+			return nil, errors.New("SNAT can only be used with bridge networks")
 		}
 
 		// Check valid target port(s) supplied.
@@ -1002,7 +1025,7 @@ func (n *common) forwardValidate(listenAddress net.IP, forward *api.NetworkForwa
 					return nil, fmt.Errorf("Invalid target port in port specification %d", portSpecID)
 				}
 
-				for i := int64(0); i < portRange; i++ {
+				for i := range portRange {
 					port := portFirst + i
 					portMap.target.ports = append(portMap.target.ports, uint64(port))
 				}
@@ -1114,19 +1137,61 @@ func (n *common) forwardBGPSetupPrefixes() error {
 // getExternalSubnetInUse returns information about usage of external subnets by networks connected to, or used by,
 // the specified uplinkNetworkName.
 func (n *common) getExternalSubnetInUse(ctx context.Context, tx *db.ClusterTx, uplinkNetworkName string, memberSpecific bool) ([]externalSubnetUsage, error) {
-	var err error
-	var projectNetworksForwardsOnUplink, projectNetworksLoadBalancersOnUplink map[string]map[string][]string
+	// Get a list of related networks.
+	relatedNetworks := map[int64]*api.Network{}
+
+	networksByProject, err := tx.GetNetworksAllProjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("Failed loading network load balancer listen addresses: %w", err)
+	}
+
+	for projectName, networks := range networksByProject {
+		for _, networkName := range networks {
+			// Load the network.
+			networkID, apiNetwork, _, err := tx.GetNetworkInAnyState(ctx, projectName, networkName)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to load network: %w", err)
+			}
+
+			// Check if we're looking at our uplink.
+			if projectName == api.ProjectDefaultName && uplinkNetworkName == networkName {
+				relatedNetworks[networkID] = apiNetwork
+				continue
+			}
+
+			// Check if the network shares the same uplink.
+			if apiNetwork.Config["network"] == uplinkNetworkName {
+				relatedNetworks[networkID] = apiNetwork
+				continue
+			}
+		}
+	}
 
 	// Get all network forward listen addresses for all networks (of any type) connected to our uplink.
-	projectNetworksForwardsOnUplink, err = tx.GetProjectNetworkForwardListenAddressesByUplink(ctx, uplinkNetworkName, memberSpecific)
+	projectNetworksForwardsOnUplink, err := tx.GetProjectNetworkForwardListenAddressesByUplink(ctx, uplinkNetworkName, memberSpecific)
 	if err != nil {
 		return nil, fmt.Errorf("Failed loading network forward listen addresses: %w", err)
 	}
 
 	// Get all network load balancer listen addresses for all networks (of any type) connected to our uplink.
-	projectNetworksLoadBalancersOnUplink, err = tx.GetProjectNetworkLoadBalancerListenAddressesByUplink(ctx, uplinkNetworkName, memberSpecific)
-	if err != nil {
-		return nil, fmt.Errorf("Failed loading network forward listen addresses: %w", err)
+	projectNetworksLoadBalancersOnUplink := map[string]map[string][]string{}
+
+	for networkID, relatedNetwork := range relatedNetworks {
+		// Get all load balancers associated with this network.
+		loadBalancers, err := dbCluster.GetNetworkLoadBalancers(ctx, tx.Tx(), dbCluster.NetworkLoadBalancerFilter{
+			NetworkID: &networkID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("Failed getting list of network load balancer: %w", err)
+		}
+
+		for _, lb := range loadBalancers {
+			if projectNetworksLoadBalancersOnUplink[relatedNetwork.Project] == nil {
+				projectNetworksLoadBalancersOnUplink[relatedNetwork.Project] = map[string][]string{}
+			}
+
+			projectNetworksLoadBalancersOnUplink[relatedNetwork.Project][relatedNetwork.Name] = append(projectNetworksLoadBalancersOnUplink[relatedNetwork.Project][relatedNetwork.Name], lb.ListenAddress)
+		}
 	}
 
 	externalSubnets := make([]externalSubnetUsage, 0, len(projectNetworksForwardsOnUplink)+len(projectNetworksLoadBalancersOnUplink))
@@ -1183,7 +1248,7 @@ func (n *common) getExternalSubnetInUse(ctx context.Context, tx *db.ClusterTx, u
 // loadBalancerValidate validates the load balancer request.
 func (n *common) loadBalancerValidate(listenAddress net.IP, forward *api.NetworkLoadBalancerPut) ([]*loadBalancerPortMap, error) {
 	if listenAddress == nil {
-		return nil, fmt.Errorf("Invalid listen address")
+		return nil, errors.New("Invalid listen address")
 	}
 
 	listenIsIP4 := listenAddress.To4() != nil
@@ -1322,7 +1387,7 @@ func (n *common) loadBalancerValidate(listenAddress net.IP, forward *api.Network
 				return nil, fmt.Errorf("Invalid backend port specification %d in backend specification %d: %w", portSpecID, backendSpecID, err)
 			}
 
-			for i := int64(0); i < portRange; i++ {
+			for i := range portRange {
 				port := portFirst + i
 				target.ports = append(target.ports, uint64(port))
 			}
@@ -1356,7 +1421,7 @@ func (n *common) loadBalancerValidate(listenAddress net.IP, forward *api.Network
 				return nil, fmt.Errorf("Invalid listen port in port specification %d: %w", portSpecID, err)
 			}
 
-			for i := int64(0); i < portRange; i++ {
+			for i := range portRange {
 				port := portFirst + i
 				_, found := listenPorts[portSpec.Protocol][port]
 				if found {
@@ -1509,12 +1574,19 @@ func (n *common) peerUsedBy(peerName string, firstOnly bool) ([]string, error) {
 	var aclNames []string
 
 	err := n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
-		var err error
+		projectName := n.Project()
 
-		// Find ACLs that have rules that reference the peer connection.
-		aclNames, err = tx.GetNetworkACLs(ctx, n.Project())
+		acls, err := dbCluster.GetNetworkACLs(ctx, tx.Tx(), dbCluster.NetworkACLFilter{Project: &projectName})
+		if err != nil {
+			return err
+		}
 
-		return err
+		aclNames = make([]string, len(acls))
+		for i, acl := range acls {
+			aclNames[i] = acl.Name
+		}
+
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -1524,7 +1596,7 @@ func (n *common) peerUsedBy(peerName string, firstOnly bool) ([]string, error) {
 		var aclInfo *api.NetworkACL
 
 		err := n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
-			_, aclInfo, err = tx.GetNetworkACL(ctx, n.Project(), aclName)
+			_, aclInfo, err = dbCluster.GetNetworkACLAPI(ctx, tx.Tx(), n.Project(), aclName)
 
 			return err
 		})

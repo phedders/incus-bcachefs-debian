@@ -41,13 +41,63 @@ func (d *gpuPhysical) validateConfig(instConf instance.ConfigReader) error {
 	}
 
 	optionalFields := []string{
+		// gendoc:generate(entity=devices, group=gpu_physical, key=vendorid)
+		//
+		// ---
+		//  type: string
+		//  required: no
+		//  shortdesc: The vendor ID of the GPU device
 		"vendorid",
+
+		// gendoc:generate(entity=devices, group=gpu_physical, key=productid)
+		//
+		// ---
+		//  type: string
+		//  required: no
+		//  shortdesc: The product ID of the GPU device
 		"productid",
+
+		// gendoc:generate(entity=devices, group=gpu_physical, key=id)
+		//
+		// ---
+		//  type: string
+		//  required: no
+		//  shortdesc: The DRM card ID of the GPU device
 		"id",
+
+		// gendoc:generate(entity=devices, group=gpu_physical, key=pci)
+		//
+		// ---
+		//  type: string
+		//  required: no
+		//  shortdesc: The PCI address of the GPU device
 		"pci",
 	}
 
 	if instConf.Type() == instancetype.Container || instConf.Type() == instancetype.Any {
+		// gendoc:generate(entity=devices, group=gpu_physical, key=uid)
+		//
+		// ---
+		//  type: int
+		//  default: 0
+		//  required: no
+		//  shortdesc: UID of the device owner in the instance (container only)
+
+		// gendoc:generate(entity=devices, group=gpu_physical, key=gid)
+		//
+		// ---
+		//  type: int
+		//  default: 0
+		//  required: no
+		//  shortdesc: GID of the device owner in the instance (container only)
+
+		// gendoc:generate(entity=devices, group=gpu_physical, key=mode)
+		//
+		// ---
+		//  type: int
+		//  default: 0660
+		//  required: no
+		//  shortdesc: Mode of the device in the instance (container only)
 		optionalFields = append(optionalFields, "uid", "gid", "mode")
 	}
 
@@ -80,7 +130,7 @@ func (d *gpuPhysical) validateConfig(instConf instance.ConfigReader) error {
 // validateEnvironment checks the runtime environment for correctness.
 func (d *gpuPhysical) validateEnvironment() error {
 	if d.inst.Type() == instancetype.VM && util.IsTrue(d.inst.ExpandedConfig()["migration.stateful"]) {
-		return fmt.Errorf("GPU devices cannot be used when migration.stateful is enabled")
+		return errors.New("GPU devices cannot be used when migration.stateful is enabled")
 	}
 
 	return validatePCIDevice(d.config["pci"])
@@ -204,7 +254,7 @@ func (d *gpuPhysical) startContainer() (*deviceConfig.RunConfig, error) {
 	}
 
 	if !found {
-		return nil, fmt.Errorf("Failed to detect requested GPU device")
+		return nil, errors.New("Failed to detect requested GPU device")
 	}
 
 	return &runConf, nil
@@ -246,14 +296,14 @@ func (d *gpuPhysical) startVM() (*deviceConfig.RunConfig, error) {
 		}
 
 		if pciAddress != "" {
-			return nil, fmt.Errorf("VMs cannot match multiple GPUs per device")
+			return nil, errors.New("VMs cannot match multiple GPUs per device")
 		}
 
 		pciAddress = gpu.PCIAddress
 	}
 
 	if pciAddress == "" {
-		return nil, fmt.Errorf("Failed to detect requested GPU device")
+		return nil, errors.New("Failed to detect requested GPU device")
 	}
 
 	// Make sure that vfio-pci is loaded.

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -116,6 +117,7 @@ var objectValidators = map[ObjectType]objectValidator{
 	ObjectTypeInstance:           {minIdentifierElements: 1, maxIdentifierElements: 1, requireProject: true},
 	ObjectTypeNetwork:            {minIdentifierElements: 1, maxIdentifierElements: 1, requireProject: true},
 	ObjectTypeNetworkACL:         {minIdentifierElements: 1, maxIdentifierElements: 1, requireProject: true},
+	ObjectTypeNetworkAddressSet:  {minIdentifierElements: 1, maxIdentifierElements: 1, requireProject: true},
 	ObjectTypeNetworkIntegration: {minIdentifierElements: 1, maxIdentifierElements: 1, requireProject: false},
 	ObjectTypeNetworkZone:        {minIdentifierElements: 1, maxIdentifierElements: 1, requireProject: true},
 	ObjectTypeProfile:            {minIdentifierElements: 1, maxIdentifierElements: 1, requireProject: true},
@@ -227,7 +229,7 @@ func ObjectFromRequest(r *http.Request, objectType ObjectType, expandProject fun
 	// If using projects API we want to pass in the mux var, not the query parameter.
 	if objectType == ObjectTypeProject && strings.HasPrefix(r.URL.Path, fmt.Sprintf("/%s/projects", version.APIVersion)) {
 		if len(muxValues) == 0 {
-			return "", fmt.Errorf("Missing project name path variable")
+			return "", errors.New("Missing project name path variable")
 		}
 
 		return ObjectProject(muxValues[0]), nil
@@ -304,6 +306,12 @@ func ObjectNetwork(projectName string, networkName string) Object {
 // ObjectNetworkACL represents a network ACL.
 func ObjectNetworkACL(projectName string, networkACLName string) Object {
 	object, _ := NewObject(ObjectTypeNetworkACL, projectName, networkACLName)
+	return object
+}
+
+// ObjectNetworkAddressSet represents a network address set.
+func ObjectNetworkAddressSet(projectName string, networkAddressSetName string) Object {
+	object, _ := NewObject(ObjectTypeNetworkAddressSet, projectName, networkAddressSetName)
 	return object
 }
 

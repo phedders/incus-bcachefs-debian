@@ -9,7 +9,7 @@ We recommend having at least 2GiB of RAM to allow the build to complete.
 
 ## Kernel requirements
 
-The minimum supported kernel version is 5.4.
+The minimum supported kernel version is 5.15.
 
 Incus requires a kernel with support for:
 
@@ -21,7 +21,7 @@ Incus requires a kernel with support for:
 The following optional features also require extra kernel options:
 
 * Namespaces (`user` and `cgroup`)
-* AppArmor (including Ubuntu patch for mount mediation)
+* AppArmor
 * Control Groups (`blkio`, `cpuset`, `devices`, `memory` and `pids`)
 * CRIU (exact details to be found with CRIU upstream)
 
@@ -34,8 +34,12 @@ Incus requires LXC 5.0.0 or higher with the following build options:
 * `apparmor` (if using Incus' AppArmor support)
 * `seccomp`
 
-To run recent version of various distributions, including Ubuntu, LXCFS
-should also be installed.
+LXCFS is strongly recommended to properly report resource consumption inside the container.
+
+## OCI
+
+To run OCI containers, Incus currently rely on `skopeo`.
+`skopeo` should be available in the user's `PATH`.
 
 ## QEMU
 

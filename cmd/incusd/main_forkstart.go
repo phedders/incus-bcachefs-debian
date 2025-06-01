@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -17,7 +18,7 @@ type cmdForkstart struct {
 	global *cmdGlobal
 }
 
-func (c *cmdForkstart) Command() *cobra.Command {
+func (c *cmdForkstart) command() *cobra.Command {
 	// Main subcommand
 	cmd := &cobra.Command{}
 	cmd.Use = "forkstart <container name> <containers path> <config>"
@@ -28,13 +29,13 @@ func (c *cmdForkstart) Command() *cobra.Command {
   This internal command is used to start the container as a separate
   process.
 `
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 	cmd.Hidden = true
 
 	return cmd
 }
 
-func (c *cmdForkstart) Run(cmd *cobra.Command, args []string) error {
+func (c *cmdForkstart) run(cmd *cobra.Command, args []string) error {
 	// Quick checks.
 	if len(args) != 3 {
 		_ = cmd.Help()
@@ -43,12 +44,12 @@ func (c *cmdForkstart) Run(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		return fmt.Errorf("Missing required arguments")
+		return errors.New("Missing required arguments")
 	}
 
 	// Only root should run this
 	if os.Geteuid() != 0 {
-		return fmt.Errorf("This must be run as root")
+		return errors.New("This must be run as root")
 	}
 
 	name := args[0]
@@ -57,7 +58,7 @@ func (c *cmdForkstart) Run(cmd *cobra.Command, args []string) error {
 
 	err := linux.CloseRange(uint32(os.Stderr.Fd())+1, ^uint32(0), linux.CLOSE_RANGE_CLOEXEC)
 	if err != nil {
-		return fmt.Errorf("Aborting attach to prevent leaking file descriptors into container")
+		return errors.New("Aborting attach to prevent leaking file descriptors into container")
 	}
 
 	d, err := liblxc.NewContainer(name, lxcpath)
@@ -89,6 +90,12 @@ func (c *cmdForkstart) Run(cmd *cobra.Command, args []string) error {
 	if err == nil {
 		_ = unix.Dup3(int(logFile.Fd()), 1, 0)
 		_ = unix.Dup3(int(logFile.Fd()), 2, 0)
+	}
+
+	// Handle application containers.
+	execCmd := d.ConfigItem("lxc.execute.cmd")
+	if len(execCmd) > 0 && execCmd[0] != "" {
+		return d.StartExecute(nil)
 	}
 
 	return d.Start()

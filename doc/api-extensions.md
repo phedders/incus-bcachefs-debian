@@ -2518,11 +2518,30 @@ This exposes the CPU flags/extensions in our resources API to check the CPU feat
 
 This adds support for both `io.bus` and `io.cache` to disks that are backed by a file system.
 
+## `instance_oci`
+
+Adds initial support for running OCI containers.
+
+## `clustering_groups_config`
+
+This introduces a standard key/value `config` option to clustering
+groups which will allow placing some restrictions or configuration on
+those groups.
+
 ## `instances_lxcfs_per_instance`
 
 This introduces a new `instances.lxcfs.per_instance` server
 configuration key to control whether to run LXCFS per instance instead
 of globally on the system.
+
+## `clustering_groups_vm_cpu_definition`
+
+This introduces a few new configuration options to control the virtual machine CPU definitions through cluster group configuration.
+
+The new configuration keys are:
+
+* `instances.vm.cpu.ARCHITECTURE.baseline`
+* `instances.vm.cpu.ARCHITECTURE.flag`
 
 ## `disk_volume_subpath`
 
@@ -2741,3 +2760,64 @@ This introduces a new `io.bus` property for compatible network devices allowing 
 ## `disk_io_bus_usb`
 
 Adds a new `usb` value for `io.bus` on `disk` devices.
+
+## `storage_driver_linstor`
+
+This adds a LINSTOR storage driver.
+
+## `instance_oci_entrypoint`
+
+This introduces a set of new configuration options on the container to configure the OCI entry point:
+
+* `oci.entrypoint`
+* `oci.cwd`
+* `oci.uid`
+* `oci.gid`
+
+Those are initialized at creation time using the values from the OCI image.
+
+## `network_address_set`
+
+This adds the concept of network address sets to API under the API endpoint prefix `/1.0/network-address-sets`.
+
+## `server_logging`
+
+This implements a new set of `logging` configuration keys on the server, allowing for multiple logging targets.
+The former `loki` configuration keys are being transitioned over as part of this.
+
+## `network_forward_snat`
+
+Adds a `snat` configuration option for network forwards which will cause any DNAT to get a matching SNAT applied.
+So new connections from the target will appear as coming from the network forward address.
+
+This is limited to bridged networks as OVN doesn't support flexible enough SNAT for this.
+
+## `memory_hotplug`
+
+This adds memory hotplugging for VMs, allowing them to add memory at runtime without rebooting.
+
+## `instance_nic_routed_host_tables`
+
+This adds support for specifying host-routing tables on `nic` devices that use the routed mode.
+
+## `instance_publish_split`
+
+This adds support for creating a split format image out of an existing instance.
+
+## `init_preseed_certificates`
+
+This API extension provides the ability to configure certificates in preseed init.
+
+## `custom_volume_sftp`
+
+This adds the SFTP API to custom storage volumes.
+
+## `network_ovn_external_nic_address`
+
+This adds support for configuring a custom external IPv4 or IPv6 address
+for a given instance so long as that address is available through a
+network forward.
+
+## `network_physical_gateway_hwaddr`
+
+Allows setting the MAC address of the IPv4 and IPv6 gateways when used with OVN.

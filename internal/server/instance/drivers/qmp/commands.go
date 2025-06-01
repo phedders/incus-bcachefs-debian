@@ -3,6 +3,7 @@ package qmp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -72,6 +73,35 @@ type HotpluggableCPU struct {
 type CPUModel struct {
 	Name  string         `json:"name"`
 	Flags map[string]any `json:"props"`
+}
+
+// MemoryDevice contains information about a memory device.
+type MemoryDevice struct {
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
+}
+
+// PCDimmDevice contains information about a memory device of type pc-dimm.
+type PCDimmDevice struct {
+	ID           string `json:"id"`
+	Addr         uint64 `json:"addr"`
+	Slot         int    `json:"slot"`
+	Node         int    `json:"node"`
+	Memdev       string `json:"memdev"`
+	Hotpluggable bool   `json:"hotpluggable"`
+	Hotplugged   bool   `json:"hotplugged"`
+}
+
+// MemDev contains information about a memory device.
+type MemDev struct {
+	ID        string `json:"id"`
+	Size      int    `json:"size"`
+	Merge     bool   `json:"merge"`
+	Dump      bool   `json:"dump"`
+	Prealloc  bool   `json:"prealloc"`
+	Share     bool   `json:"share"`
+	Reserve   bool   `json:"reserve"`
+	HostNodes []int  `json:"host-nodes"`
 }
 
 // QueryCPUs returns a list of CPUs.
@@ -176,15 +206,12 @@ func (m *Monitor) SendFile(name string, file *os.File) error {
 		return ErrMonitorDisconnect
 	}
 
-	var req struct {
-		Execute   string `json:"execute"`
-		Arguments struct {
-			FDName string `json:"fdname"`
-		} `json:"arguments"`
+	id := m.qmp.qmpIncreaseID()
+	req := &qmpCommand{
+		ID:        id,
+		Execute:   "getfd",
+		Arguments: map[string]any{"fdname": name},
 	}
-
-	req.Execute = "getfd"
-	req.Arguments.FDName = name
 
 	reqJSON, err := json.Marshal(req)
 	if err != nil {
@@ -192,7 +219,7 @@ func (m *Monitor) SendFile(name string, file *os.File) error {
 	}
 
 	// Query the status.
-	_, err = m.qmp.RunWithFile(reqJSON, file)
+	_, err = m.qmp.runWithFile(reqJSON, file, id)
 	if err != nil {
 		// Confirm the daemon didn't die.
 		errPing := m.ping()
@@ -229,27 +256,26 @@ func (m *Monitor) SendFileWithFDSet(name string, file *os.File, readonly bool) (
 		return nil, ErrMonitorDisconnect
 	}
 
-	var req struct {
-		Execute   string `json:"execute"`
-		Arguments struct {
-			Opaque string `json:"opaque"`
-		} `json:"arguments"`
-	}
-
 	permissions := "rdwr"
 	if readonly {
 		permissions = "rdonly"
 	}
 
-	req.Execute = "add-fd"
-	req.Arguments.Opaque = fmt.Sprintf("%s:%s", permissions, name)
+	id := m.qmp.qmpIncreaseID()
+	req := &qmpCommand{
+		ID:      id,
+		Execute: "add-fd",
+		Arguments: map[string]any{
+			"opaque": fmt.Sprintf("%s:%s", permissions, name),
+		},
+	}
 
 	reqJSON, err := json.Marshal(req)
 	if err != nil {
 		return nil, err
 	}
 
-	ret, err := m.qmp.RunWithFile(reqJSON, file)
+	ret, err := m.qmp.runWithFile(reqJSON, file, id)
 	if err != nil {
 		// Confirm the daemon didn't die.
 		errPing := m.ping()
@@ -389,7 +415,7 @@ func (m *Monitor) MigrateWait(state string) error {
 		}
 
 		if resp.Return.Status == "failed" {
-			return fmt.Errorf("Migrate call failed")
+			return errors.New("Migrate call failed")
 		}
 
 		if resp.Return.Status == state {
@@ -458,7 +484,7 @@ func (m *Monitor) MigrateIncoming(ctx context.Context, name string) error {
 		}
 
 		if resp.Return.Status == "failed" {
-			return fmt.Errorf("Migrate incoming call failed")
+			return errors.New("Migrate incoming call failed")
 		}
 
 		if resp.Return.Status == "completed" {
@@ -562,14 +588,79 @@ func (m *Monitor) SetMemoryBalloonSizeBytes(sizeBytes int64) error {
 	return m.Run("balloon", args, nil)
 }
 
+// GetMemdev retrieves memory devices by executing the query-memdev QMP command.
+func (m *Monitor) GetMemdev() ([]MemDev, error) {
+	// Prepare the response.
+	var resp struct {
+		Return []MemDev `json:"return"`
+	}
+
+	err := m.Run("query-memdev", nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.Return, nil
+}
+
+// GetMemoryDevices retrieves memory devices by executing the query-memory-devices QMP command.
+func (m *Monitor) GetMemoryDevices() ([]MemoryDevice, error) {
+	// Prepare the response.
+	var resp struct {
+		Return []MemoryDevice `json:"return"`
+	}
+
+	err := m.Run("query-memory-devices", nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.Return, nil
+}
+
+// GetDimmDevices returns a list of memory devices of type pc-dimm.
+func (m *Monitor) GetDimmDevices() ([]PCDimmDevice, error) {
+	devices, err := m.GetMemoryDevices()
+	if err != nil {
+		return nil, err
+	}
+
+	result := []PCDimmDevice{}
+	for _, dev := range devices {
+		if dev.Type != "dimm" {
+			continue
+		}
+
+		var dimmData PCDimmDevice
+		err := json.Unmarshal(dev.Data, &dimmData)
+		if err != nil {
+			continue
+		}
+
+		result = append(result, dimmData)
+	}
+
+	return result, nil
+}
+
+// AddObject adds a new object.
+func (m *Monitor) AddObject(args map[string]any) error {
+	err := m.Run("object-add", &args, nil)
+	if err != nil {
+		return fmt.Errorf("Failed adding object: %w", err)
+	}
+
+	return nil
+}
+
 // AddBlockDevice adds a block device.
 func (m *Monitor) AddBlockDevice(blockDev map[string]any, device map[string]any) error {
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	nodeName, ok := blockDev["node-name"].(string)
 	if !ok {
-		return fmt.Errorf("Device node name must be a string")
+		return errors.New("Device node name must be a string")
 	}
 
 	if blockDev != nil {
@@ -578,7 +669,7 @@ func (m *Monitor) AddBlockDevice(blockDev map[string]any, device map[string]any)
 			return fmt.Errorf("Failed adding block device: %w", err)
 		}
 
-		revert.Add(func() {
+		reverter.Add(func() {
 			_ = m.RemoveBlockDevice(nodeName)
 		})
 	}
@@ -588,7 +679,8 @@ func (m *Monitor) AddBlockDevice(blockDev map[string]any, device map[string]any)
 		return fmt.Errorf("Failed adding device: %w", err)
 	}
 
-	revert.Success()
+	reverter.Success()
+
 	return nil
 }
 
@@ -602,7 +694,7 @@ func (m *Monitor) RemoveBlockDevice(blockDevName string) error {
 		err := m.Run("blockdev-del", blockDevName, nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "is in use") {
-				return api.StatusErrorf(http.StatusLocked, err.Error())
+				return api.StatusErrorf(http.StatusLocked, "%s", err.Error())
 			}
 
 			if strings.Contains(err.Error(), "Failed to find") {
@@ -682,8 +774,8 @@ func (m *Monitor) RemoveDevice(deviceID string) error {
 
 // AddNIC adds a NIC device.
 func (m *Monitor) AddNIC(netDev map[string]any, device map[string]any) error {
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	if netDev != nil {
 		err := m.Run("netdev_add", netDev, nil)
@@ -691,7 +783,7 @@ func (m *Monitor) AddNIC(netDev map[string]any, device map[string]any) error {
 			return fmt.Errorf("Failed adding NIC netdev: %w", err)
 		}
 
-		revert.Add(func() {
+		reverter.Add(func() {
 			netDevDel := map[string]any{
 				"id": netDev["id"],
 			}
@@ -708,7 +800,8 @@ func (m *Monitor) AddNIC(netDev map[string]any, device map[string]any) error {
 		return fmt.Errorf("Failed adding NIC device: %w", err)
 	}
 
-	revert.Success()
+	reverter.Success()
+
 	return nil
 }
 
@@ -994,7 +1087,7 @@ func (m *Monitor) blockJobWaitReady(jobID string) error {
 		}
 
 		if !found {
-			return fmt.Errorf("Specified block job not found")
+			return errors.New("Specified block job not found")
 		}
 
 		time.Sleep(1 * time.Second)
@@ -1191,7 +1284,7 @@ func (m *Monitor) RingbufRead(device string) (string, error) {
 		return "", err
 	}
 
-	deviceFound := true
+	deviceFound := false
 	for _, qemuDevice := range queryResp.Return {
 		if qemuDevice.Label == device {
 			deviceFound = true
@@ -1203,6 +1296,7 @@ func (m *Monitor) RingbufRead(device string) (string, error) {
 			break
 		}
 	}
+
 	if !deviceFound {
 		return "", fmt.Errorf("Specified qemu device %q doesn't exist", device)
 	}

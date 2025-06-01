@@ -2,6 +2,7 @@ package validate
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -13,9 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adhocore/gronx"
 	"github.com/google/uuid"
 	"github.com/kballard/go-shellquote"
-	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v2"
 
 	"github.com/lxc/incus/v6/shared/osarch"
@@ -104,15 +105,15 @@ func IsUint32Range(value string) error {
 }
 
 // IsInRange checks whether an integer is within a specific range.
-func IsInRange(min int64, max int64) func(value string) error {
+func IsInRange(minValue int64, maxValue int64) func(value string) error {
 	return func(value string) error {
 		valueInt, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
 			return fmt.Errorf("Invalid value for an integer %q", value)
 		}
 
-		if valueInt < min || valueInt > max {
-			return fmt.Errorf("Value isn't within valid range. Must be between %d and %d", min, max)
+		if valueInt < minValue || valueInt > maxValue {
+			return fmt.Errorf("Value isn't within valid range. Must be between %d and %d", minValue, maxValue)
 		}
 
 		return nil
@@ -154,7 +155,7 @@ func IsOneOf(valid ...string) func(value string) error {
 }
 
 // IsAny accepts all strings as valid.
-func IsAny(value string) error {
+func IsAny(_ string) error {
 	return nil
 }
 
@@ -177,7 +178,7 @@ func IsListOf(validator func(value string) error) func(value string) error {
 // IsNotEmpty requires a non-empty string.
 func IsNotEmpty(value string) error {
 	if value == "" {
-		return fmt.Errorf("Required value")
+		return errors.New("Required value")
 	}
 
 	return nil
@@ -197,7 +198,7 @@ func IsSize(value string) error {
 func IsDeviceID(value string) error {
 	match, _ := regexp.MatchString(`^[0-9a-f]{4}$`, value)
 	if !match {
-		return fmt.Errorf("Invalid value, must be four lower case hex characters")
+		return errors.New("Invalid value, must be four lower case hex characters")
 	}
 
 	return nil
@@ -207,17 +208,17 @@ func IsDeviceID(value string) error {
 func IsInterfaceName(value string) error {
 	// Validate the length.
 	if len(value) < 2 {
-		return fmt.Errorf("Network interface is too short (minimum 2 characters)")
+		return errors.New("Network interface is too short (minimum 2 characters)")
 	}
 
 	if len(value) > 15 {
-		return fmt.Errorf("Network interface is too long (maximum 15 characters)")
+		return errors.New("Network interface is too long (maximum 15 characters)")
 	}
 
 	// Validate the character set.
 	match, _ := regexp.MatchString(`^[-_a-zA-Z0-9.]+$`, value)
 	if !match {
-		return fmt.Errorf("Network interface contains invalid characters")
+		return errors.New("Network interface contains invalid characters")
 	}
 
 	return nil
@@ -248,7 +249,7 @@ func IsNetworkMAC(value string) error {
 
 	// Check is valid Ethernet MAC length and delimiter.
 	if err != nil || len(value) != 17 || strings.ContainsAny(value, "-.") {
-		return fmt.Errorf("Invalid MAC address, must be 6 bytes of hex separated by colons")
+		return errors.New("Invalid MAC address, must be 6 bytes of hex separated by colons")
 	}
 
 	return nil
@@ -292,7 +293,7 @@ func IsNetworkAddressCIDR(value string) error {
 func IsNetworkRange(value string) error {
 	ips := strings.SplitN(value, "-", 2)
 	if len(ips) != 2 {
-		return fmt.Errorf("IP range must contain start and end IP addresses")
+		return errors.New("IP range must contain start and end IP addresses")
 	}
 
 	startIP := net.ParseIP(ips[0])
@@ -306,11 +307,11 @@ func IsNetworkRange(value string) error {
 	}
 
 	if (startIP.To4() != nil) != (endIP.To4() != nil) {
-		return fmt.Errorf("Start and end IP addresses are not in same family")
+		return errors.New("Start and end IP addresses are not in same family")
 	}
 
 	if bytes.Compare(startIP, endIP) > 0 {
-		return fmt.Errorf("Start IP address must be before or equal to end IP address")
+		return errors.New("Start IP address must be before or equal to end IP address")
 	}
 
 	return nil
@@ -366,7 +367,7 @@ func IsNetworkAddressCIDRV4(value string) error {
 func IsNetworkRangeV4(value string) error {
 	ips := strings.SplitN(value, "-", 2)
 	if len(ips) != 2 {
-		return fmt.Errorf("IP range must contain start and end IP addresses")
+		return errors.New("IP range must contain start and end IP addresses")
 	}
 
 	for _, ip := range ips {
@@ -429,7 +430,7 @@ func IsNetworkAddressCIDRV6(value string) error {
 func IsNetworkRangeV6(value string) error {
 	ips := strings.SplitN(value, "-", 2)
 	if len(ips) != 2 {
-		return fmt.Errorf("IP range must contain start and end IP addresses")
+		return errors.New("IP range must contain start and end IP addresses")
 	}
 
 	for _, ip := range ips {
@@ -491,7 +492,7 @@ func IsNetworkPortRange(value string) error {
 	ports := strings.SplitN(value, "-", 2)
 	portsLen := len(ports)
 	if portsLen != 1 && portsLen != 2 {
-		return fmt.Errorf("Port range must contain either a single port or start and end port numbers")
+		return errors.New("Port range must contain either a single port or start and end port numbers")
 	}
 
 	startPort, err := strconv.ParseUint(ports[0], 10, 32)
@@ -552,7 +553,7 @@ func IsURLSegmentSafe(value string) error {
 func IsUUID(value string) error {
 	_, err := uuid.Parse(value)
 	if err != nil {
-		return fmt.Errorf("Invalid UUID")
+		return errors.New("Invalid UUID")
 	}
 
 	return nil
@@ -562,7 +563,7 @@ func IsUUID(value string) error {
 func IsPCIAddress(value string) error {
 	match, _ := regexp.MatchString(`^(?:[0-9a-fA-F]{4}:)?[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F]$`, value)
 	if !match {
-		return fmt.Errorf("Invalid PCI address")
+		return errors.New("Invalid PCI address")
 	}
 
 	return nil
@@ -599,22 +600,15 @@ func IsCron(aliases []string) func(value string) error {
 	return func(value string) error {
 		isValid := func(value string) error {
 			// Accept valid aliases.
-			for _, alias := range aliases {
-				if alias == value {
-					return nil
-				}
+			if slices.Contains(aliases, value) {
+				return nil
 			}
 
-			if len(strings.Split(value, " ")) != 5 {
-				return fmt.Errorf("Schedule must be of the form: <minute> <hour> <day-of-month> <month> <day-of-week>")
+			if gronx.IsValid(value) {
+				return nil
 			}
 
-			_, err := cron.ParseStandard(value)
-			if err != nil {
-				return fmt.Errorf("Error parsing schedule: %w", err)
-			}
-
-			return nil
+			return fmt.Errorf("Error parsing cron expr: %s", value)
 		}
 
 		// Can be comma+space separated (just commas are valid cron pattern).
@@ -638,7 +632,7 @@ func IsListenAddress(allowDNS bool, allowWildcard bool, requirePort bool) func(v
 		host, _, err := net.SplitHostPort(value)
 		if err != nil {
 			if requirePort {
-				return fmt.Errorf("A port is required as part of the address")
+				return errors.New("A port is required as part of the address")
 			}
 
 			host = value
@@ -647,7 +641,7 @@ func IsListenAddress(allowDNS bool, allowWildcard bool, requirePort bool) func(v
 		// Validate wildcard.
 		if slices.Contains([]string{"", "::", "[::]", "0.0.0.0"}, host) {
 			if !allowWildcard {
-				return fmt.Errorf("Wildcard addresses aren't allowed")
+				return errors.New("Wildcard addresses aren't allowed")
 			}
 
 			return nil
@@ -660,7 +654,7 @@ func IsListenAddress(allowDNS bool, allowWildcard bool, requirePort bool) func(v
 		}
 
 		if !allowDNS {
-			return fmt.Errorf("DNS names not allowed in address")
+			return errors.New("DNS names not allowed in address")
 		}
 
 		_, err = net.LookupHost(host)
@@ -675,7 +669,7 @@ func IsListenAddress(allowDNS bool, allowWildcard bool, requirePort bool) func(v
 // IsAbsFilePath checks if value is an absolute file path.
 func IsAbsFilePath(value string) error {
 	if !filepath.IsAbs(value) {
-		return fmt.Errorf("Must be absolute file path")
+		return errors.New("Must be absolute file path")
 	}
 
 	return nil
@@ -724,22 +718,22 @@ func ParseNetworkVLANRange(vlan string) (int, int, error) {
 func IsHostname(name string) error {
 	// Validate length
 	if len(name) < 1 || len(name) > 63 {
-		return fmt.Errorf("Name must be 1-63 characters long")
+		return errors.New("Name must be 1-63 characters long")
 	}
 
 	// Validate first character
 	if strings.HasPrefix(name, "-") {
-		return fmt.Errorf(`Name must not start with "-" character`)
+		return errors.New(`Name must not start with "-" character`)
 	}
 
 	// Validate last character
 	if strings.HasSuffix(name, "-") {
-		return fmt.Errorf(`Name must not end with "-" character`)
+		return errors.New(`Name must not end with "-" character`)
 	}
 
 	_, err := strconv.ParseUint(name, 10, 64)
 	if err == nil {
-		return fmt.Errorf("Name cannot be a number")
+		return errors.New("Name cannot be a number")
 	}
 
 	match, err := regexp.MatchString(`^[\-a-zA-Z0-9]+$`, name)
@@ -748,7 +742,7 @@ func IsHostname(name string) error {
 	}
 
 	if !match {
-		return fmt.Errorf("Name can only contain alphanumeric and hyphen characters")
+		return errors.New("Name can only contain alphanumeric and hyphen characters")
 	}
 
 	return nil
@@ -758,11 +752,11 @@ func IsHostname(name string) error {
 // forward slash, hyphen, colon, underscore and full stop characters.
 func IsDeviceName(name string) error {
 	if len(name) < 1 || len(name) > 63 {
-		return fmt.Errorf("Name must be 1-63 characters long")
+		return errors.New("Name must be 1-63 characters long")
 	}
 
 	if string(name[0]) == "." {
-		return fmt.Errorf(`Name must not start with "." character`)
+		return errors.New(`Name must not start with "." character`)
 	}
 
 	match, err := regexp.MatchString(`^[\/\.\-:_a-zA-Z0-9]+$`, name)
@@ -771,7 +765,7 @@ func IsDeviceName(name string) error {
 	}
 
 	if !match {
-		return fmt.Errorf("Name can only contain alphanumeric, forward slash, hyphen, colon, underscore and full stop characters")
+		return errors.New("Name can only contain alphanumeric, forward slash, hyphen, colon, underscore and full stop characters")
 	}
 
 	return nil
@@ -780,7 +774,7 @@ func IsDeviceName(name string) error {
 // IsRequestURL checks value is a valid HTTP/HTTPS request URL.
 func IsRequestURL(value string) error {
 	if value == "" {
-		return fmt.Errorf("Empty URL")
+		return errors.New("Empty URL")
 	}
 
 	_, err := url.ParseRequestURI(value)
@@ -825,7 +819,7 @@ func IsValidCPUSet(value string) error {
 	// Validate the CPU set syntax.
 	match, _ := regexp.MatchString(`^(?:[0-9]+(?:[,-][0-9]+)?)(?:,[0-9]+(?:[,-][0-9]+)*)?$`, value)
 	if !match {
-		return fmt.Errorf("Invalid CPU limit syntax")
+		return errors.New("Invalid CPU limit syntax")
 	}
 
 	// Validate single values.
@@ -877,7 +871,7 @@ func IsValidCPUSet(value string) error {
 	for i := range cpus {
 		// The CPU was specified more than once, e.g. 1-3,3.
 		if cpus[i] > 1 {
-			return fmt.Errorf("Cannot define CPU multiple times")
+			return errors.New("Cannot define CPU multiple times")
 		}
 	}
 
@@ -900,7 +894,7 @@ func IsMinimumDuration(minimum time.Duration) func(value string) error {
 	return func(value string) error {
 		duration, err := time.ParseDuration(value)
 		if err != nil {
-			return fmt.Errorf("Invalid duration")
+			return errors.New("Invalid duration")
 		}
 
 		if duration < minimum {

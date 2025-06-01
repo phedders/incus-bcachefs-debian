@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -38,12 +39,12 @@ type FGA struct {
 
 func (f *FGA) configure(opts Opts) error {
 	if opts.config == nil {
-		return fmt.Errorf("Missing OpenFGA config")
+		return errors.New("Missing OpenFGA config")
 	}
 
 	val, ok := opts.config["openfga.api.token"]
 	if !ok || val == nil {
-		return fmt.Errorf("Missing OpenFGA API token")
+		return errors.New("Missing OpenFGA API token")
 	}
 
 	f.apiToken, ok = val.(string)
@@ -53,7 +54,7 @@ func (f *FGA) configure(opts Opts) error {
 
 	val, ok = opts.config["openfga.api.url"]
 	if !ok || val == nil {
-		return fmt.Errorf("Missing OpenFGA API URL")
+		return errors.New("Missing OpenFGA API URL")
 	}
 
 	f.apiURL, ok = val.(string)
@@ -63,7 +64,7 @@ func (f *FGA) configure(opts Opts) error {
 
 	val, ok = opts.config["openfga.store.id"]
 	if !ok || val == nil {
-		return fmt.Errorf("Missing OpenFGA store ID")
+		return errors.New("Missing OpenFGA store ID")
 	}
 
 	f.storeID, ok = val.(string)
@@ -766,7 +767,54 @@ func (f *FGA) RenameNetworkACL(ctx context.Context, projectName string, oldNetwo
 	return f.updateTuples(ctx, writes, deletions)
 }
 
-// AddProfile adds a profile in the authorizer.
+// AddNetworkAddressSet adds a network address set to the authorization model.
+func (f *FGA) AddNetworkAddressSet(ctx context.Context, projectName string, networkAddressSetName string) error {
+	writes := []client.ClientTupleKey{
+		{
+			User:     ObjectProject(projectName).String(),
+			Relation: relationProject,
+			Object:   ObjectNetworkAddressSet(projectName, networkAddressSetName).String(),
+		},
+	}
+
+	return f.updateTuples(ctx, writes, nil)
+}
+
+// DeleteNetworkAddressSet removes a network address set from the authorization model.
+func (f *FGA) DeleteNetworkAddressSet(ctx context.Context, projectName string, networkAddressSetName string) error {
+	deletions := []client.ClientTupleKeyWithoutCondition{
+		{
+			User:     ObjectProject(projectName).String(),
+			Relation: relationProject,
+			Object:   ObjectNetworkAddressSet(projectName, networkAddressSetName).String(),
+		},
+	}
+
+	return f.updateTuples(ctx, nil, deletions)
+}
+
+// RenameNetworkAddressSet renames an existing network address set in the authorization model.
+func (f *FGA) RenameNetworkAddressSet(ctx context.Context, projectName string, oldNetworkAddressSetName string, newNetworkAddressSetName string) error {
+	writes := []client.ClientTupleKey{
+		{
+			User:     ObjectProject(projectName).String(),
+			Relation: relationProject,
+			Object:   ObjectNetworkAddressSet(projectName, newNetworkAddressSetName).String(),
+		},
+	}
+
+	deletions := []client.ClientTupleKeyWithoutCondition{
+		{
+			User:     ObjectProject(projectName).String(),
+			Relation: relationProject,
+			Object:   ObjectNetworkAddressSet(projectName, oldNetworkAddressSetName).String(),
+		},
+	}
+
+	return f.updateTuples(ctx, writes, deletions)
+}
+
+// AddProfile is a no-op.
 func (f *FGA) AddProfile(ctx context.Context, projectName string, profileName string) error {
 	writes := []client.ClientTupleKey{
 		{
@@ -956,6 +1004,7 @@ func (f *FGA) projectObjects(ctx context.Context, projectName string) ([]string,
 		ObjectTypeImageAlias,
 		ObjectTypeNetwork,
 		ObjectTypeNetworkACL,
+		ObjectTypeNetworkAddressSet,
 		ObjectTypeNetworkZone,
 		ObjectTypeProfile,
 		ObjectTypeStorageVolume,
@@ -1114,6 +1163,7 @@ func (f *FGA) syncResources(ctx context.Context, resources Resources) error {
 	localProjectObjects = append(localProjectObjects, resources.NetworkObjects...)
 	localProjectObjects = append(localProjectObjects, resources.NetworkZoneObjects...)
 	localProjectObjects = append(localProjectObjects, resources.NetworkACLObjects...)
+	localProjectObjects = append(localProjectObjects, resources.NetworkAddressSetObjects...)
 	localProjectObjects = append(localProjectObjects, resources.ProfileObjects...)
 	localProjectObjects = append(localProjectObjects, resources.StoragePoolVolumeObjects...)
 	localProjectObjects = append(localProjectObjects, resources.StorageBucketObjects...)
@@ -1145,11 +1195,13 @@ func (f *FGA) GetInstanceAccess(ctx context.Context, projectName string, instanc
 			UserFilters: userFilters,
 		}).Execute()
 		if err != nil {
-			fgaAPIErr, ok := err.(openfga.FgaApiValidationError)
+			var fgaAPIErr openfga.FgaApiValidationError
+			ok := errors.As(err, &fgaAPIErr)
 			if !ok || fgaAPIErr.ResponseCode() != openfga.ERRORCODE_RELATION_NOT_FOUND {
-				fgaNotFoundErr, ok := err.(openfga.FgaApiNotFoundError)
+				var fgaNotFoundErr openfga.FgaApiNotFoundError
+				ok := errors.As(err, &fgaNotFoundErr)
 				if ok && fgaNotFoundErr.ResponseCode() == openfga.NOTFOUNDERRORCODE_UNDEFINED_ENDPOINT {
-					return nil, fmt.Errorf("OpenFGA server doesn't support listing users")
+					return nil, errors.New("OpenFGA server doesn't support listing users")
 				}
 
 				return nil, fmt.Errorf("Failed to list objects with relation %q: %w: %T", relation, err, err)
@@ -1199,11 +1251,13 @@ func (f *FGA) GetProjectAccess(ctx context.Context, projectName string) (*api.Ac
 			UserFilters: userFilters,
 		}).Execute()
 		if err != nil {
-			fgaAPIErr, ok := err.(openfga.FgaApiValidationError)
+			var fgaAPIErr openfga.FgaApiValidationError
+			ok := errors.As(err, &fgaAPIErr)
 			if !ok || fgaAPIErr.ResponseCode() != openfga.ERRORCODE_RELATION_NOT_FOUND {
-				fgaNotFoundErr, ok := err.(openfga.FgaApiNotFoundError)
+				var fgaNotFoundErr openfga.FgaApiNotFoundError
+				ok := errors.As(err, &fgaNotFoundErr)
 				if ok && fgaNotFoundErr.ResponseCode() == openfga.NOTFOUNDERRORCODE_UNDEFINED_ENDPOINT {
-					return nil, fmt.Errorf("OpenFGA server doesn't support listing users")
+					return nil, errors.New("OpenFGA server doesn't support listing users")
 				}
 
 				return nil, fmt.Errorf("Failed to list objects with relation %q: %w: %T", relation, err, err)

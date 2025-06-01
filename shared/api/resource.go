@@ -567,7 +567,7 @@ type ResourcesNetworkCardSRIOV struct {
 	VFs []ResourcesNetworkCard `json:"vfs" yaml:"vfs"`
 }
 
-// ResourceNetworkCardVDPA represents the VDPA configuration of the network card
+// ResourcesNetworkCardVDPA represents the VDPA configuration of the network card
 //
 // swagger:model
 //
@@ -784,7 +784,7 @@ type ResourcesStoragePool struct {
 	// Disk space usage
 	Space ResourcesStoragePoolSpace `json:"space,omitempty" yaml:"space,omitempty"`
 
-	// DIsk inode usage
+	// Disk inode usage
 	Inodes ResourcesStoragePoolInodes `json:"inodes,omitempty" yaml:"inodes,omitempty"`
 }
 

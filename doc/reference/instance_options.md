@@ -14,6 +14,7 @@ The following options are available:
 - {ref}`instance-options-limits`
 - {ref}`instance-options-migration`
 - {ref}`instance-options-nvidia`
+- {ref}`instance-options-oci`
 - {ref}`instance-options-raw`
 - {ref}`instance-options-security`
 - {ref}`instance-options-snapshots`
@@ -88,6 +89,21 @@ The following instance options specify resource limits for the instance:
 You can set kernel limits on an instance, for example, you can limit the number of open files.
 See {ref}`instance-options-limits-kernel` for more information.
 ```
+
+### Memory limits in virtual machines
+Incus supports both increasing and decreasing the memory allocation of virtual machines.
+
+Increasing the memory is done through memory hot plug, effectively adding virtual memory sticks to the VM.
+There is a limit of 16 virtual slots for this, limiting the number of memory increases that can be done without rebooting the VM.
+
+Decreasing memory is not done through hot remove as that has a high risk of causing guest issues.
+Instead the memory balloon device is used, causing memory pressure inside the guest and causing memory to be released.
+
+This is a pretty slow process, so it is common for a memory reduction to fail to meet the requested value.
+When that happens, re-applying the lower value will trigger another attempt.
+
+As each attempt will cause the effective memory available to the guest to be reduced,
+it should eventually succeed and lead to the guest having the desired memory limit applied.
 
 ### CPU limits
 
@@ -220,6 +236,17 @@ The following instance options specify the NVIDIA and CUDA configuration of the 
 ```{include} ../config_options.txt
     :start-after: <!-- config group instance-nvidia start -->
     :end-before: <!-- config group instance-nvidia end -->
+```
+
+(instance-options-oci)=
+## OCI configuration
+
+The following instance options specify the OCI configuration of the instance:
+
+% Include content from [../config_options.txt](../config_options.txt)
+```{include} ../config_options.txt
+    :start-after: <!-- config group instance-oci start -->
+    :end-before: <!-- config group instance-oci end -->
 ```
 
 (instance-options-raw)=

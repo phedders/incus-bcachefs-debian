@@ -2,13 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kballard/go-shellquote"
+	ociSpecs "github.com/opencontainers/runtime-spec/specs-go"
 
 	internalInstance "github.com/lxc/incus/v6/internal/instance"
 	"github.com/lxc/incus/v6/internal/server/cluster"
@@ -34,8 +39,8 @@ import (
 
 // instanceCreateAsEmpty creates an empty instance.
 func instanceCreateAsEmpty(s *state.State, args db.InstanceArgs, op *operations.Operation) (instance.Instance, error) {
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	// Create the instance record.
 	inst, instOp, cleanup, err := instance.CreateInternal(s, args, op, true, true)
@@ -43,7 +48,7 @@ func instanceCreateAsEmpty(s *state.State, args db.InstanceArgs, op *operations.
 		return nil, fmt.Errorf("Failed creating instance record: %w", err)
 	}
 
-	revert.Add(cleanup)
+	reverter.Add(cleanup)
 	defer instOp.Done(err)
 
 	pool, err := storagePools.LoadByInstance(s, inst)
@@ -56,14 +61,14 @@ func instanceCreateAsEmpty(s *state.State, args db.InstanceArgs, op *operations.
 		return nil, fmt.Errorf("Failed creating instance: %w", err)
 	}
 
-	revert.Add(func() { _ = inst.Delete(true) })
+	reverter.Add(func() { _ = inst.Delete(true) })
 
 	err = inst.UpdateBackupFile()
 	if err != nil {
 		return nil, err
 	}
 
-	revert.Success()
+	reverter.Success()
 	return inst, nil
 }
 
@@ -85,7 +90,7 @@ func instanceImageTransfer(s *state.State, r *http.Request, projectName string, 
 	return nil
 }
 
-func ensureImageIsLocallyAvailable(ctx context.Context, s *state.State, r *http.Request, img *api.Image, projectName string, instanceType instancetype.Type) error {
+func ensureImageIsLocallyAvailable(ctx context.Context, s *state.State, r *http.Request, img *api.Image, projectName string) error {
 	// Check if the image is available locally or it's on another member.
 	// Ensure we are the only ones operating on this image. Otherwise another instance created at the same
 	// time may also arrive at the conclusion that the image doesn't exist on this cluster member and then
@@ -129,9 +134,9 @@ func ensureImageIsLocallyAvailable(ctx context.Context, s *state.State, r *http.
 }
 
 // instanceCreateFromImage creates an instance from a rootfs image.
-func instanceCreateFromImage(ctx context.Context, s *state.State, r *http.Request, img *api.Image, args db.InstanceArgs, op *operations.Operation) error {
-	revert := revert.New()
-	defer revert.Fail()
+func instanceCreateFromImage(ctx context.Context, s *state.State, img *api.Image, args db.InstanceArgs, op *operations.Operation) error {
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	// Validate the type of the image matches the type of the instance.
 	imgType, err := instancetype.New(img.Type)
@@ -159,7 +164,7 @@ func instanceCreateFromImage(ctx context.Context, s *state.State, r *http.Reques
 		return fmt.Errorf("Failed creating instance record: %w", err)
 	}
 
-	revert.Add(cleanup)
+	reverter.Add(cleanup)
 	defer instOp.Done(nil)
 
 	err = s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
@@ -193,14 +198,83 @@ func instanceCreateFromImage(ctx context.Context, s *state.State, r *http.Reques
 		return fmt.Errorf("Failed creating instance from image: %w", err)
 	}
 
-	revert.Add(func() { _ = inst.Delete(true) })
+	reverter.Add(func() { _ = inst.Delete(true) })
+
+	// If dealing with an OCI image, parse the configuration.
+	if args.Type == instancetype.Container && inst.LocalConfig()["image.type"] == "oci" {
+		// Reset the config to the post-generation one.
+		args.Config = inst.LocalConfig()
+
+		// Mount the instance.
+		_, err = pool.MountInstance(inst, nil)
+		if err != nil {
+			return err
+		}
+
+		// Parse the OCI config.
+		data, err := os.ReadFile(filepath.Join(inst.Path(), "config.json"))
+		if err != nil {
+			return err
+		}
+
+		var config ociSpecs.Spec
+		err = json.Unmarshal([]byte(data), &config)
+		if err != nil {
+			return err
+		}
+
+		// Unmount the instance.
+		err = pool.UnmountInstance(inst, nil)
+		if err != nil {
+			return err
+		}
+
+		// Update the config for the environment variables.
+		args.Config["volatile.container.oci"] = "true"
+		for _, env := range config.Process.Env {
+			fields := strings.SplitN(env, "=", 2)
+			if len(fields) != 2 {
+				return fmt.Errorf("Bad OCI environment variable: %s", env)
+			}
+
+			key := fmt.Sprintf("environment.%s", fields[0])
+			value := fields[1]
+
+			_, ok := args.Config[key]
+			if !ok {
+				args.Config[key] = value
+			}
+		}
+
+		// Set the entrypoint configuration options.
+		if len(config.Process.Args) > 0 && args.Config["oci.entrypoint"] == "" {
+			args.Config["oci.entrypoint"] = shellquote.Join(config.Process.Args...)
+		}
+
+		if config.Process.Cwd != "" && args.Config["oci.cwd"] == "" {
+			args.Config["oci.cwd"] = config.Process.Cwd
+		}
+
+		if args.Config["oci.uid"] == "" {
+			args.Config["oci.uid"] = fmt.Sprintf("%d", config.Process.User.UID)
+		}
+
+		if args.Config["oci.gid"] == "" {
+			args.Config["oci.gid"] = fmt.Sprintf("%d", config.Process.User.GID)
+		}
+
+		err = inst.Update(args, false)
+		if err != nil {
+			return err
+		}
+	}
 
 	err = inst.UpdateBackupFile()
 	if err != nil {
 		return err
 	}
 
-	revert.Success()
+	reverter.Success()
 	return nil
 }
 
@@ -215,7 +289,7 @@ func instanceRebuildFromImage(ctx context.Context, s *state.State, r *http.Reque
 		return fmt.Errorf("Requested image's type %q doesn't match instance type %q", imgType, inst.Type())
 	}
 
-	err = ensureImageIsLocallyAvailable(ctx, s, r, img, inst.Project().Name, inst.Type())
+	err = ensureImageIsLocallyAvailable(ctx, s, r, img, inst.Project().Name)
 	if err != nil {
 		return err
 	}
@@ -228,7 +302,7 @@ func instanceRebuildFromImage(ctx context.Context, s *state.State, r *http.Reque
 	return nil
 }
 
-func instanceRebuildFromEmpty(s *state.State, inst instance.Instance, op *operations.Operation) error {
+func instanceRebuildFromEmpty(inst instance.Instance, op *operations.Operation) error {
 	err := inst.Rebuild(nil, op) // Rebuild as empty.
 	if err != nil {
 		return fmt.Errorf("Failed rebuilding as an empty instance: %w", err)
@@ -255,8 +329,8 @@ func instanceCreateAsCopy(s *state.State, opts instanceCreateAsCopyOpts, op *ope
 	var err error
 	var cleanup revert.Hook
 
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	if opts.refresh {
 		// Load the target instance.
@@ -274,7 +348,7 @@ func instanceCreateAsCopy(s *state.State, opts instanceCreateAsCopyOpts, op *ope
 			return nil, fmt.Errorf("Failed creating instance record: %w", err)
 		}
 
-		revert.Add(cleanup)
+		reverter.Add(cleanup)
 	} else {
 		instOp, err = inst.LockExclusive()
 		if err != nil {
@@ -409,7 +483,7 @@ func instanceCreateAsCopy(s *state.State, opts instanceCreateAsCopyOpts, op *ope
 				return nil, fmt.Errorf("Failed creating instance snapshot record %q: %w", newSnapName, err)
 			}
 
-			revert.Add(cleanup)
+			reverter.Add(cleanup)
 			defer snapInstOp.Done(err)
 		}
 	}
@@ -431,7 +505,7 @@ func instanceCreateAsCopy(s *state.State, opts instanceCreateAsCopyOpts, op *ope
 			return nil, fmt.Errorf("Create instance from copy: %w", err)
 		}
 
-		revert.Add(func() { _ = inst.Delete(true) })
+		reverter.Add(func() { _ = inst.Delete(true) })
 
 		if opts.applyTemplateTrigger {
 			// Trigger the templates on next start.
@@ -447,16 +521,16 @@ func instanceCreateAsCopy(s *state.State, opts instanceCreateAsCopyOpts, op *ope
 		return nil, err
 	}
 
-	revert.Success()
+	reverter.Success()
 	return inst, nil
 }
 
 // Load all instances of this nodes under the given project.
-func instanceLoadNodeProjectAll(ctx context.Context, s *state.State, project string, instanceType instancetype.Type) ([]instance.Instance, error) {
+func instanceLoadNodeProjectAll(ctx context.Context, s *state.State, projectName string) ([]instance.Instance, error) {
 	var err error
 	var instances []instance.Instance
 
-	filter := dbCluster.InstanceFilter{Type: instanceType.Filter(), Project: &project}
+	filter := dbCluster.InstanceFilter{Project: &projectName}
 	if s.ServerName != "" {
 		filter.Node = &s.ServerName
 	}
@@ -514,7 +588,7 @@ func autoCreateInstanceSnapshots(ctx context.Context, s *state.State, instances 
 
 var instSnapshotsPruneRunning = sync.Map{}
 
-func pruneExpiredInstanceSnapshots(ctx context.Context, s *state.State, snapshots []instance.Instance) error {
+func pruneExpiredInstanceSnapshots(ctx context.Context, snapshots []instance.Instance) error {
 	// Find snapshots to delete
 	for _, snapshot := range snapshots {
 		err := ctx.Err()
@@ -554,7 +628,7 @@ func pruneExpiredAndAutoCreateInstanceSnapshotsTask(d *Daemon) (task.Func, task.
 
 			if len(expiredSnaps) > 0 {
 				expiredSnapshots := make([]dbCluster.Instance, 0, len(expiredSnaps))
-				parents := make(map[string]*dbCluster.Instance, 0)
+				parents := make(map[string]*dbCluster.Instance)
 
 				// Enrich expired snapshot list with info from parent (opportunistically loading
 				// the parent info from the DB if not already loaded).
@@ -662,7 +736,7 @@ func pruneExpiredAndAutoCreateInstanceSnapshotsTask(d *Daemon) (task.Func, task.
 		// disk space.
 		if len(expiredSnapshotInstances) > 0 {
 			opRun := func(op *operations.Operation) error {
-				return pruneExpiredInstanceSnapshots(ctx, s, expiredSnapshotInstances)
+				return pruneExpiredInstanceSnapshots(ctx, expiredSnapshotInstances)
 			}
 
 			op, err := operations.OperationCreate(s, "", operations.OperationClassTask, operationtype.SnapshotsExpire, nil, nil, opRun, nil, nil, nil)

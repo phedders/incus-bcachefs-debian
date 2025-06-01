@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -22,7 +23,7 @@ const (
 )
 
 // ErrUnknownDriver is the "Unknown driver" error.
-var ErrUnknownDriver = fmt.Errorf("Unknown driver")
+var ErrUnknownDriver = errors.New("Unknown driver")
 
 var authorizers = map[string]func() authorizer{
 	DriverTLS:       func() authorizer { return &TLS{} },
@@ -86,6 +87,10 @@ type Authorizer interface {
 	DeleteNetworkACL(ctx context.Context, projectName string, networkACLName string) error
 	RenameNetworkACL(ctx context.Context, projectName string, oldNetworkACLName string, newNetworkACLName string) error
 
+	AddNetworkAddressSet(ctx context.Context, projectName string, networkAddressSetName string) error
+	DeleteNetworkAddressSet(ctx context.Context, projectName string, networkAddressSetName string) error
+	RenameNetworkAddressSet(ctx context.Context, projectName string, oldNetworkAddressSetName string, newNetworkAddressSetName string) error
+
 	AddProfile(ctx context.Context, projectName string, profileName string) error
 	DeleteProfile(ctx context.Context, projectName string, profileName string) error
 	RenameProfile(ctx context.Context, projectName string, oldProfileName string, newProfileName string) error
@@ -119,6 +124,7 @@ type Resources struct {
 	InstanceObjects           []Object
 	NetworkObjects            []Object
 	NetworkACLObjects         []Object
+	NetworkAddressSetObjects  []Object
 	NetworkIntegrationObjects []Object
 	NetworkZoneObjects        []Object
 	ProfileObjects            []Object

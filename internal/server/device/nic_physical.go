@@ -1,6 +1,7 @@
 package device
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -38,17 +39,66 @@ func (d *nicPhysical) validateConfig(instConf instance.ConfigReader) error {
 
 	requiredFields := []string{}
 	optionalFields := []string{
+		// gendoc:generate(entity=devices, group=nic_physical, key=parent)
+		//
+		// ---
+		//  type: string
+		//  managed: yes
+		//  shortdesc: The name of the parent host device (required if specifying the `nictype` directly)
 		"parent",
+
+		// gendoc:generate(entity=devices, group=nic_physical, key=name)
+		//
+		// ---
+		//  type: string
+		//  default: kernel assigned
+		//  managed: no
+		//  shortdesc: The name of the interface inside the instance
 		"name",
+
+		// gendoc:generate(entity=devices, group=nic_physical, key=boot.priority)
+		//
+		// ---
+		//  type: integer
+		//  managed: no
+		//  shortdesc: Boot priority for VMs (higher value boots first)
 		"boot.priority",
+
+		// gendoc:generate(entity=devices, group=nic_physical, key=gvrp)
+		//
+		// ---
+		//  type: bool
+		//  default: false
+		//  managed: no
+		//  shortdesc: Register VLAN using GARP VLAN Registration Protocol
 		"gvrp",
+
+		// gendoc:generate(entity=devices, group=nic_physical, key=mtu)
+		//
+		// ---
+		//  type: integer
+		//  default: MTU of the parent device
+		//  managed: no
+		//  shortdesc: The Maximum Transmit Unit (MTU) of the new interface
 		"mtu",
 	}
 
 	if instConf.Type() == instancetype.Container || instConf.Type() == instancetype.Any {
+		// gendoc:generate(entity=devices, group=nic_physical, key=vlan)
+		//
+		// ---
+		//  type: integer
+		//  managed: no
+		//  shortdesc: The VLAN ID to attach to
 		optionalFields = append(optionalFields, "hwaddr", "vlan")
 	}
 
+	// gendoc:generate(entity=devices, group=nic_physical, key=network)
+	//
+	// ---
+	//  type: string
+	//  managed: no
+	//  shortdesc: The managed network to link the device to (instead of specifying the `nictype` directly)
 	if d.config["network"] != "" {
 		requiredFields = append(requiredFields, "network")
 
@@ -68,11 +118,11 @@ func (d *nicPhysical) validateConfig(instConf instance.ConfigReader) error {
 		}
 
 		if d.network.Status() != api.NetworkStatusCreated {
-			return fmt.Errorf("Specified network is not fully created")
+			return errors.New("Specified network is not fully created")
 		}
 
 		if d.network.Type() != "physical" {
-			return fmt.Errorf("Specified network must be of type physical")
+			return errors.New("Specified network must be of type physical")
 		}
 
 		netConfig := d.network.Config()
@@ -103,11 +153,11 @@ func (d *nicPhysical) validateConfig(instConf instance.ConfigReader) error {
 // validateEnvironment checks the runtime environment for correctness.
 func (d *nicPhysical) validateEnvironment() error {
 	if d.inst.Type() == instancetype.VM && util.IsTrue(d.inst.ExpandedConfig()["migration.stateful"]) {
-		return fmt.Errorf("Network physical devices cannot be used when migration.stateful is enabled")
+		return errors.New("Network physical devices cannot be used when migration.stateful is enabled")
 	}
 
 	if d.inst.Type() == instancetype.Container && d.config["name"] == "" {
-		return fmt.Errorf("Requires name property to start")
+		return errors.New("Requires name property to start")
 	}
 
 	if !util.PathExists(fmt.Sprintf("/sys/class/net/%s", d.config["parent"])) {
@@ -130,8 +180,8 @@ func (d *nicPhysical) Start() (*deviceConfig.RunConfig, error) {
 
 	saveData := make(map[string]string)
 
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	// pciIOMMUGroup, used for VM physical passthrough.
 	var pciIOMMUGroup uint64
@@ -157,7 +207,7 @@ func (d *nicPhysical) Start() (*deviceConfig.RunConfig, error) {
 		saveData["last_state.created"] = fmt.Sprintf("%t", statusDev != "existing")
 
 		if util.IsTrue(saveData["last_state.created"]) {
-			revert.Add(func() {
+			reverter.Add(func() {
 				_ = networkRemoveInterfaceIfNeeded(d.state, saveData["host_name"], d.inst, d.config["parent"], d.config["vlan"])
 			})
 		}
@@ -172,6 +222,14 @@ func (d *nicPhysical) Start() (*deviceConfig.RunConfig, error) {
 		}
 
 		// Set the MAC address.
+
+		// gendoc:generate(entity=devices, group=nic_physical, key=hwaddr)
+		//
+		// ---
+		//  type: string
+		//  default: randomly assigned
+		//  managed: no
+		//  shortdesc: The MAC address of the new interface
 		if d.config["hwaddr"] != "" {
 			hwaddr, err := net.ParseMAC(d.config["hwaddr"])
 			if err != nil {
@@ -203,7 +261,7 @@ func (d *nicPhysical) Start() (*deviceConfig.RunConfig, error) {
 		ueventPath := fmt.Sprintf("/sys/class/net/%s/device/uevent", saveData["host_name"])
 		pciDev, err := pcidev.ParseUeventFile(ueventPath)
 		if err != nil {
-			if err == pcidev.ErrDeviceIsUSB {
+			if errors.Is(err, pcidev.ErrDeviceIsUSB) {
 				// Device is USB rather than PCI.
 				return d.startVMUSB(saveData["host_name"])
 			}
@@ -247,7 +305,8 @@ func (d *nicPhysical) Start() (*deviceConfig.RunConfig, error) {
 			}...)
 	}
 
-	revert.Success()
+	reverter.Success()
+
 	return &runConf, nil
 }
 

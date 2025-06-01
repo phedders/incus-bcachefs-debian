@@ -18,7 +18,7 @@ func (g *cmdGlobal) cmpClusterGroupNames(toComplete string) ([]string, cobra.She
 	var results []string
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) <= 0 {
 		return nil, cobra.ShellCompDirectiveError
@@ -43,7 +43,7 @@ func (g *cmdGlobal) cmpClusterGroups(toComplete string) ([]string, cobra.ShellCo
 	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) <= 0 {
 		return nil, cobra.ShellCompDirectiveError
@@ -82,9 +82,37 @@ func (g *cmdGlobal) cmpClusterGroups(toComplete string) ([]string, cobra.ShellCo
 	return results, cmpDirectives
 }
 
+func (g *cmdGlobal) cmpClusterGroupConfigs(groupName string) ([]string, cobra.ShellCompDirective) {
+	// Parse remote
+	resources, err := g.parseServers(groupName)
+	if err != nil || len(resources) == 0 {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	resource := resources[0]
+	client := resource.server
+
+	cluster, _, err := client.GetCluster()
+	if err != nil || !cluster.Enabled {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	group, _, err := client.GetClusterGroup(groupName)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	var results []string
+	for k := range group.Config {
+		results = append(results, k)
+	}
+
+	return results, cobra.ShellCompDirectiveNoFileComp
+}
+
 func (g *cmdGlobal) cmpClusterMemberConfigs(memberName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(memberName)
+	resources, err := g.parseServers(memberName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -112,7 +140,7 @@ func (g *cmdGlobal) cmpClusterMemberConfigs(memberName string) ([]string, cobra.
 
 func (g *cmdGlobal) cmpClusterMemberRoles(memberName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(memberName)
+	resources, err := g.parseServers(memberName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -137,7 +165,7 @@ func (g *cmdGlobal) cmpClusterMembers(toComplete string) ([]string, cobra.ShellC
 	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) > 0 {
 		resource := resources[0]
@@ -246,7 +274,7 @@ func (g *cmdGlobal) cmpInstanceAllKeys() ([]string, cobra.ShellCompDirective) {
 
 func (g *cmdGlobal) cmpInstanceConfigTemplates(instanceName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(instanceName)
+	resources, err := g.parseServers(instanceName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -270,7 +298,7 @@ func (g *cmdGlobal) cmpInstanceConfigTemplates(instanceName string) ([]string, c
 
 func (g *cmdGlobal) cmpInstanceDeviceNames(instanceName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(instanceName)
+	resources, err := g.parseServers(instanceName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -292,7 +320,7 @@ func (g *cmdGlobal) cmpInstanceDeviceNames(instanceName string) ([]string, cobra
 }
 
 func (g *cmdGlobal) cmpInstanceSnapshots(instanceName string) ([]string, cobra.ShellCompDirective) {
-	resources, err := g.ParseServers(instanceName)
+	resources, err := g.parseServers(instanceName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -312,7 +340,7 @@ func (g *cmdGlobal) cmpInstances(toComplete string) ([]string, cobra.ShellCompDi
 	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) > 0 {
 		resource := resources[0]
@@ -348,7 +376,7 @@ func (g *cmdGlobal) cmpInstancesAndSnapshots(toComplete string) ([]string, cobra
 	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) > 0 {
 		resource := resources[0]
@@ -387,7 +415,7 @@ func (g *cmdGlobal) cmpInstancesAndSnapshots(toComplete string) ([]string, cobra
 func (g *cmdGlobal) cmpInstanceNamesFromRemote(toComplete string) ([]string, cobra.ShellCompDirective) {
 	results := []string{}
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) > 0 {
 		resource := resources[0]
@@ -403,7 +431,7 @@ func (g *cmdGlobal) cmpInstanceNamesFromRemote(toComplete string) ([]string, cob
 
 func (g *cmdGlobal) cmpNetworkACLConfigs(aclName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(aclName)
+	resources, err := g.parseServers(aclName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -428,7 +456,7 @@ func (g *cmdGlobal) cmpNetworkACLs(toComplete string) ([]string, cobra.ShellComp
 	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) <= 0 {
 		return nil, cobra.ShellCompDirectiveError
@@ -473,9 +501,72 @@ func (g *cmdGlobal) cmpNetworkACLRuleProperties() ([]string, cobra.ShellCompDire
 	return results, cobra.ShellCompDirectiveNoSpace
 }
 
+func (g *cmdGlobal) cmpNetworkAddressSets(toComplete string) ([]string, cobra.ShellCompDirective) {
+	results := []string{}
+	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
+
+	resources, _ := g.parseServers(toComplete)
+
+	if len(resources) <= 0 {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	resource := resources[0]
+
+	// Get the network address set names from the server.
+	addrSets, err := resource.server.GetNetworkAddressSetNames()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	for _, addrSet := range addrSets {
+		var name string
+		if resource.remote == g.conf.DefaultRemote && !strings.Contains(toComplete, g.conf.DefaultRemote) {
+			name = addrSet
+		} else {
+			name = fmt.Sprintf("%s:%s", resource.remote, addrSet)
+		}
+
+		results = append(results, name)
+	}
+
+	// Also suggest remotes if no ":" in toComplete.
+	if !strings.Contains(toComplete, ":") {
+		remotes, directives := g.cmpRemotes(toComplete, false)
+		results = append(results, remotes...)
+		cmpDirectives |= directives
+	}
+
+	return results, cmpDirectives
+}
+
+func (g *cmdGlobal) cmpNetworkAddressSetConfigs(addressSetName string) ([]string, cobra.ShellCompDirective) {
+	// Parse remote
+	resources, err := g.parseServers(addressSetName)
+	if err != nil || len(resources) == 0 {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	resource := resources[0]
+	client := resource.server
+
+	// Get the network address set.
+	addrSet, _, err := client.GetNetworkAddressSet(resource.name)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	var results []string
+	for k := range addrSet.Config {
+		results = append(results, k)
+	}
+
+	return results, cobra.ShellCompDirectiveNoFileComp
+}
+
 func (g *cmdGlobal) cmpNetworkForwardConfigs(networkName string, listenAddress string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(networkName)
+	resources, err := g.parseServers(networkName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -497,10 +588,9 @@ func (g *cmdGlobal) cmpNetworkForwardConfigs(networkName string, listenAddress s
 }
 
 func (g *cmdGlobal) cmpNetworkForwards(networkName string) ([]string, cobra.ShellCompDirective) {
-	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(networkName)
+	resources, _ := g.parseServers(networkName)
 
 	if len(resources) <= 0 {
 		return nil, cobra.ShellCompDirectiveError
@@ -517,10 +607,9 @@ func (g *cmdGlobal) cmpNetworkForwards(networkName string) ([]string, cobra.Shel
 }
 
 func (g *cmdGlobal) cmpNetworkLoadBalancers(networkName string) ([]string, cobra.ShellCompDirective) {
-	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(networkName)
+	resources, _ := g.parseServers(networkName)
 
 	if len(resources) <= 0 {
 		return nil, cobra.ShellCompDirectiveError
@@ -540,7 +629,7 @@ func (g *cmdGlobal) cmpNetworkPeerConfigs(networkName string, peerName string) (
 	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(networkName)
+	resources, _ := g.parseServers(networkName)
 
 	if len(resources) <= 0 {
 		return nil, cobra.ShellCompDirectiveError
@@ -561,10 +650,9 @@ func (g *cmdGlobal) cmpNetworkPeerConfigs(networkName string, peerName string) (
 }
 
 func (g *cmdGlobal) cmpNetworkPeers(networkName string) ([]string, cobra.ShellCompDirective) {
-	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(networkName)
+	resources, _ := g.parseServers(networkName)
 
 	if len(resources) <= 0 {
 		return nil, cobra.ShellCompDirectiveError
@@ -584,7 +672,7 @@ func (g *cmdGlobal) cmpNetworks(toComplete string) ([]string, cobra.ShellCompDir
 	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) > 0 {
 		resource := resources[0]
@@ -618,7 +706,7 @@ func (g *cmdGlobal) cmpNetworks(toComplete string) ([]string, cobra.ShellCompDir
 
 func (g *cmdGlobal) cmpNetworkConfigs(networkName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(networkName)
+	resources, err := g.parseServers(networkName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -641,7 +729,7 @@ func (g *cmdGlobal) cmpNetworkConfigs(networkName string) ([]string, cobra.Shell
 
 func (g *cmdGlobal) cmpNetworkInstances(networkName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(networkName)
+	resources, err := g.parseServers(networkName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -669,7 +757,7 @@ func (g *cmdGlobal) cmpNetworkInstances(networkName string) ([]string, cobra.She
 
 func (g *cmdGlobal) cmpNetworkProfiles(networkName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(networkName)
+	resources, err := g.parseServers(networkName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -697,7 +785,7 @@ func (g *cmdGlobal) cmpNetworkProfiles(networkName string) ([]string, cobra.Shel
 
 func (g *cmdGlobal) cmpNetworkZoneConfigs(zoneName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(zoneName)
+	resources, err := g.parseServers(zoneName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -722,7 +810,7 @@ func (g *cmdGlobal) cmpNetworkZoneRecordConfigs(zoneName string, recordName stri
 	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(zoneName)
+	resources, _ := g.parseServers(zoneName)
 
 	if len(resources) <= 0 {
 		return nil, cobra.ShellCompDirectiveError
@@ -743,10 +831,9 @@ func (g *cmdGlobal) cmpNetworkZoneRecordConfigs(zoneName string, recordName stri
 }
 
 func (g *cmdGlobal) cmpNetworkZoneRecords(zoneName string) ([]string, cobra.ShellCompDirective) {
-	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(zoneName)
+	resources, _ := g.parseServers(zoneName)
 
 	if len(resources) <= 0 {
 		return nil, cobra.ShellCompDirectiveError
@@ -766,7 +853,7 @@ func (g *cmdGlobal) cmpNetworkZones(toComplete string) ([]string, cobra.ShellCom
 	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) > 0 {
 		resource := resources[0]
@@ -799,7 +886,7 @@ func (g *cmdGlobal) cmpNetworkZones(toComplete string) ([]string, cobra.ShellCom
 }
 
 func (g *cmdGlobal) cmpProfileConfigs(profileName string) ([]string, cobra.ShellCompDirective) {
-	resources, err := g.ParseServers(profileName)
+	resources, err := g.parseServers(profileName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -822,7 +909,7 @@ func (g *cmdGlobal) cmpProfileConfigs(profileName string) ([]string, cobra.Shell
 
 func (g *cmdGlobal) cmpProfileDeviceNames(instanceName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(instanceName)
+	resources, err := g.parseServers(instanceName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -846,7 +933,7 @@ func (g *cmdGlobal) cmpProfileDeviceNames(instanceName string) ([]string, cobra.
 func (g *cmdGlobal) cmpProfileNamesFromRemote(toComplete string) ([]string, cobra.ShellCompDirective) {
 	results := []string{}
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) > 0 {
 		resource := resources[0]
@@ -862,7 +949,7 @@ func (g *cmdGlobal) cmpProfiles(toComplete string, includeRemotes bool) ([]strin
 	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) > 0 {
 		resource := resources[0]
@@ -892,7 +979,7 @@ func (g *cmdGlobal) cmpProfiles(toComplete string, includeRemotes bool) ([]strin
 }
 
 func (g *cmdGlobal) cmpProjectConfigs(projectName string) ([]string, cobra.ShellCompDirective) {
-	resources, err := g.ParseServers(projectName)
+	resources, err := g.parseServers(projectName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -917,7 +1004,7 @@ func (g *cmdGlobal) cmpProjects(toComplete string) ([]string, cobra.ShellCompDir
 	results := []string{}
 	cmpDirectives := cobra.ShellCompDirectiveNoFileComp
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) > 0 {
 		resource := resources[0]
@@ -983,7 +1070,7 @@ func (g *cmdGlobal) cmpRemoteNames() ([]string, cobra.ShellCompDirective) {
 
 func (g *cmdGlobal) cmpStoragePoolConfigs(poolName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(poolName)
+	resources, err := g.parseServers(poolName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -1044,7 +1131,7 @@ func (g *cmdGlobal) cmpStoragePoolWithVolume(toComplete string) ([]string, cobra
 func (g *cmdGlobal) cmpStoragePools(toComplete string) ([]string, cobra.ShellCompDirective) {
 	results := []string{}
 
-	resources, _ := g.ParseServers(toComplete)
+	resources, _ := g.parseServers(toComplete)
 
 	if len(resources) > 0 {
 		resource := resources[0]
@@ -1074,7 +1161,7 @@ func (g *cmdGlobal) cmpStoragePools(toComplete string) ([]string, cobra.ShellCom
 
 func (g *cmdGlobal) cmpStoragePoolVolumeConfigs(poolName string, volumeName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(poolName)
+	resources, err := g.parseServers(poolName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -1104,7 +1191,7 @@ func (g *cmdGlobal) cmpStoragePoolVolumeConfigs(poolName string, volumeName stri
 
 func (g *cmdGlobal) cmpStoragePoolVolumeInstances(poolName string, volumeName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(poolName)
+	resources, err := g.parseServers(poolName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -1139,7 +1226,7 @@ func (g *cmdGlobal) cmpStoragePoolVolumeInstances(poolName string, volumeName st
 
 func (g *cmdGlobal) cmpStoragePoolVolumeProfiles(poolName string, volumeName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(poolName)
+	resources, err := g.parseServers(poolName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -1174,7 +1261,7 @@ func (g *cmdGlobal) cmpStoragePoolVolumeProfiles(poolName string, volumeName str
 
 func (g *cmdGlobal) cmpStoragePoolVolumeSnapshots(poolName string, volumeName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(poolName)
+	resources, err := g.parseServers(poolName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -1199,7 +1286,7 @@ func (g *cmdGlobal) cmpStoragePoolVolumeSnapshots(poolName string, volumeName st
 
 func (g *cmdGlobal) cmpStoragePoolVolumes(poolName string) ([]string, cobra.ShellCompDirective) {
 	// Parse remote
-	resources, err := g.ParseServers(poolName)
+	resources, err := g.parseServers(poolName)
 	if err != nil || len(resources) == 0 {
 		return nil, cobra.ShellCompDirectiveError
 	}

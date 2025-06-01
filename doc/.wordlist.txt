@@ -3,6 +3,7 @@ AAVMF
 ABI
 ACL
 ACLs
+AI
 AIO
 allocator
 AMD
@@ -64,11 +65,16 @@ DHCPv
 Diátaxis
 Diffie
 Distrobuilder
+diskful
+Diskless
+diskless
+DNAT
 DNS
 dnsmasq
 DNSSEC
 DoS
 DRM
+DRBD
 EB
 Ebit
 eBPF
@@ -85,6 +91,7 @@ ESA
 ETag
 failover
 frontend
+formatters
 FQDNs
 Furo
 gapped
@@ -104,8 +111,10 @@ GPUs
 Grafana
 HAProxy
 hardcoded
+HDDs
 Hellman
 Homebrew
+hostname
 hotplug
 hotplugged
 hotplugging
@@ -142,6 +151,8 @@ Kubernetes
 KVM
 lookups
 Loongarch
+LLM
+LLMs
 LRU
 LTS
 LV
@@ -151,10 +162,14 @@ LXCFS
 LXC's
 LXD
 LXD's
+LINBIT
+LINSTOR
+LINSTOR's
 macOS
 macvlan
 Makefile
 manpages
+mDNS
 Mbit
 MiB
 Mibit
@@ -178,7 +193,9 @@ NIC
 NICs
 NixOS
 NUMA
+NVMe
 NVRAM
+OCI
 OData
 OIDC
 OpenFGA
@@ -211,6 +228,7 @@ PKI
 PNG
 Pongo
 POSIX
+PPA
 pre
 preseed
 proxied
@@ -251,6 +269,7 @@ SIGTERM
 simplestreams
 SLAAC
 SMTP
+SNAT
 Snapcraft
 Solaris
 SPAs

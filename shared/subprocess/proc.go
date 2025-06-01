@@ -4,6 +4,7 @@ package subprocess
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,12 +18,12 @@ import (
 
 // Process struct. Has ability to set runtime arguments.
 type Process struct {
-	exitCode int64 `yaml:"-"`
-	exitErr  error `yaml:"-"`
+	exitCode int64
+	exitErr  error
 
-	chExit     chan struct{} `yaml:"-"`
-	hasMonitor bool          `yaml:"-"`
-	closeFds   bool          `yaml:"-"`
+	chExit     chan struct{}
+	hasMonitor bool
+	closeFds   bool
 
 	Name     string         `yaml:"name"`
 	Args     []string       `yaml:"args,flow"`
@@ -250,18 +251,20 @@ func (p *Process) Reload() error {
 	}
 
 	err = pr.Signal(syscall.Signal(0))
-	if err == nil {
-		err = pr.Signal(syscall.SIGHUP)
-		if err != nil {
-			return fmt.Errorf("Could not reload process: %w", err)
+	if err != nil {
+		if err == os.ErrProcessDone {
+			return ErrNotRunning
 		}
 
-		return nil
-	} else if err == os.ErrProcessDone {
-		return ErrNotRunning
+		return fmt.Errorf("Could not reload process: %w", err)
 	}
 
-	return fmt.Errorf("Could not reload process: %w", err)
+	err = pr.Signal(syscall.SIGHUP)
+	if err != nil {
+		return fmt.Errorf("Could not reload process: %w", err)
+	}
+
+	return nil
 }
 
 // Save will save the given process object to a YAML file. Can be imported at a later point.
@@ -291,24 +294,26 @@ func (p *Process) Signal(signal int64) error {
 	}
 
 	err = pr.Signal(syscall.Signal(0))
-	if err == nil {
-		err = pr.Signal(syscall.Signal(signal))
-		if err != nil {
-			return fmt.Errorf("Could not signal process: %w", err)
+	if err != nil {
+		if err == os.ErrProcessDone {
+			return ErrNotRunning
 		}
 
-		return nil
-	} else if err == os.ErrProcessDone {
-		return ErrNotRunning
+		return fmt.Errorf("Could not signal process: %w", err)
 	}
 
-	return fmt.Errorf("Could not signal process: %w", err)
+	err = pr.Signal(syscall.Signal(signal))
+	if err != nil {
+		return fmt.Errorf("Could not signal process: %w", err)
+	}
+
+	return nil
 }
 
 // Wait will wait for the given process object exit code.
 func (p *Process) Wait(ctx context.Context) (int64, error) {
 	if !p.hasMonitor {
-		return -1, fmt.Errorf("Unable to wait on process we didn't spawn")
+		return -1, errors.New("Unable to wait on process we didn't spawn")
 	}
 
 	select {
