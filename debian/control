@@ -205,7 +205,7 @@ Recommends: apparmor (>= 4.1.0~),
             dnsmasq-base
 # First line of suggested packages will enable additional Incus storage backends
 # Second line lists additional optional tools
-Suggests: btrfs-progs, ceph-common, lvm2, zfsutils-linux,
+Suggests: btrfs-progs, ceph-common [!armel !armhf !i386], lvm2, zfsutils-linux,
           incus-extra, lego, minio-client
 Built-Using: ${misc:Built-Using}
 Static-Built-Using: ${misc:Static-Built-Using}

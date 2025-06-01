@@ -1,3 +1,10 @@
+incus (6.0.4-3) UNRELEASED; urgency=medium
+
+  * d/control:
+    - Don't Suggest ceph-common for 32bit architectures
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 01 Jun 2025 03:16:35 +0000
+
 incus (6.0.4-2) unstable; urgency=medium
 
   * Fix inadvertent policy violation where build created files in HOME
