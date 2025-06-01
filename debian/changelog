@@ -1,5 +1,6 @@
 incus (6.0.4-3) UNRELEASED; urgency=medium
 
+  * Document packaging policy for LTS and Feature releases
   * d/control:
     - Don't Suggest ceph-common for 32bit architectures
 
