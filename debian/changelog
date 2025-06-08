@@ -2,6 +2,7 @@ incus (6.0.4-3) UNRELEASED; urgency=medium
 
   * Document packaging policy for LTS and Feature releases
   * d/control:
+    - Update Build-Depends and Depends
     - Don't Suggest ceph-common for 32bit architectures
 
  -- Mathias Gibbens <gibmat@debian.org>  Sun, 01 Jun 2025 03:16:35 +0000
