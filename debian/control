@@ -162,14 +162,12 @@ Architecture: linux-any
 Depends: ${misc:Depends},
          incus-agent (= ${binary:Version}),
          incus-base (= ${binary:Version}),
-         qemu-system-arm (>= 1:8.0) [arm64 armel armhf],
-         qemu-system-mips (>= 1:8.0) [mips64el],
+         qemu-system-arm (>= 1:8.0) [arm64],
          qemu-system-ppc (>= 1:8.0) [ppc64el],
-         qemu-system-riscv (>= 1:8.0) [riscv64],
          qemu-system-s390x (>= 1:8.0) [s390x],
-         qemu-system-x86 (>= 1:8.0) [amd64 i386],
-         swtpm,
-         virtiofsd [!armel !armhf !i386]
+         qemu-system-x86 (>= 1:8.0) [amd64],
+         swtpm [amd64 arm64 ppc64el s390x],
+         virtiofsd [amd64 arm64 ppc64el s390x]
 Suggests: gdisk
 Built-Using: ${misc:Built-Using}
 Static-Built-Using: ${misc:Static-Built-Using}
@@ -183,6 +181,7 @@ Description: Powerful system container and virtual machine manager - daemon
  simple, REST API.
  .
  This metapackage will install everything needed to run containers and VMs.
+ Only amd64, arm64, ppc64el, and s390x are supported as VM host architectures.
 
 Package: incus-base
 Architecture: linux-any

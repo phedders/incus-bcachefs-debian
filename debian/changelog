@@ -2,6 +2,8 @@ incus (6.0.4-3) UNRELEASED; urgency=medium
 
   * Document packaging policy for LTS and Feature releases
   * d/control:
+    - Limit VM dependencies to supported host architectures: arm64, amd64,
+      ppc64el, and s390x
     - Update Build-Depends and Depends
     - Don't Suggest ceph-common for 32bit architectures
 
