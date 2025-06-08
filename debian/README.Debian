@@ -140,6 +140,13 @@ For example, to run CentOS 9-Stream, one now needs to do:
 
 For further details, please see the Incus 0.5.1 release notes (https://discuss.linuxcontainers.org/t/incus-0-5-1-has-been-released/18848).
 
+Windows VMs
+-----------
+
+When running a Windows VM, it is recommended to set the VM's `image.os` configuration
+field to include the string "Windows". This allows Incus to hide some unsupported
+devices and configure an appropriate incus-agent binary for the VM.
+
 Known issues
 ============
 
