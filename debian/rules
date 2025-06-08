@@ -1,5 +1,6 @@
 #!/usr/bin/make -f
 
+include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/pkg-info.mk
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
@@ -18,8 +19,20 @@ override_dh_auto_build:
 	# Build almost everything with dynamic linking
 	CGO_LDFLAGS_ALLOW="-Wl,-z,now" dh_auto_build
 
-	# Build incus-agent as a statically-linked binary
-	CGO_LDFLAGS_ALLOW="-Wl,-z,now" CGO_ENABLED=0 DH_GOLANG_BUILDPKG="github.com/lxc/incus/cmd/incus-agent" DH_GOLANG_EXCLUDES="" dh_auto_build
+	# Build incus-agent as a statically-linked binary. For amd64 and arm64 builds, build a variety of versions including Windows binaries.
+ifeq ($(DEB_HOST_ARCH),amd64)
+	cd _build && GOARCH=386 CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GO111MODULE=off GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.linux.i686 -tags=agent,netgo github.com/lxc/incus/cmd/incus-agent
+	cd _build && GOARCH=amd64 CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GO111MODULE=off GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.linux.x86_64 -tags=agent,netgo github.com/lxc/incus/cmd/incus-agent
+	cd _build && GOARCH=386 GOOS=windows CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GO111MODULE=off GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.windows.i686 -tags=agent,netgo github.com/lxc/incus/cmd/incus-agent
+	cd _build && GOARCH=amd64 GOOS=windows CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GO111MODULE=off GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.windows.x86_64 -tags=agent,netgo github.com/lxc/incus/cmd/incus-agent
+	cd _build/bin && ln -s incus-agent.linux.x86_64 incus-agent
+else ifeq ($(DEB_HOST_ARCH),arm64)
+	cd _build && GOARCH=arm64 CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GO111MODULE=off GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.linux.aarch64 -tags=agent,netgo github.com/lxc/incus/cmd/incus-agent
+	cd _build && GOARCH=arm64 GOOS=windows CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GO111MODULE=off GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.windows.aarch64 -tags=agent,netgo github.com/lxc/incus/cmd/incus-agent
+	cd _build/bin && ln -s incus-agent.linux.aarch64 incus-agent
+else
+	cd _build && CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GO111MODULE=off GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent -tags=agent,netgo github.com/lxc/incus/cmd/incus-agent
+endif
 
 	# Generate the man pages
 	mkdir man1/

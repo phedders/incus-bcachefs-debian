@@ -5,6 +5,8 @@ incus (6.0.5-1) UNRELEASED; urgency=medium
     - Rebase d/p/002-adjust-import-paths.patch
     - Drop custom userns patch
     - Drop upstream cherry-picked commits
+    - Update logic for building incus-agent binaries, including ones for
+      Windows
   * d/control:
     - Update Build-Depends and Depends
     - Fix Breaks version
