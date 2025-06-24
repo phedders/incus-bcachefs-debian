@@ -10,6 +10,18 @@ incus (6.13.0-1~exp1) experimental; urgency=medium
 
  -- Mathias Gibbens <gibmat@debian.org>  Sun, 01 Jun 2025 16:25:07 +0000
 
+incus (6.0.4-3) UNRELEASED; urgency=medium
+
+  * Document packaging policy for LTS and Feature releases
+  * d/control:
+    - Limit VM dependencies to supported host architectures: amd64, arm64,
+      ppc64el, and s390x
+    - Update Build-Depends and Depends
+    - Don't Suggest ceph-common for 32bit architectures
+  * Update d/README.Debian
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 01 Jun 2025 03:16:35 +0000
+
 incus (6.0.4-2) unstable; urgency=medium
 
   * Fix inadvertent policy violation where build created files in HOME
