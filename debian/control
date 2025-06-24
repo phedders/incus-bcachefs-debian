@@ -157,10 +157,10 @@ Description: Powerful system container and virtual machine manager - library
 
 Package: incus
 # Technically this package is arch:all, but to use architecture restrictions for
-# the qemu-system-* dependencies, we must use a variant of arch:any
+# supported host VM architectures, we must use a variant of arch:any
 Architecture: linux-any
 Depends: ${misc:Depends},
-         incus-agent (= ${binary:Version}),
+         incus-agent (= ${binary:Version}) [amd64 arm64 ppc64el s390x],
          incus-base (= ${binary:Version}),
          qemu-system-arm (>= 1:8.0) [arm64],
          qemu-system-ppc (>= 1:8.0) [ppc64el],
