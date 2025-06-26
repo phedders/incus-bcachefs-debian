@@ -199,6 +199,7 @@ Depends: ${misc:Depends},
          iproute2,
          nftables | iptables,
          rsync,
+         skopeo,
          squashfs-tools,
          squashfs-tools-ng,
          uidmap,
@@ -224,7 +225,8 @@ Description: Powerful system container and virtual machine manager - daemon (con
  Linux distributions and is built around a very powerful, yet pretty
  simple, REST API.
  .
- This package contains only what is needed to run containers.
+ This package contains only what is needed to run containers and OCI (docker)
+ images.
 
 Package: incus-client
 # The incus binary doesn't depend on liblxc1, so it can be built for any architecture
