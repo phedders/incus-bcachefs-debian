@@ -117,11 +117,17 @@ the Incus service so it picks up the additional storage backend(s).
 Virtual machines
 ================
 
-Incus optionally can create virtual machine instances that match the host's
-architecture utilizing QEMU. To enable this capability, on the host system
-ensure that the "incus" package is installed and then restart the Incus service.
-You will now be able to create virtual machine instances by passing the `--vm`
-flag in your creation command.
+Incus optionally can create virtual machine instances utilizing QEMU. Because Incus
+configures QEMU to use host CPU passthrough, emulation of a different architecture than
+the host system is not supported. For example, an amd64 host can create both amd64 and
+i386 virtual machines, but cannot create an arm64 virtual machine.
+
+Currently, only amd64, arm64, ppc64el, and s390x are supported as host architectures
+for running virtual machines.
+
+To enable this capability, on the host system ensure that the "incus" package is
+installed and then restart the Incus service. You will now be able to create virtual
+machine instances by passing the `--vm` flag in your creation command.
 
 RHEL8/9 (and derivatives)
 -------------------------
