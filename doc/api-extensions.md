@@ -2838,3 +2838,34 @@ on schedule.
 This adds tracking of CPU address sizes in the resources API.
 The main use of this is within clusters to calculate a cluster-wide
 maximum memory amount for hotplugging into virtual machines.
+
+## `disk_attached`
+
+This introduces a new `attached` property to disk devices describing whether disks are attached or ejected.
+
+## `limits_memory_hotplug`
+
+The `limits.memory.hotplug` option controls how memory hotplug is handled for the virtual machine.
+It can be set to `false` to completely disable memory hotplugging.
+Alternatively, it can be set to a value that defines the maximum amount of memory the VM can reach through hotplug.
+This value must be greater than or equal to `limits.memory`.
+
+## `disk_wwn`
+
+Add support for setting the disk World Wide Name property through the new `wwn` disk configuration option.
+
+## `server_logging_webhook`
+
+This adds support for basic webhook as a logging target.
+
+It can be selected through `logging.NAME.target.type` with the `webhook` value.
+
+The following target keys are supported:
+
+* `logging.NAME.target.address` (URL of the target)
+* `logging.NAME.target.ca_cert` (Certificate when using an HTTPS target with a self-signed certificate)
+* `logging.NAME.target.username` (Username for HTTP authentication)
+* `logging.NAME.target.password` (Password for HTTP authentication)
+* `logging.NAME.target.retry` (How many times to retry the transmission)
+
+The webhook data matches what's sent over the existing events API.
