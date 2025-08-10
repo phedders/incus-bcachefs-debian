@@ -1,4 +1,4 @@
-incus (6.0.4-3) UNRELEASED; urgency=medium
+incus (6.0.4-3) unstable; urgency=medium
 
   * Document packaging policy for LTS and Feature releases
   * Add patch for building with updated zitadel-oidc
@@ -10,7 +10,7 @@ incus (6.0.4-3) UNRELEASED; urgency=medium
     - Don't Suggest ceph-common for 32bit architectures
   * Update d/README.Debian
 
- -- Mathias Gibbens <gibmat@debian.org>  Sun, 01 Jun 2025 03:16:35 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 10 Aug 2025 15:56:48 +0000
 
 incus (6.0.4-2) unstable; urgency=medium
 
