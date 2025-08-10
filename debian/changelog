@@ -1,6 +1,7 @@
 incus (6.0.4-3) UNRELEASED; urgency=medium
 
   * Document packaging policy for LTS and Feature releases
+  * Add patch for building with updated zitadel-oidc
   * d/control:
     - Limit VM dependencies to supported host architectures: amd64, arm64,
       ppc64el, and s390x

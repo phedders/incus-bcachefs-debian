@@ -1,0 +1,26 @@
+From dd881a28fce8bdf590115869bc6b4b34759bb72f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?St=C3=A9phane=20Graber?= <stgraber@stgraber.org>
+Date: Thu, 31 Jul 2025 22:36:49 -0400
+Subject: [PATCH] incusd/auth/oidc: Update for current zitadel
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Stéphane Graber <stgraber@stgraber.org>
+---
+ internal/server/auth/oidc/oidc.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/internal/server/auth/oidc/oidc.go b/internal/server/auth/oidc/oidc.go
+index a9259f966be..0194cb82953 100644
+--- a/internal/server/auth/oidc/oidc.go
++++ b/internal/server/auth/oidc/oidc.go
+@@ -179,7 +179,7 @@ func (o *Verifier) Logout(w http.ResponseWriter, r *http.Request) {
+ 
+ 	// Attempt to end the OIDC session.
+ 	if provider != nil && token != "" {
+-		_, _ = rp.EndSession(r.Context(), provider, token, fmt.Sprintf("https://%s", r.Host), "")
++		_, _ = rp.EndSession(r.Context(), provider, token, fmt.Sprintf("https://%s", r.Host), "", "", nil)
+ 	}
+ 
+ 	// Access token.
