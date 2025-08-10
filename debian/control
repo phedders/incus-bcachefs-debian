@@ -146,6 +146,7 @@ Depends: golang-github-armon-go-proxyproto-dev,
          golang-k8s-utils-dev,
          golang-starlark-dev (>= 0.0~git20240725.42030a7),
          ${misc:Depends}
+Breaks: distrobuilder (<< 3.2-2)
 Description: Powerful system container and virtual machine manager - library
  Incus is a next generation system container and virtual machine manager.
  It offers a unified user experience around full Linux systems running
