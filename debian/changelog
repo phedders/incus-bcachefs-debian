@@ -1,3 +1,11 @@
+incus (6.0.5-1) UNRELEASED; urgency=medium
+
+  * New upstream release
+  * d/control:
+    - Update Build-Depends and Depends
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 15 Aug 2025 13:34:01 +0000
+
 incus (6.0.4-3) unstable; urgency=medium
 
   * Document packaging policy for LTS and Feature releases
