@@ -2741,3 +2741,93 @@ This introduces a new `io.bus` property for compatible network devices allowing 
 ## `disk_io_bus_usb`
 
 Adds a new `usb` value for `io.bus` on `disk` devices.
+
+## `server_logging`
+
+This implements a new set of `logging` configuration keys on the server, allowing for multiple logging targets.
+The former `loki` configuration keys are being transitioned over as part of this.
+
+## `network_forward_snat`
+
+Adds a `snat` configuration option for network forwards which will cause any DNAT to get a matching SNAT applied.
+So new connections from the target will appear as coming from the network forward address.
+
+This is limited to bridged networks as OVN doesn't support flexible enough SNAT for this.
+
+## `memory_hotplug`
+
+This adds memory hotplugging for VMs, allowing them to add memory at runtime without rebooting.
+
+## `instance_nic_routed_host_tables`
+
+This adds support for specifying host-routing tables on `nic` devices that use the routed mode.
+
+## `instance_publish_split`
+
+This adds support for creating a split format image out of an existing instance.
+
+## `init_preseed_certificates`
+
+This API extension provides the ability to configure certificates in preseed init.
+
+## `custom_volume_sftp`
+
+This adds the SFTP API to custom storage volumes.
+
+## `network_ovn_external_nic_address`
+
+This adds support for configuring a custom external IPv4 or IPv6 address
+for a given instance so long as that address is available through a
+network forward.
+
+## `network_physical_gateway_hwaddr`
+
+Allows setting the MAC address of the IPv4 and IPv6 gateways when used with OVN.
+
+## `backup_s3_upload`
+
+Adds support for immediately uploading instance or volume backups to an S3 compatible endpoint.
+
+## `snapshot_manual_expiry`
+
+Introduces a `snapshots.expiry.manual` configuration key to both
+instances and storage volumes which allows overriding the default expiry
+value for snapshots created directly by the user as opposed to created
+on schedule.
+
+## `resources_cpu_address_sizes`
+
+This adds tracking of CPU address sizes in the resources API.
+The main use of this is within clusters to calculate a cluster-wide
+maximum memory amount for hotplugging into virtual machines.
+
+## `disk_attached`
+
+This introduces a new `attached` property to disk devices describing whether disks are attached or ejected.
+
+## `limits_memory_hotplug`
+
+The `limits.memory.hotplug` option controls how memory hotplug is handled for the virtual machine.
+It can be set to `false` to completely disable memory hotplugging.
+Alternatively, it can be set to a value that defines the maximum amount of memory the VM can reach through hotplug.
+This value must be greater than or equal to `limits.memory`.
+
+## `disk_wwn`
+
+Add support for setting the disk World Wide Name property through the new `wwn` disk configuration option.
+
+## `server_logging_webhook`
+
+This adds support for basic webhook as a logging target.
+
+It can be selected through `logging.NAME.target.type` with the `webhook` value.
+
+The following target keys are supported:
+
+* `logging.NAME.target.address` (URL of the target)
+* `logging.NAME.target.ca_cert` (Certificate when using an HTTPS target with a self-signed certificate)
+* `logging.NAME.target.username` (Username for HTTP authentication)
+* `logging.NAME.target.password` (Password for HTTP authentication)
+* `logging.NAME.target.retry` (How many times to retry the transmission)
+
+The webhook data matches what's sent over the existing events API.

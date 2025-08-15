@@ -22,6 +22,7 @@ import (
 	"github.com/lxc/incus/v6/internal/server/node"
 	"github.com/lxc/incus/v6/internal/server/state"
 	localtls "github.com/lxc/incus/v6/shared/tls"
+	"github.com/lxc/incus/v6/shared/tls/tlstest"
 )
 
 // A node can unblock other nodes that were waiting for a cluster upgrade to
@@ -72,7 +73,7 @@ func TestMaybeUpdate_Upgrade(t *testing.T) {
 	// Create a stub upgrade script that just touches a stamp file.
 	stamp := filepath.Join(dir, "stamp")
 	script := filepath.Join(dir, "cluster-upgrade")
-	data := []byte(fmt.Sprintf("#!/bin/sh\ntouch %s\n", stamp))
+	data := fmt.Appendf(nil, "#!/bin/sh\ntouch %s\n", stamp)
 	err = os.WriteFile(script, data, 0o755)
 	require.NoError(t, err)
 
@@ -125,7 +126,7 @@ func TestMaybeUpdate_NothingToDo(t *testing.T) {
 	// Create a stub upgrade script that just touches a stamp file.
 	stamp := filepath.Join(dir, "stamp")
 	script := filepath.Join(dir, "cluster-upgrade")
-	data := []byte(fmt.Sprintf("#!/bin/sh\ntouch %s\n", stamp))
+	data := fmt.Appendf(nil, "#!/bin/sh\ntouch %s\n", stamp)
 	err = os.WriteFile(script, data, 0o755)
 	require.NoError(t, err)
 
@@ -145,7 +146,7 @@ func TestUpgradeMembersWithoutRole(t *testing.T) {
 	state, cleanup := state.NewTestState(t)
 	defer cleanup()
 
-	serverCert := localtls.TestingKeyPair()
+	serverCert := tlstest.TestingKeyPair(t)
 	mux := http.NewServeMux()
 	server := newServer(serverCert, mux)
 	defer server.Close()

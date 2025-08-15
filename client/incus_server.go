@@ -1,6 +1,7 @@
 package incus
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -85,7 +86,7 @@ func (r *ProtocolIncus) IsClustered() bool {
 // GetServerResources returns the resources available to a given Incus server.
 func (r *ProtocolIncus) GetServerResources() (*api.Resources, error) {
 	if !r.HasExtension("resources") {
-		return nil, fmt.Errorf("The server is missing the required \"resources\" API extension")
+		return nil, errors.New("The server is missing the required \"resources\" API extension")
 	}
 
 	resources := api.Resources{}
@@ -117,6 +118,7 @@ func (r *ProtocolIncus) UseProject(name string) InstanceServer {
 		project:              name,
 		eventConns:           make(map[string]*websocket.Conn),  // New project specific listener conns.
 		eventListeners:       make(map[string][]*EventListener), // New project specific listeners.
+		skipEvents:           r.skipEvents,
 		oidcClient:           r.oidcClient,
 	}
 }
@@ -140,6 +142,7 @@ func (r *ProtocolIncus) UseTarget(name string) InstanceServer {
 		project:              r.project,
 		eventConns:           make(map[string]*websocket.Conn),  // New target specific listener conns.
 		eventListeners:       make(map[string][]*EventListener), // New target specific listeners.
+		skipEvents:           r.skipEvents,
 		oidcClient:           r.oidcClient,
 		clusterTarget:        name,
 	}
@@ -154,7 +157,7 @@ func (r *ProtocolIncus) IsAgent() bool {
 func (r *ProtocolIncus) GetMetrics() (string, error) {
 	// Check that the server supports it.
 	if !r.HasExtension("metrics") {
-		return "", fmt.Errorf("The server is missing the required \"metrics\" API extension")
+		return "", errors.New("The server is missing the required \"metrics\" API extension")
 	}
 
 	// Prepare the request.
@@ -192,7 +195,7 @@ func (r *ProtocolIncus) GetMetrics() (string, error) {
 // ApplyServerPreseed configures a target Incus server with the provided server and cluster configuration.
 func (r *ProtocolIncus) ApplyServerPreseed(config api.InitPreseed) error {
 	// Apply server configuration.
-	if config.Server.Config != nil && len(config.Server.Config) > 0 {
+	if len(config.Server.Config) > 0 {
 		// Get current config.
 		server, etag, err := r.GetServer()
 		if err != nil {
@@ -211,7 +214,7 @@ func (r *ProtocolIncus) ApplyServerPreseed(config api.InitPreseed) error {
 	}
 
 	// Apply storage configuration.
-	if config.Server.StoragePools != nil && len(config.Server.StoragePools) > 0 {
+	if len(config.Server.StoragePools) > 0 {
 		// Get the list of storagePools.
 		storagePoolNames, err := r.GetStoragePoolNames()
 		if err != nil {
@@ -330,7 +333,7 @@ func (r *ProtocolIncus) ApplyServerPreseed(config api.InitPreseed) error {
 	}
 
 	// Apply project configuration.
-	if config.Server.Projects != nil && len(config.Server.Projects) > 0 {
+	if len(config.Server.Projects) > 0 {
 		// Get the list of projects.
 		projectNames, err := r.GetProjectNames()
 		if err != nil {
@@ -469,8 +472,7 @@ func (r *ProtocolIncus) ApplyServerPreseed(config api.InitPreseed) error {
 	}
 
 	// Apply profile configuration.
-	if config.Server.Profiles != nil && len(config.Server.Profiles) > 0 {
-
+	if len(config.Server.Profiles) > 0 {
 		// Apply profile configuration.
 		applyProfile := func(profile api.InitProfileProjectPost) error {
 			// Get the current profile.
@@ -535,7 +537,16 @@ func (r *ProtocolIncus) ApplyServerPreseed(config api.InitPreseed) error {
 			if err != nil {
 				return err
 			}
+		}
+	}
 
+	// Apply certificate configuration.
+	if len(config.Server.Certificates) > 0 {
+		for _, certificate := range config.Server.Certificates {
+			err := r.CreateCertificate(certificate)
+			if err != nil {
+				return fmt.Errorf("Failed to create certificate %q: %w", certificate.Name, err)
+			}
 		}
 	}
 

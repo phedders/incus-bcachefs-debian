@@ -27,20 +27,20 @@ import (
 func (d *dir) CreateVolume(vol Volume, filler *VolumeFiller, op *operations.Operation) error {
 	volPath := vol.MountPath()
 
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	if util.PathExists(vol.MountPath()) {
 		return fmt.Errorf("Volume path %q already exists", vol.MountPath())
 	}
 
 	// Create the volume itself.
-	err := vol.EnsureMountPath()
+	err := vol.EnsureMountPath(true)
 	if err != nil {
 		return err
 	}
 
-	revert.Add(func() { _ = os.RemoveAll(volPath) })
+	reverter.Add(func() { _ = os.RemoveAll(volPath) })
 
 	// Get path to disk volume if volume is block or iso.
 	rootBlockPath := ""
@@ -58,7 +58,7 @@ func (d *dir) CreateVolume(vol Volume, filler *VolumeFiller, op *operations.Oper
 		}
 
 		if revertFunc != nil {
-			revert.Add(revertFunc)
+			reverter.Add(revertFunc)
 		}
 	}
 
@@ -94,7 +94,7 @@ func (d *dir) CreateVolume(vol Volume, filler *VolumeFiller, op *operations.Oper
 		}
 	}
 
-	revert.Success()
+	reverter.Success()
 	return nil
 }
 
@@ -117,17 +117,17 @@ func (d *dir) CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcData 
 				return err
 			}
 
-			revert := revert.New()
-			defer revert.Fail()
+			reverter := revert.New()
+			defer reverter.Fail()
 
 			revertQuota, err := d.setupInitialQuota(vol)
 			if err != nil {
 				return err
 			}
 
-			revert.Add(revertQuota)
+			reverter.Add(revertQuota)
 
-			revert.Success()
+			reverter.Success()
 			return nil
 		}
 
@@ -173,7 +173,7 @@ func (d *dir) DeleteVolume(vol Volume, op *operations.Operation) error {
 	}
 
 	if len(snapshots) > 0 {
-		return fmt.Errorf("Cannot remove a volume that has snapshots")
+		return errors.New("Cannot remove a volume that has snapshots")
 	}
 
 	volPath := vol.MountPath()
@@ -244,7 +244,7 @@ func (d *dir) ValidateVolume(vol Volume, removeUnknownKeys bool) error {
 	}
 
 	if vol.config["size"] != "" && vol.volType == VolumeTypeBucket {
-		return fmt.Errorf("Size cannot be specified for buckets")
+		return errors.New("Size cannot be specified for buckets")
 	}
 
 	return nil
@@ -379,7 +379,7 @@ func (d *dir) MountVolume(vol Volume, op *operations.Operation) error {
 	// Don't attempt to modify the permission of an existing custom volume root.
 	// A user inside the instance may have modified this and we don't want to reset it on restart.
 	if !util.PathExists(vol.MountPath()) || vol.volType != VolumeTypeCustom {
-		err := vol.EnsureMountPath()
+		err := vol.EnsureMountPath(false)
 		if err != nil {
 			return err
 		}
@@ -429,16 +429,16 @@ func (d *dir) CreateVolumeSnapshot(snapVol Volume, op *operations.Operation) err
 	parentName, _, _ := api.GetParentAndSnapshotName(snapVol.name)
 
 	// Create snapshot directory.
-	err := snapVol.EnsureMountPath()
+	err := snapVol.EnsureMountPath(false)
 	if err != nil {
 		return err
 	}
 
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	snapPath := snapVol.MountPath()
-	revert.Add(func() { _ = os.RemoveAll(snapPath) })
+	reverter.Add(func() { _ = os.RemoveAll(snapPath) })
 
 	if snapVol.contentType != ContentTypeBlock || snapVol.volType != VolumeTypeCustom {
 		var rsyncArgs []string
@@ -483,7 +483,7 @@ func (d *dir) CreateVolumeSnapshot(snapVol Volume, op *operations.Operation) err
 		}
 	}
 
-	revert.Success()
+	reverter.Success()
 	return nil
 }
 
@@ -523,7 +523,7 @@ func (d *dir) MountVolumeSnapshot(snapVol Volume, op *operations.Operation) erro
 	// Don't attempt to modify the permission of an existing custom volume root.
 	// A user inside the instance may have modified this and we don't want to reset it on restart.
 	if !util.PathExists(snapPath) || snapVol.volType != VolumeTypeCustom {
-		err := snapVol.EnsureMountPath()
+		err := snapVol.EnsureMountPath(false)
 		if err != nil {
 			return err
 		}
@@ -578,7 +578,7 @@ func (d *dir) RestoreVolume(vol Volume, snapshotName string, op *operations.Oper
 
 	srcPath := snapVol.MountPath()
 	if !util.PathExists(srcPath) {
-		return fmt.Errorf("Snapshot not found")
+		return errors.New("Snapshot not found")
 	}
 
 	volPath := vol.MountPath()

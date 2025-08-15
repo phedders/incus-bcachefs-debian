@@ -212,7 +212,7 @@ func (m *Method) getNames(buf *file.Buffer) error {
 	buf.L("%s %s {", branch, activeCriteria([]string{}, FieldNames(mapping.Filters)))
 	buf.L("return nil, fmt.Errorf(\"Cannot filter on empty %s\")", entityFilter(mapping.Name))
 	buf.L("} else {")
-	buf.L("return nil, fmt.Errorf(\"No statement exists for the given Filter\")")
+	buf.L("return nil, errors.New(\"No statement exists for the given Filter\")")
 	buf.L("}")
 	buf.L("}")
 	buf.N()
@@ -421,7 +421,7 @@ func (m *Method) getMany(buf *file.Buffer) error {
 		buf.L("%s %s {", branch, activeCriteria([]string{}, FieldNames(mapping.Filters)))
 		buf.L("return nil, fmt.Errorf(\"Cannot filter on empty %s\")", entityFilter(mapping.Name))
 		buf.L("} else {")
-		buf.L("return nil, fmt.Errorf(\"No statement exists for the given Filter\")")
+		buf.L("return nil, errors.New(\"No statement exists for the given Filter\")")
 		buf.L("}")
 		buf.L("}")
 		buf.N()
@@ -621,7 +621,7 @@ func (m *Method) getRefs(buf *file.Buffer, parentTable string, refMapping *Mappi
 
 	switch refMapping.Type {
 	case ReferenceTable:
-		buf.L("%s, err := Get%s(ctx, db, \"%s\", \"%s\", filters...)", refParentList, lex.Plural(refStruct), parentTable, m.entity)
+		buf.L("%s, err := Get%s(ctx, db, \"%s\", \"%s\", filters...)", refParentList, lex.Plural(refStruct), parentTable, lex.SnakeCase(m.entity))
 		m.ifErrNotNil(buf, true, "nil", "err")
 		buf.L("%s := map[string]%s{}", refList, refMapping.ImportType())
 		buf.L("for _, ref := range %s[%sID] {", refParentList, refParent)
@@ -634,7 +634,7 @@ func (m *Method) getRefs(buf *file.Buffer, parentTable string, refMapping *Mappi
 		buf.L("}")
 		buf.N()
 	case MapTable:
-		buf.L("%s, err := Get%s(ctx, db, \"%s\", \"%s\", filters...)", refParentList, lex.Plural(refStruct), parentTable, m.entity)
+		buf.L("%s, err := Get%s(ctx, db, \"%s\", \"%s\", filters...)", refParentList, lex.Plural(refStruct), parentTable, lex.SnakeCase(m.entity))
 		m.ifErrNotNil(buf, true, "nil", "err")
 		buf.L("%s, ok := %s[%sID]", refList, refParentList, refParent)
 		buf.L("if !ok {")
@@ -893,6 +893,11 @@ func (m *Method) create(buf *file.Buffer, replace bool) error {
 
 		buf.L("// Populate the statement arguments. ")
 		for i, field := range fields {
+			if field.Config.Has("create_timestamp") || field.Config.Has("update_timestamp") {
+				buf.L("args[%d] = time.Now().UTC().Format(time.RFC3339)", i)
+				continue
+			}
+
 			if util.IsNeitherFalseNorEmpty(field.Config.Get("marshal")) {
 				marshalFunc := "marshal"
 				if strings.ToLower(field.Config.Get("marshal")) == "json" {
@@ -916,11 +921,8 @@ func (m *Method) create(buf *file.Buffer, replace bool) error {
 			m.ifErrNotNil(buf, true, fmt.Sprintf(`fmt.Errorf("Failed to get \"%s\" prepared statement: %%w", err)`, stmtCodeVar(m.entity, kind)))
 			buf.L(`// Execute the statement.`)
 			buf.L(`_, err = stmt.Exec(args...)`)
-			buf.L(`var sqliteErr sqlite3.Error`)
-			buf.L(`if errors.As(err, &sqliteErr) {`)
-			buf.L(`	if sqliteErr.Code == sqlite3.ErrConstraint {`)
-			buf.L(`		return ErrConflict`)
-			buf.L(`	}`)
+			buf.L(`if err != nil && strings.HasPrefix(err.Error(), "UNIQUE constraint failed:") {`)
+			buf.L(`	return ErrConflict`)
 			buf.L(`}`)
 			buf.N()
 			m.ifErrNotNil(buf, true, fmt.Sprintf(`fmt.Errorf("Failed to create \"%s\" entry: %%w", err)`, entityTable(m.entity, m.config["table"])))
@@ -928,11 +930,8 @@ func (m *Method) create(buf *file.Buffer, replace bool) error {
 			m.ifErrNotNil(buf, true, "-1", fmt.Sprintf(`fmt.Errorf("Failed to get \"%s\" prepared statement: %%w", err)`, stmtCodeVar(m.entity, kind)))
 			buf.L(`// Execute the statement.`)
 			buf.L(`result, err := stmt.Exec(args...)`)
-			buf.L(`var sqliteErr sqlite3.Error`)
-			buf.L(`if errors.As(err, &sqliteErr) {`)
-			buf.L(`	if sqliteErr.Code == sqlite3.ErrConstraint {`)
-			buf.L(`		return -1, ErrConflict`)
-			buf.L(`	}`)
+			buf.L(`if err != nil && strings.HasPrefix(err.Error(), "UNIQUE constraint failed:") {`)
+			buf.L(`	return -1, ErrConflict`)
 			buf.L(`}`)
 			buf.N()
 			m.ifErrNotNil(buf, true, "-1", fmt.Sprintf(`fmt.Errorf("Failed to create \"%s\" entry: %%w", err)`, entityTable(m.entity, m.config["table"])))
@@ -1023,7 +1022,7 @@ func (m *Method) createRefs(buf *file.Buffer, parentTable string, refMapping *Ma
 		buf.L("%s[key] = %s", lex.Plural(refVar), refVar)
 		buf.L("}")
 		buf.N()
-		buf.L("err := Create%s(ctx, db, \"%s\", \"%s\", %s)", lex.Plural(refStruct), parentTable, m.entity, lex.Plural(refVar))
+		buf.L("err := Create%s(ctx, db, \"%s\", \"%s\", %s)", lex.Plural(refStruct), parentTable, lex.SnakeCase(m.entity), lex.Plural(refVar))
 		m.ifErrNotNil(buf, false, fmt.Sprintf("fmt.Errorf(\"Insert %s failed for %s: %%w\", err)", refStruct, lex.PascalCase(m.entity)))
 	case MapTable:
 		buf.L("referenceID := int(%sID)", refParent)
@@ -1035,7 +1034,7 @@ func (m *Method) createRefs(buf *file.Buffer, parentTable string, refMapping *Ma
 
 		buf.L("}")
 		buf.N()
-		buf.L("err := Create%s(ctx, db, \"%s\", \"%s\", insert)", refStruct, parentTable, m.entity)
+		buf.L("err := Create%s(ctx, db, \"%s\", \"%s\", insert)", refStruct, parentTable, lex.SnakeCase(m.entity))
 		m.ifErrNotNil(buf, true, fmt.Sprintf("fmt.Errorf(\"Insert %s failed for %s: %%w\", err)", refStruct, lex.PascalCase(m.entity)))
 		buf.L("}")
 	}
@@ -1077,7 +1076,20 @@ func (m *Method) rename(buf *file.Buffer) error {
 		}
 	}
 
-	buf.L("result, err := stmt.Exec(to, %s)", mapping.FieldParamsMarshal(nk))
+	updatedAt := false
+	for _, field := range mapping.Fields {
+		if field.Config.Has("update_timestamp") {
+			updatedAt = true
+			break
+		}
+	}
+
+	if updatedAt {
+		buf.L("result, err := stmt.Exec(to, %s, %s)", "time.Now().UTC().Format(time.RFC3339)", mapping.FieldParamsMarshal(nk))
+	} else {
+		buf.L("result, err := stmt.Exec(to, %s)", mapping.FieldParamsMarshal(nk))
+	}
+
 	m.ifErrNotNil(buf, true, fmt.Sprintf("fmt.Errorf(\"Rename %s failed: %%w\", err)", mapping.Name))
 	buf.L("n, err := result.RowsAffected()")
 	m.ifErrNotNil(buf, true, "fmt.Errorf(\"Fetch affected rows failed: %w\", err)")
@@ -1202,6 +1214,11 @@ func (m *Method) update(buf *file.Buffer) error {
 		fields := updateMapping.ColumnFields("ID") // This exclude the ID column, which is autogenerated.
 		params := make([]string, len(fields))
 		for i, field := range fields {
+			if field.Config.Has("update_timestamp") {
+				params[i] = "time.Now().UTC().Format(time.RFC3339)"
+				continue
+			}
+
 			if util.IsNeitherFalseNorEmpty(field.Config.Get("marshal")) {
 				marshalFunc := "marshal"
 				if strings.ToLower(field.Config.Get("marshal")) == "json" {
@@ -1277,7 +1294,7 @@ func (m *Method) updateRefs(buf *file.Buffer, parentTable string, refMapping *Ma
 	refList := lex.Plural(refVar)
 	refParent := lex.CamelCase(m.entity)
 
-	buf.L("err := Update%s(ctx, db, \"%s\", \"%s\", int(%sID), %s)", lex.Plural(refStruct), parentTable, m.entity, refParent, refList)
+	buf.L("err := Update%s(ctx, db, \"%s\", \"%s\", int(%sID), %s)", lex.Plural(refStruct), parentTable, lex.SnakeCase(m.entity), refParent, refList)
 	m.ifErrNotNil(buf, true, fmt.Sprintf("fmt.Errorf(\"Replace %s for %s failed: %%w\", err)", refStruct, lex.PascalCase(m.entity)))
 	buf.L("return nil")
 

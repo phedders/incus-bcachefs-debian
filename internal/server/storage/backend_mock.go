@@ -39,10 +39,6 @@ func (b *mockBackend) Description() string {
 	return ""
 }
 
-func (b *mockBackend) ValidateName(value string) error {
-	return nil
-}
-
 func (b *mockBackend) Validate(config map[string]string) error {
 	return nil
 }
@@ -199,6 +195,11 @@ func (b *mockBackend) MountInstance(inst instance.Instance, op *operations.Opera
 }
 
 func (b *mockBackend) UnmountInstance(inst instance.Instance, op *operations.Operation) error {
+	return nil
+}
+
+// CacheInstanceSnapshots is used to pre-fetch snapshot information ahead of bulk queries.
+func (b *mockBackend) CacheInstanceSnapshots(inst instance.ConfigReader) error {
 	return nil
 }
 

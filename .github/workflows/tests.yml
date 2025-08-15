@@ -26,7 +26,7 @@ jobs:
           - tip
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # Differential ShellCheck requires full git history
           fetch-depth: 0
@@ -142,49 +142,49 @@ jobs:
           - ceph
           - random
         os:
-          - ubuntu-22.04
+          - ubuntu-24.04
         include:
           - go: oldstable
             suite: cluster
             backend: dir
-            os: ubuntu-22.04
+            os: ubuntu-24.04
           - go: oldstable
             suite: standalone
             backend: dir
-            os: ubuntu-22.04
+            os: ubuntu-24.04
           - go: tip
             suite: cluster
             backend: dir
-            os: ubuntu-22.04
+            os: ubuntu-24.04
           - go: tip
             suite: standalone
             backend: dir
-            os: ubuntu-22.04
+            os: ubuntu-24.04
 
           - go: oldstable
             suite: cluster
             backend: dir
-            os: ubuntu-22.04-arm
+            os: ubuntu-24.04-arm
           - go: oldstable
             suite: standalone
             backend: dir
-            os: ubuntu-22.04-arm
+            os: ubuntu-24.04-arm
           - go: stable
             suite: cluster
             backend: dir
-            os: ubuntu-22.04-arm
+            os: ubuntu-24.04-arm
           - go: stable
             suite: standalone
             backend: dir
-            os: ubuntu-22.04-arm
+            os: ubuntu-24.04-arm
           - go: tip
             suite: cluster
             backend: dir
-            os: ubuntu-22.04-arm
+            os: ubuntu-24.04-arm
           - go: tip
             suite: standalone
             backend: dir
-            os: ubuntu-22.04-arm
+            os: ubuntu-24.04-arm
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -228,7 +228,7 @@ jobs:
           sudo nft flush ruleset
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Go (${{ matrix.go }})
         uses: actions/setup-go@v5
@@ -431,7 +431,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -442,19 +442,35 @@ jobs:
         run: |
             mkdir bin
 
-      - name: Build static x86_64 incus
+      - name: Build static incus (x86_64)
         env:
           CGO_ENABLED: 0
           GOARCH: amd64
         run: |
           go build -o bin/incus.x86_64 ./cmd/incus
 
-      - name: Build static aarch64 incus
+      - name: Build static incus (aarch64)
         env:
           CGO_ENABLED: 0
           GOARCH: arm64
         run: |
           go build -o bin/incus.aarch64 ./cmd/incus
+
+      - name: Build static incus-agent (x86_64)
+        if: runner.os == 'Linux' || runner.os == 'Windows'
+        env:
+          CGO_ENABLED: 0
+          GOARCH: amd64
+        run: |
+          go build -o bin/incus-agent.x86_64 ./cmd/incus-agent
+
+      - name: Build static incus-agent (aarch64)
+        if: runner.os == 'Linux' || runner.os == 'Windows'
+        env:
+          CGO_ENABLED: 0
+          GOARCH: arm64
+        run: |
+          go build -o bin/incus-agent.aarch64 ./cmd/incus-agent
 
       - name: Build static incus-migrate
         if: runner.os == 'Linux'
@@ -500,7 +516,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Go
         uses: actions/setup-go@v5

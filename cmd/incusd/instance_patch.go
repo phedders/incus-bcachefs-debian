@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -62,11 +62,6 @@ func instancePatch(d *Daemon, r *http.Request) response.Response {
 
 	s := d.State()
 
-	instanceType, err := urlInstanceTypeDetect(r)
-	if err != nil {
-		return response.SmartError(err)
-	}
-
 	projectName := request.ProjectParam(r)
 
 	// Get the container
@@ -76,11 +71,11 @@ func instancePatch(d *Daemon, r *http.Request) response.Response {
 	}
 
 	if internalInstance.IsSnapshot(name) {
-		return response.BadRequest(fmt.Errorf("Invalid instance name"))
+		return response.BadRequest(errors.New("Invalid instance name"))
 	}
 
 	// Handle requests targeted to a container on a different node
-	resp, err := forwardedResponseIfInstanceIsRemote(s, r, projectName, name, instanceType)
+	resp, err := forwardedResponseIfInstanceIsRemote(s, r, projectName, name)
 	if err != nil {
 		return response.SmartError(err)
 	}
@@ -128,7 +123,7 @@ func instancePatch(d *Daemon, r *http.Request) response.Response {
 	}
 
 	if req.Restore != "" {
-		return response.BadRequest(fmt.Errorf("Can't call PATCH in restore mode"))
+		return response.BadRequest(errors.New("Can't call PATCH in restore mode"))
 	}
 
 	// Check if architecture was passed
@@ -137,7 +132,7 @@ func instancePatch(d *Daemon, r *http.Request) response.Response {
 	if err != nil {
 		architecture = c.Architecture()
 	} else {
-		architecture, err = osarch.ArchitectureId(req.Architecture)
+		architecture, err = osarch.ArchitectureID(req.Architecture)
 		if err != nil {
 			architecture = 0
 		}

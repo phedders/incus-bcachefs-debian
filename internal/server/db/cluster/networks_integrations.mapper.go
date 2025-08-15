@@ -10,8 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/mattn/go-sqlite3"
 )
 
 var networkIntegrationObjects = RegisterStmt(`
@@ -188,7 +186,7 @@ func GetNetworkIntegrations(ctx context.Context, db dbtx, filters ...NetworkInte
 		} else if filter.ID == nil && filter.Name == nil {
 			return nil, fmt.Errorf("Cannot filter on empty NetworkIntegrationFilter")
 		} else {
-			return nil, fmt.Errorf("No statement exists for the given Filter")
+			return nil, errors.New("No statement exists for the given Filter")
 		}
 	}
 
@@ -300,11 +298,8 @@ func CreateNetworkIntegration(ctx context.Context, db dbtx, object NetworkIntegr
 
 	// Execute the statement.
 	result, err := stmt.Exec(args...)
-	var sqliteErr sqlite3.Error
-	if errors.As(err, &sqliteErr) {
-		if sqliteErr.Code == sqlite3.ErrConstraint {
-			return -1, ErrConflict
-		}
+	if err != nil && strings.HasPrefix(err.Error(), "UNIQUE constraint failed:") {
+		return -1, ErrConflict
 	}
 
 	if err != nil {

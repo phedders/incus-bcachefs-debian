@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os/exec"
@@ -54,7 +55,7 @@ func (d Nftables) Compat() (bool, error) {
 	// We require a >= 5.2 kernel to avoid weird conflicts with xtables and support for inet table NAT rules.
 	releaseLen := len(uname.Release)
 	if releaseLen > 1 {
-		verErr := fmt.Errorf("Kernel version does not meet minimum requirement of 5.2")
+		verErr := errors.New("Kernel version does not meet minimum requirement of 5.2")
 		releaseParts := strings.SplitN(uname.Release, ".", 3)
 		if len(releaseParts) < 2 {
 			return false, fmt.Errorf("Failed parsing kernel version number into parts: %w", err)
@@ -241,7 +242,7 @@ func (d Nftables) networkSetupForwardingPolicy(networkName string, ip4Allow *boo
 // If srcIP is non-nil then SNAT is used with the specified address, otherwise MASQUERADE mode is used.
 // Append mode is always on and so the append argument is ignored.
 func (d Nftables) networkSetupOutboundNAT(networkName string, SNATV4 *SNATOpts, SNATV6 *SNATOpts) error {
-	rules := make(map[string]*SNATOpts, 0)
+	rules := make(map[string]*SNATOpts)
 
 	tplFields := map[string]any{
 		"namespace":      nftablesNamespace,
@@ -396,7 +397,7 @@ func (d Nftables) instanceDeviceLabel(projectName, instanceName, deviceName stri
 }
 
 // InstanceSetupBridgeFilter sets up the filter rules to apply bridged device IP filtering.
-func (d Nftables) InstanceSetupBridgeFilter(projectName string, instanceName string, deviceName string, parentName string, hostName string, hwAddr string, IPv4Nets []*net.IPNet, IPv6Nets []*net.IPNet, parentManaged bool, macFiltering bool, aclRules []ACLRule) error {
+func (d Nftables) InstanceSetupBridgeFilter(projectName string, instanceName string, deviceName string, parentName string, hostName string, hwAddr string, IPv4Nets []*net.IPNet, IPv6Nets []*net.IPNet, IPv4DNS []string, IPv6DNS []string, parentManaged bool, macFiltering bool, aclRules []ACLRule) error {
 	deviceLabel := d.instanceDeviceLabel(projectName, instanceName, deviceName)
 
 	mac, err := net.ParseMAC(hwAddr)
@@ -475,6 +476,10 @@ func (d Nftables) InstanceSetupBridgeFilter(projectName string, instanceName str
 	tplFields["aclOutAcceptRules"] = nftRules.outAcceptRules
 	tplFields["aclOutDefaultRule"] = nftRules.defaultOutRule
 
+	// Required for basic connectivity
+	tplFields["dnsIPv4"] = IPv4DNS
+	tplFields["dnsIPv6"] = IPv6DNS
+
 	err = d.applyNftConfig(nftablesInstanceBridgeFilter, tplFields)
 	if err != nil {
 		return fmt.Errorf("Failed adding bridge filter rules for instance device %q (%s): %w", deviceLabel, tplFields["family"], err)
@@ -499,22 +504,22 @@ func (d Nftables) InstanceClearBridgeFilter(projectName string, instanceName str
 // InstanceSetupProxyNAT creates DNAT rules for proxy devices.
 func (d Nftables) InstanceSetupProxyNAT(projectName string, instanceName string, deviceName string, forward *AddressForward) error {
 	if forward.ListenAddress == nil {
-		return fmt.Errorf("Listen address is required")
+		return errors.New("Listen address is required")
 	}
 
 	if forward.TargetAddress == nil {
-		return fmt.Errorf("Target address is required")
+		return errors.New("Target address is required")
 	}
 
 	listenPortsLen := len(forward.ListenPorts)
 	if listenPortsLen <= 0 {
-		return fmt.Errorf("At least 1 listen port must be supplied")
+		return errors.New("At least 1 listen port must be supplied")
 	}
 
 	// If multiple target ports supplied, check they match the listen port(s) count.
 	targetPortsLen := len(forward.TargetPorts)
 	if targetPortsLen != 1 && targetPortsLen != listenPortsLen {
-		return fmt.Errorf("Mismatch between listen port(s) and target port(s) count")
+		return errors.New("Mismatch between listen port(s) and target port(s) count")
 	}
 
 	ipFamily := "ip"
@@ -660,7 +665,7 @@ func (d Nftables) aclRulesToNftRules(hostName string, aclRules []ACLRule) (*nftR
 			}
 
 			if partial {
-				return nil, fmt.Errorf("Invalid default rule generated")
+				return nil, errors.New("Invalid default rule generated")
 			}
 
 			continue
@@ -750,10 +755,10 @@ func (d Nftables) aclRuleToNftRules(hostNameQuoted string, rule ACLRule) (string
 		}
 
 		if nft6Rule == "" {
-			return "", "", nil, fmt.Errorf("Invalid empty rule generated")
+			return "", "", nil, errors.New("Invalid empty rule generated")
 		}
 	} else if nft4Rule == "" {
-		return "", "", nil, fmt.Errorf("Invalid empty rule generated")
+		return "", "", nil, errors.New("Invalid empty rule generated")
 	}
 
 	nftRules := []string{}
@@ -1085,30 +1090,11 @@ func (d Nftables) aclRuleSubjectToACLMatch(direction string, ipVersion uint, sub
 	for _, subjectCriterion := range subjectCriteria {
 		if validate.IsNetworkRange(subjectCriterion) == nil {
 			criterionParts := strings.SplitN(subjectCriterion, "-", 2)
-			if len(criterionParts) > 1 {
-				ip := net.ParseIP(criterionParts[0])
-				if ip != nil {
-					var subjectIPVersion uint = 4
-					if ip.To4() == nil {
-						subjectIPVersion = 6
-					}
-
-					if ipVersion != subjectIPVersion {
-						partial = true
-						continue // Skip subjects that are not for the ipVersion we are looking for.
-					}
-
-					fieldParts = append(fieldParts, fmt.Sprintf("%s-%s", criterionParts[0], criterionParts[1]))
-				}
-			} else {
+			if len(criterionParts) < 2 {
 				return nil, false, fmt.Errorf("Invalid IP range %q", subjectCriterion)
 			}
-		} else {
-			ip := net.ParseIP(subjectCriterion)
-			if ip == nil {
-				ip, _, _ = net.ParseCIDR(subjectCriterion)
-			}
 
+			ip := net.ParseIP(criterionParts[0])
 			if ip != nil {
 				var subjectIPVersion uint = 4
 				if ip.To4() == nil {
@@ -1120,10 +1106,29 @@ func (d Nftables) aclRuleSubjectToACLMatch(direction string, ipVersion uint, sub
 					continue // Skip subjects that are not for the ipVersion we are looking for.
 				}
 
-				fieldParts = append(fieldParts, subjectCriterion)
-			} else {
+				fieldParts = append(fieldParts, fmt.Sprintf("%s-%s", criterionParts[0], criterionParts[1]))
+			}
+		} else {
+			ip := net.ParseIP(subjectCriterion)
+			if ip == nil {
+				ip, _, _ = net.ParseCIDR(subjectCriterion)
+			}
+
+			if ip == nil {
 				return nil, false, fmt.Errorf("Unsupported nftables subject %q", subjectCriterion)
 			}
+
+			var subjectIPVersion uint = 4
+			if ip.To4() == nil {
+				subjectIPVersion = 6
+			}
+
+			if ipVersion != subjectIPVersion {
+				partial = true
+				continue // Skip subjects that are not for the ipVersion we are looking for.
+			}
+
+			fieldParts = append(fieldParts, subjectCriterion)
 		}
 	}
 
@@ -1235,6 +1240,17 @@ func (d Nftables) NetworkApplyForwards(networkName string, rules []AddressForwar
 						"listenPorts":   portRangeStr(listenPortRange, "-"),
 						"targetDest":    targetDest,
 					})
+
+					if rule.SNAT {
+						snatRules = append(snatRules, map[string]any{
+							"ipFamily":      ipFamily,
+							"protocol":      rule.Protocol,
+							"listenAddress": listenAddressStr,
+							"listenPorts":   portRangeStr(listenPortRange, "-"),
+							"targetAddress": targetAddressStr,
+							"targetPorts":   portRangeStr(targetPortRange, "-"),
+						})
+					}
 				}
 			} else {
 				// Format the destination host/port as appropriate.

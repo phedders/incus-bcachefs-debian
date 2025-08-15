@@ -25,6 +25,41 @@ definitions:
         title: AccessEntry represents an entity having access to the resource.
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
+    BackupTarget:
+        properties:
+            access_key:
+                description: AccessKey is the S3 API access key
+                example: GOOG1234
+                type: string
+                x-go-name: AccessKey
+            bucket_name:
+                description: BucketName is the name of the S3 bucket.
+                example: my_bucket
+                type: string
+                x-go-name: BucketName
+            path:
+                description: Path is the target path.
+                example: foo/test.tar
+                type: string
+                x-go-name: Path
+            protocol:
+                description: Protocol is the upload protocol.
+                example: S3
+                type: string
+                x-go-name: Protocol
+            secret_key:
+                description: SecretKey is the S3 API access key
+                example: secret123
+                type: string
+                x-go-name: SecretKey
+            url:
+                description: URL is the HTTPS URL for the backup
+                example: https://storage.googleapis.com
+                type: string
+                x-go-name: URL
+        title: BackupTarget represents the target storage server for an instance or volume backup.
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
     Certificate:
         description: Certificate represents a certificate
         properties:
@@ -1070,6 +1105,11 @@ definitions:
                 example: image.tar.xz
                 type: string
                 x-go-name: Filename
+            format:
+                description: Type of image format
+                example: split
+                type: string
+                x-go-name: Format
             profiles:
                 description: List of profiles to use when creating from this image (if none provided by user)
                 example:
@@ -1211,6 +1251,13 @@ definitions:
         x-go-package: github.com/lxc/incus/v6/shared/api
     InitLocalPreseed:
         properties:
+            certificates:
+                description: Certificates to add
+                example: PEM encoded certificate
+                items:
+                    $ref: '#/definitions/CertificatesPost'
+                type: array
+                x-go-name: Certificates
             config:
                 additionalProperties:
                     type: string
@@ -1583,6 +1630,8 @@ definitions:
                 example: true
                 type: boolean
                 x-go-name: OptimizedStorage
+            target:
+                $ref: '#/definitions/BackupTarget'
         title: InstanceBackupsPost represents the fields available for a new instance backup.
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
@@ -2946,6 +2995,124 @@ definitions:
         title: NetworkACLsPost used for creating an ACL.
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
+    NetworkAddressSet:
+        description: Refer to doc/howto/network_address_sets.md for details.
+        properties:
+            addresses:
+                description: List of addresses in the set
+                example:
+                    - 192.0.0.1
+                    - 2001:0db8:1234::1
+                items:
+                    type: string
+                type: array
+                x-go-name: Addresses
+            config:
+                additionalProperties:
+                    type: string
+                description: Address set configuration map (refer to doc/network-address-sets.md)
+                example:
+                    user.mykey: foo
+                type: object
+                x-go-name: Config
+            description:
+                description: Description of the address set
+                example: Web servers
+                type: string
+                x-go-name: Description
+            name:
+                description: The new name of the address set
+                example: '"bar"'
+                type: string
+                x-go-name: Name
+            project:
+                description: Project name
+                example: project1
+                type: string
+                x-go-name: Project
+            used_by:
+                description: List of URLs of objects using this profile
+                example:
+                    - /1.0/network-acls/foo
+                    - /1.0/network-acls/bar
+                    - /1.0/network-acls/baz
+                items:
+                    type: string
+                readOnly: true
+                type: array
+                x-go-name: UsedBy
+        title: NetworkAddressSet represents an address set.
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
+    NetworkAddressSetPost:
+        properties:
+            name:
+                description: The new name of the address set
+                example: '"bar"'
+                type: string
+                x-go-name: Name
+        title: NetworkAddressSetPost used for renaming an address set.
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
+    NetworkAddressSetPut:
+        properties:
+            addresses:
+                description: List of addresses in the set
+                example:
+                    - 192.0.0.1
+                    - 2001:0db8:1234::1
+                items:
+                    type: string
+                type: array
+                x-go-name: Addresses
+            config:
+                additionalProperties:
+                    type: string
+                description: Address set configuration map (refer to doc/network-address-sets.md)
+                example:
+                    user.mykey: foo
+                type: object
+                x-go-name: Config
+            description:
+                description: Description of the address set
+                example: Web servers
+                type: string
+                x-go-name: Description
+        title: NetworkAddressSetPut used for updating an address set.
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
+    NetworkAddressSetsPost:
+        properties:
+            addresses:
+                description: List of addresses in the set
+                example:
+                    - 192.0.0.1
+                    - 2001:0db8:1234::1
+                items:
+                    type: string
+                type: array
+                x-go-name: Addresses
+            config:
+                additionalProperties:
+                    type: string
+                description: Address set configuration map (refer to doc/network-address-sets.md)
+                example:
+                    user.mykey: foo
+                type: object
+                x-go-name: Config
+            description:
+                description: Description of the address set
+                example: Web servers
+                type: string
+                x-go-name: Description
+            name:
+                description: The new name of the address set
+                example: '"bar"'
+                type: string
+                x-go-name: Name
+        title: NetworkAddressSetsPost used for creating a new address set.
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
     NetworkAllocations:
         description: |-
             NetworkAllocations used for displaying network addresses used by a consuming entity
@@ -3026,6 +3193,11 @@ definitions:
                 example: tcp
                 type: string
                 x-go-name: Protocol
+            snat:
+                description: SNAT controls whether to apply a matching SNAT rule to new outgoing traffic from the target
+                example: false
+                type: boolean
+                x-go-name: SNAT
             target_address:
                 description: TargetAddress to forward ListenPorts to
                 example: 198.51.100.2
@@ -4404,6 +4576,19 @@ definitions:
                 x-go-name: Total
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
+    ResourcesCPUAddressSizes:
+        properties:
+            physical_bits:
+                format: uint64
+                type: integer
+                x-go-name: PhysicalBits
+            virtual_bits:
+                format: uint64
+                type: integer
+                x-go-name: VirtualBits
+        title: ResourcesCPUAddressSizes resprents address size information for a CPU socket.
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
     ResourcesCPUCache:
         description: ResourcesCPUCache represents a CPU cache
         properties:
@@ -4465,6 +4650,8 @@ definitions:
     ResourcesCPUSocket:
         description: ResourcesCPUSocket represents a CPU socket on the system
         properties:
+            address_sizes:
+                $ref: '#/definitions/ResourcesCPUAddressSizes'
             cache:
                 description: List of CPU caches
                 items:
@@ -5096,7 +5283,7 @@ definitions:
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
     ResourcesNetworkCardVDPA:
-        description: ResourceNetworkCardVDPA represents the VDPA configuration of the network card
+        description: ResourcesNetworkCardVDPA represents the VDPA configuration of the network card
         properties:
             device:
                 description: Device identifier of the VDPA device
@@ -6391,6 +6578,8 @@ definitions:
                 example: true
                 type: boolean
                 x-go-name: OptimizedStorage
+            target:
+                $ref: '#/definitions/BackupTarget'
             volume_only:
                 description: Whether to ignore snapshots
                 example: false
@@ -7535,6 +7724,12 @@ paths:
         get:
             description: Returns a list of cluster members (URLs).
             operationId: cluster_members_get
+            parameters:
+                - description: Collection filter
+                  example: default
+                  in: query
+                  name: filter
+                  type: string
             produces:
                 - application/json
             responses:
@@ -7796,6 +7991,12 @@ paths:
         get:
             description: Returns a list of cluster members (structs).
             operationId: cluster_members_get_recursion1
+            parameters:
+                - description: Collection filter
+                  example: default
+                  in: query
+                  name: filter
+                  type: string
             produces:
                 - application/json
             responses:
@@ -15853,6 +16054,27 @@ paths:
                 "500":
                     $ref: '#/responses/InternalServerError'
             summary: Get the storage volume backups
+            tags:
+                - storage
+    /1.0/storage-pools/{poolName}/volumes/{type}/{volumeName}/sftp:
+        get:
+            description: Upgrades the request to an SFTP connection of the storage volume's filesystem.
+            operationId: storage_pool_volume_type_sftp_get
+            produces:
+                - application/json
+                - application/octet-stream
+            responses:
+                "101":
+                    description: Switching protocols to SFTP
+                "400":
+                    $ref: '#/responses/BadRequest'
+                "403":
+                    $ref: '#/responses/Forbidden'
+                "404":
+                    $ref: '#/responses/NotFound'
+                "500":
+                    $ref: '#/responses/InternalServerError'
+            summary: Get the storage volume SFTP connection
             tags:
                 - storage
     /1.0/storage-pools/{poolName}/volumes/{type}/{volumeName}/snapshots:

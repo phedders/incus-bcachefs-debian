@@ -471,6 +471,22 @@ var APIExtensions = []string{
 	"instance_state_cpu_time",
 	"network_io_bus",
 	"disk_io_bus_usb",
+	"server_logging",
+	"network_forward_snat",
+	"memory_hotplug",
+	"instance_nic_routed_host_tables",
+	"instance_publish_split",
+	"init_preseed_certificates",
+	"custom_volume_sftp",
+	"network_ovn_external_nic_address",
+	"network_physical_gateway_hwaddr",
+	"backup_s3_upload",
+	"snapshot_manual_expiry",
+	"resources_cpu_address_sizes",
+	"disk_attached",
+	"limits_memory_hotplug",
+	"disk_wwn",
+	"server_logging_webhook",
 }
 
 // APIExtensionsCount returns the number of available API extensions.

@@ -3,7 +3,9 @@ package incus
 import (
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -52,22 +54,27 @@ func (r *ProtocolOCI) getProxyHost() (*url.URL, error) {
 
 // GetImages returns a list of available images as Image structs.
 func (r *ProtocolOCI) GetImages() ([]api.Image, error) {
-	return nil, fmt.Errorf("Can't list images from OCI registry")
+	return nil, errors.New("Can't list images from OCI registry")
 }
 
 // GetImagesAllProjects returns a list of available images as Image structs.
 func (r *ProtocolOCI) GetImagesAllProjects() ([]api.Image, error) {
-	return nil, fmt.Errorf("Can't list images from OCI registry")
+	return nil, errors.New("Can't list images from OCI registry")
+}
+
+// GetImagesAllProjectsWithFilter returns a filtered list of available images as Image structs.
+func (r *ProtocolOCI) GetImagesAllProjectsWithFilter(filters []string) ([]api.Image, error) {
+	return nil, errors.New("Can't list images from OCI registry")
 }
 
 // GetImageFingerprints returns a list of available image fingerprints.
 func (r *ProtocolOCI) GetImageFingerprints() ([]string, error) {
-	return nil, fmt.Errorf("Can't list images from OCI registry")
+	return nil, errors.New("Can't list images from OCI registry")
 }
 
 // GetImagesWithFilter returns a filtered list of available images as Image structs.
-func (r *ProtocolOCI) GetImagesWithFilter(filters []string) ([]api.Image, error) {
-	return nil, fmt.Errorf("Can't list images from OCI registry")
+func (r *ProtocolOCI) GetImagesWithFilter(_ []string) ([]api.Image, error) {
+	return nil, errors.New("Can't list images from OCI registry")
 }
 
 // GetImage returns an Image struct for the provided fingerprint.
@@ -76,10 +83,10 @@ func (r *ProtocolOCI) GetImage(fingerprint string) (*api.Image, string, error) {
 	if !ok {
 		_, err := exec.LookPath("skopeo")
 		if err != nil {
-			return nil, "", fmt.Errorf("OCI container handling requires \"skopeo\" be present on the system")
+			return nil, "", errors.New("OCI container handling requires \"skopeo\" be present on the system")
 		}
 
-		return nil, "", fmt.Errorf("Image not found")
+		return nil, "", errors.New("Image not found")
 	}
 
 	img := api.Image{
@@ -116,47 +123,28 @@ func (r *ProtocolOCI) GetImage(fingerprint string) (*api.Image, string, error) {
 func (r *ProtocolOCI) GetImageFile(fingerprint string, req ImageFileRequest) (*ImageFileResponse, error) {
 	ctx := context.Background()
 
-	// Get proxy details.
-	proxy, err := r.getProxyHost()
-	if err != nil {
-		return nil, err
-	}
-
-	var env []string
-	if proxy != nil {
-		env = []string{
-			fmt.Sprintf("HTTPS_PROXY=%s", proxy),
-			fmt.Sprintf("HTTP_PROXY=%s", proxy),
-		}
-	}
-
 	// Get the cached entry.
 	info, ok := r.cache[fingerprint]
 	if !ok {
 		_, err := exec.LookPath("skopeo")
 		if err != nil {
-			return nil, fmt.Errorf("OCI container handling requires \"skopeo\" be present on the system")
+			return nil, errors.New("OCI container handling requires \"skopeo\" be present on the system")
 		}
 
-		return nil, fmt.Errorf("Image not found")
+		return nil, errors.New("Image not found")
 	}
 
 	// Quick checks.
 	if req.MetaFile == nil && req.RootfsFile == nil {
-		return nil, fmt.Errorf("No file requested")
+		return nil, errors.New("No file requested")
 	}
 
 	if os.Geteuid() != 0 {
-		return nil, fmt.Errorf("OCI image export currently requires root access")
-	}
-
-	_, err = exec.LookPath("umoci")
-	if err != nil {
-		return nil, fmt.Errorf("OCI container handling requires \"umoci\" be present on the system")
+		return nil, errors.New("OCI image export currently requires root access")
 	}
 
 	// Get some temporary storage.
-	ociPath, err := os.MkdirTemp("", "incus-oci-")
+	ociPath, err := os.MkdirTemp(r.tempPath, "incus-oci-")
 	if err != nil {
 		return nil, err
 	}
@@ -178,16 +166,12 @@ func (r *ProtocolOCI) GetImageFile(fingerprint string, req ImageFileRequest) (*I
 		req.ProgressHandler(ioprogress.ProgressData{Text: "Retrieving OCI image from registry"})
 	}
 
-	stdout, _, err := subprocess.RunCommandSplit(
-		ctx,
-		env,
-		nil,
-		"skopeo",
-		"--insecure-policy",
-		"copy",
+	imageTag := "latest"
+
+	stdout, err := r.runSkopeo(
+		"copy", info.Alias,
 		"--remove-signatures",
-		fmt.Sprintf("%s/%s", strings.Replace(r.httpHost, "https://", "docker://", 1), info.Alias),
-		fmt.Sprintf("oci:%s:latest", filepath.Join(ociPath, "oci")))
+		fmt.Sprintf("oci:%s:%s", filepath.Join(ociPath, "oci"), imageTag))
 	if err != nil {
 		logger.Debug("Error copying remote image to local", logger.Ctx{"image": info.Alias, "stdout": stdout, "stderr": err})
 		return nil, err
@@ -198,14 +182,9 @@ func (r *ProtocolOCI) GetImageFile(fingerprint string, req ImageFileRequest) (*I
 		req.ProgressHandler(ioprogress.ProgressData{Text: "Unpacking the OCI image"})
 	}
 
-	stdout, err = subprocess.RunCommand(
-		"umoci",
-		"unpack",
-		"--keep-dirlinks",
-		"--image", filepath.Join(ociPath, "oci"),
-		filepath.Join(ociPath, "image"))
+	err = unpackOCIImage(filepath.Join(ociPath, "oci"), imageTag, filepath.Join(ociPath, "image"))
 	if err != nil {
-		logger.Debug("Error unpacking OCI image", logger.Ctx{"image": filepath.Join(ociPath, "oci"), "stdout": stdout, "stderr": err})
+		logger.Debug("Error unpacking OCI image", logger.Ctx{"image": filepath.Join(ociPath, "oci"), "err": err})
 		return nil, err
 	}
 
@@ -315,36 +294,41 @@ func (r *ProtocolOCI) GetImageFile(fingerprint string, req ImageFileRequest) (*I
 }
 
 // GetImageSecret isn't relevant for the simplestreams protocol.
-func (r *ProtocolOCI) GetImageSecret(fingerprint string) (string, error) {
-	return "", fmt.Errorf("Private images aren't supported with OCI registry")
+func (r *ProtocolOCI) GetImageSecret(_ string) (string, error) {
+	return "", errors.New("Private images aren't supported with OCI registry")
 }
 
 // GetPrivateImage isn't relevant for the simplestreams protocol.
-func (r *ProtocolOCI) GetPrivateImage(fingerprint string, secret string) (*api.Image, string, error) {
-	return nil, "", fmt.Errorf("Private images aren't supported with OCI registry")
+func (r *ProtocolOCI) GetPrivateImage(_ string, _ string) (*api.Image, string, error) {
+	return nil, "", errors.New("Private images aren't supported with OCI registry")
 }
 
 // GetPrivateImageFile isn't relevant for the simplestreams protocol.
-func (r *ProtocolOCI) GetPrivateImageFile(fingerprint string, secret string, req ImageFileRequest) (*ImageFileResponse, error) {
-	return nil, fmt.Errorf("Private images aren't supported with OCI registry")
+func (r *ProtocolOCI) GetPrivateImageFile(_ string, _ string, _ ImageFileRequest) (*ImageFileResponse, error) {
+	return nil, errors.New("Private images aren't supported with OCI registry")
 }
 
 // GetImageAliases returns the list of available aliases as ImageAliasesEntry structs.
 func (r *ProtocolOCI) GetImageAliases() ([]api.ImageAliasesEntry, error) {
-	return nil, fmt.Errorf("Can't list image aliases from OCI registry")
+	return nil, errors.New("Can't list image aliases from OCI registry")
 }
 
 // GetImageAliasNames returns the list of available alias names.
 func (r *ProtocolOCI) GetImageAliasNames() ([]string, error) {
-	return nil, fmt.Errorf("Can't list image aliases from OCI registry")
+	return nil, errors.New("Can't list image aliases from OCI registry")
 }
 
-// GetImageAlias returns an existing alias as an ImageAliasesEntry struct.
-func (r *ProtocolOCI) GetImageAlias(name string) (*api.ImageAliasesEntry, string, error) {
+func (r *ProtocolOCI) runSkopeo(action string, image string, args ...string) (string, error) {
+	// Parse and mangle the server URL.
+	uri, err := url.Parse(r.httpHost)
+	if err != nil {
+		return "", err
+	}
+
 	// Get proxy details.
 	proxy, err := r.getProxyHost()
 	if err != nil {
-		return nil, "", err
+		return "", err
 	}
 
 	var env []string
@@ -355,14 +339,64 @@ func (r *ProtocolOCI) GetImageAlias(name string) (*api.ImageAliasesEntry, string
 		}
 	}
 
+	// Handle authentication.
+	if uri.User != nil {
+		creds, err := json.Marshal(map[string]any{
+			"auths": map[string]any{
+				uri.Scheme + "://" + uri.Host: map[string]string{
+					"auth": base64.StdEncoding.EncodeToString([]byte(uri.User.String())),
+				},
+			},
+		})
+		if err != nil {
+			return "", err
+		}
+
+		authFile, err := os.CreateTemp(r.tempPath, "incus_client_auth_")
+		if err != nil {
+			return "", err
+		}
+
+		defer authFile.Close()
+		defer os.Remove(authFile.Name())
+
+		err = authFile.Chmod(0o600)
+		if err != nil {
+			return "", err
+		}
+
+		_, err = fmt.Fprintf(authFile, "%s", creds)
+		if err != nil {
+			return "", err
+		}
+
+		uri.User = nil
+
+		args = append(args, fmt.Sprintf("--authfile=%s", authFile.Name()))
+	}
+
+	// Prepare the arguments.
+	uri.Scheme = "docker"
+	args = append([]string{"--insecure-policy", action, fmt.Sprintf("%s/%s", uri.String(), image)}, args...)
+
 	// Get the image information from skopeo.
 	stdout, _, err := subprocess.RunCommandSplit(
 		context.TODO(),
 		env,
 		nil,
 		"skopeo",
-		"inspect",
-		fmt.Sprintf("%s/%s", strings.Replace(r.httpHost, "https://", "docker://", 1), name))
+		args...)
+	if err != nil {
+		return "", err
+	}
+
+	return stdout, nil
+}
+
+// GetImageAlias returns an existing alias as an ImageAliasesEntry struct.
+func (r *ProtocolOCI) GetImageAlias(name string) (*api.ImageAliasesEntry, string, error) {
+	// Get the image information from skopeo.
+	stdout, err := r.runSkopeo("inspect", name)
 	if err != nil {
 		logger.Debug("Error getting image alias", logger.Ctx{"name": name, "stdout": stdout, "stderr": err})
 		return nil, "", err
@@ -378,7 +412,7 @@ func (r *ProtocolOCI) GetImageAlias(name string) (*api.ImageAliasesEntry, string
 	info.Alias = name
 	info.Digest = strings.Replace(info.Digest, "sha256:", "", 1)
 
-	archID, err := osarch.ArchitectureId(info.Architecture)
+	archID, err := osarch.ArchitectureID(info.Architecture)
 	if err != nil {
 		return nil, "", err
 	}
@@ -408,7 +442,7 @@ func (r *ProtocolOCI) GetImageAlias(name string) (*api.ImageAliasesEntry, string
 // GetImageAliasType returns an existing alias as an ImageAliasesEntry struct.
 func (r *ProtocolOCI) GetImageAliasType(imageType string, name string) (*api.ImageAliasesEntry, string, error) {
 	if api.InstanceType(imageType) == api.InstanceTypeVM {
-		return nil, "", fmt.Errorf("OCI images are only supported for containers")
+		return nil, "", errors.New("OCI images are only supported for containers")
 	}
 
 	return r.GetImageAlias(name)
@@ -417,7 +451,7 @@ func (r *ProtocolOCI) GetImageAliasType(imageType string, name string) (*api.Ima
 // GetImageAliasArchitectures returns a map of architectures / targets.
 func (r *ProtocolOCI) GetImageAliasArchitectures(imageType string, name string) (map[string]*api.ImageAliasesEntry, error) {
 	if api.InstanceType(imageType) == api.InstanceTypeVM {
-		return nil, fmt.Errorf("OCI images are only supported for containers")
+		return nil, errors.New("OCI images are only supported for containers")
 	}
 
 	alias, _, err := r.GetImageAlias(name)
@@ -434,6 +468,6 @@ func (r *ProtocolOCI) GetImageAliasArchitectures(imageType string, name string) 
 }
 
 // ExportImage exports (copies) an image to a remote server.
-func (r *ProtocolOCI) ExportImage(fingerprint string, image api.ImageExportPost) (Operation, error) {
-	return nil, fmt.Errorf("Exporting images is not supported with OCI registry")
+func (r *ProtocolOCI) ExportImage(_ string, _ api.ImageExportPost) (Operation, error) {
+	return nil, errors.New("Exporting images is not supported with OCI registry")
 }

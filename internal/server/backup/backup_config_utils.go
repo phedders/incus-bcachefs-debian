@@ -2,7 +2,7 @@ package backup
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -25,7 +25,7 @@ func ConfigToInstanceDBArgs(state *state.State, c *config.Config, projectName st
 		return nil, nil
 	}
 
-	arch, _ := osarch.ArchitectureId(c.Container.Architecture)
+	arch, _ := osarch.ArchitectureID(c.Container.Architecture)
 	instanceType, _ := instancetype.New(c.Container.Type)
 
 	inst := &db.InstanceArgs{
@@ -170,7 +170,7 @@ func UpdateInstanceConfig(c *db.Cluster, b Info, mountPath string) error {
 	}
 
 	if !rootDiskDeviceFound {
-		return fmt.Errorf("No root device could be found")
+		return errors.New("No root device could be found")
 	}
 
 	// Write updated backup.yaml file.
