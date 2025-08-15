@@ -4,6 +4,7 @@ incus (6.0.5-1) UNRELEASED; urgency=medium
   * d/control:
     - Update Build-Depends and Depends
     - Fix Breaks version
+  * Update paths in d/copyright
 
  -- Mathias Gibbens <gibmat@debian.org>  Fri, 15 Aug 2025 13:34:01 +0000
 
