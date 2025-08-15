@@ -1,6 +1,7 @@
 incus (6.0.5-1) UNRELEASED; urgency=medium
 
   * New upstream release:
+    - Add patch to import IncusOS network struct definitions
     - Rebase d/p/002-adjust-import-paths.patch
     - Drop custom userns patch
     - Drop upstream cherry-picked commits
