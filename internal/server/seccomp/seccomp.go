@@ -452,6 +452,7 @@ import "C"
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -627,7 +628,7 @@ type Instance interface {
 	CGroup() (*cgroup.CGroup, error)
 	CurrentIdmap() (*idmap.Set, error)
 	DiskIdmap() (*idmap.Set, error)
-	IdmappedStorage(path string, fstype string) idmap.IdmapStorageType
+	IdmappedStorage(path string, fstype string) idmap.StorageType
 	InsertSeccompUnixDevice(prefix string, m deviceConfig.Device, pid int) error
 }
 
@@ -1048,7 +1049,7 @@ retry:
 func NewSeccompServer(s *state.State, path string, findPID func(pid int32, state *state.State) (Instance, error)) (*Server, error) {
 	ret := C.seccomp_notify_get_sizes(&C.expected_sizes)
 	if ret < 0 {
-		return nil, fmt.Errorf("Failed to query kernel for seccomp notifier sizes")
+		return nil, errors.New("Failed to query kernel for seccomp notifier sizes")
 	}
 
 	// Cleanup existing sockets
@@ -1914,7 +1915,7 @@ type MountArgs struct {
 	flags     int
 	data      string
 	pid       int
-	idmapType idmap.IdmapStorageType
+	idmapType idmap.StorageType
 	uid       int64
 	gid       int64
 	fsuid     int64
@@ -2052,7 +2053,7 @@ func (s *Server) mountHandleHugetlbfsArgs(c Instance, args *MountArgs, nsuid int
 	}
 
 	args.data = strings.Join(optStrings, ",")
-	args.idmapType = idmap.IdmapStorageNone
+	args.idmapType = idmap.StorageTypeNone
 	return nil
 }
 
@@ -2398,7 +2399,7 @@ func lxcSupportSeccompNotifyContinue(state *state.State) error {
 	}
 
 	if !state.OS.SeccompListenerContinue {
-		return fmt.Errorf("Seccomp notify doesn't support continuing syscalls")
+		return errors.New("Seccomp notify doesn't support continuing syscalls")
 	}
 
 	return nil
@@ -2411,11 +2412,11 @@ func lxcSupportSeccompNotifyAddfd(state *state.State) error {
 	}
 
 	if !state.OS.SeccompListenerContinue {
-		return fmt.Errorf("Seccomp notify doesn't support continuing syscalls")
+		return errors.New("Seccomp notify doesn't support continuing syscalls")
 	}
 
 	if !state.OS.SeccompListenerAddfd {
-		return fmt.Errorf("Seccomp notify doesn't support adding file descriptors")
+		return errors.New("Seccomp notify doesn't support adding file descriptors")
 	}
 
 	return nil
@@ -2423,16 +2424,16 @@ func lxcSupportSeccompNotifyAddfd(state *state.State) error {
 
 func lxcSupportSeccompNotify(state *state.State) error {
 	if !state.OS.SeccompListener {
-		return fmt.Errorf("Seccomp notify not supported")
+		return errors.New("Seccomp notify not supported")
 	}
 
 	if !state.OS.LXCFeatures["seccomp_notify"] {
-		return fmt.Errorf("LXC doesn't support seccomp notify")
+		return errors.New("LXC doesn't support seccomp notify")
 	}
 
 	c, err := liblxc.NewContainer("test-seccomp", state.OS.LxcPath)
 	if err != nil {
-		return fmt.Errorf("Failed to load seccomp notify test container")
+		return errors.New("Failed to load seccomp notify test container")
 	}
 
 	err = c.SetConfigItem("lxc.seccomp.notify.proxy", fmt.Sprintf("unix:%s", internalUtil.RunPath("seccomp.socket")))
@@ -2511,11 +2512,11 @@ func (s *Server) MountSyscallValid(c Instance, args *MountArgs) (bool, string) {
 }
 
 // MountSyscallShift checks whether this mount syscall needs shifting.
-func (s *Server) MountSyscallShift(c Instance, path string, fsType string) idmap.IdmapStorageType {
+func (s *Server) MountSyscallShift(c Instance, path string, fsType string) idmap.StorageType {
 	if util.IsTrue(c.ExpandedConfig()["security.syscalls.intercept.mount.shift"]) {
 		diskIdmap, err := c.DiskIdmap()
 		if err != nil {
-			return idmap.IdmapStorageNone
+			return idmap.StorageTypeNone
 		}
 
 		if diskIdmap == nil {
@@ -2523,7 +2524,7 @@ func (s *Server) MountSyscallShift(c Instance, path string, fsType string) idmap
 		}
 	}
 
-	return idmap.IdmapStorageNone
+	return idmap.StorageTypeNone
 }
 
 var pageSize = 4096

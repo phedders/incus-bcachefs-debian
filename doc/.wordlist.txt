@@ -3,6 +3,7 @@ AAVMF
 ABI
 ACL
 ACLs
+AI
 AIO
 allocator
 AMD
@@ -25,10 +26,10 @@ BFD
 BGP
 bibi
 BitLocker
+BMC
 bool
 bootable
 BPF
-BMC
 Btrfs
 bugfix
 bugfixes
@@ -45,8 +46,8 @@ checksums
 Chocolatey
 CIDR
 CLI
-COPR
 Colima
+COPR
 Cowsql
 CPUs
 CRIU
@@ -64,6 +65,7 @@ DHCPv
 Diátaxis
 Diffie
 Distrobuilder
+DNAT
 DNS
 dnsmasq
 DNSSEC
@@ -84,8 +86,9 @@ ES
 ESA
 ETag
 failover
-frontend
+formatters
 FQDNs
+frontend
 Furo
 gapped
 GARM
@@ -140,6 +143,8 @@ kibi
 Kibit
 Kubernetes
 KVM
+LLM
+LLMs
 lookups
 Loongarch
 LRU
@@ -156,6 +161,7 @@ macvlan
 Makefile
 manpages
 Mbit
+mDNS
 MiB
 Mibit
 MicroCeph
@@ -185,8 +191,8 @@ OpenFGA
 OpenID
 OpenMetrics
 OpenSSL
-OpenSUSE
 openSUSE
+OpenSUSE
 OpenTofu
 OSD
 overcommit
@@ -209,19 +215,19 @@ Pibit
 PID
 PKI
 PNG
+Podman
 Pongo
 POSIX
 pre
 preseed
 proxied
 proxying
-Podman
 PTS
 qdisc
 QEMU
-QMP
 qgroup
 qgroups
+QMP
 RADOS
 RBAC
 RBD
@@ -234,8 +240,8 @@ RESTful
 RHEL
 rootfs
 RSA
-RTC
 rST
+RTC
 runtime
 SATA
 scalable
@@ -252,6 +258,7 @@ simplestreams
 SLAAC
 SMTP
 Snapcraft
+SNAT
 Solaris
 SPAs
 SPL
@@ -304,10 +311,10 @@ UFW
 UI
 UID
 UIDs
+uncomment
 unconfigured
 unevictable
 unixgram
-uncomment
 unmanaged
 unmount
 unmounting
@@ -335,6 +342,7 @@ VPS
 VRF
 vSwitch
 VXLAN
+webhook
 WebSocket
 WebSockets
 Winget

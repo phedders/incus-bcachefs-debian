@@ -244,7 +244,7 @@ var InstanceConfigKeysAny = map[string]func(value string) error{
 		}
 
 		if num == 0 {
-			return fmt.Errorf("Memory limit can't be 0")
+			return errors.New("Memory limit can't be 0")
 		}
 
 		return nil
@@ -336,6 +336,18 @@ var InstanceConfigKeysAny = map[string]func(value string) error{
 	//  liveupdate: no
 	//  shortdesc: When snapshots are to be deleted
 	"snapshots.expiry": func(value string) error {
+		// Validate expression
+		_, err := GetExpiry(time.Time{}, value)
+		return err
+	},
+
+	// gendoc:generate(entity=instance, group=snapshots, key=snapshots.expiry.manual)
+	// Specify an expression like `1M 2H 3d 4w 5m 6y`.
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  shortdesc: When snapshots are to be deleted (for those not created through scheduling)
+	"snapshots.expiry.manual": func(value string) error {
 		// Validate expression
 		_, err := GetExpiry(time.Time{}, value)
 		return err
@@ -917,6 +929,18 @@ var InstanceConfigKeysContainer = map[string]func(value string) error{
 
 // InstanceConfigKeysVM is a map of config key to validator. (keys applying to VM only).
 var InstanceConfigKeysVM = map[string]func(value string) error{
+	// gendoc:generate(entity=instance, group=resource-limits, key=limits.memory.hotplug)
+	// If this option is set to `false`, disable memory hotplug entirely.
+	// Alternatively, it can be set to a bytes value which will define an upper limit for hotplugged memory.
+	// The value must be greater than or equal to limits.memory.
+	// ---
+	//  type: string
+	//  defaultdesc: `true`
+	//  liveupdate: yes
+	//  condition: virtual machine
+	//  shortdesc: Control upper limit for hotplugged memory or disable memory hotplug.
+	"limits.memory.hotplug": validate.Optional(validate.Or(validate.IsBool, validate.IsSize)),
+
 	// gendoc:generate(entity=instance, group=resource-limits, key=limits.memory.hugepages)
 	// If this option is set to `false`, regular system memory is used.
 	// ---
@@ -1088,6 +1112,20 @@ var InstanceConfigKeysVM = map[string]func(value string) error{
 	//  shortdesc: QEMU VM definition name (used for migration between versions)
 	"volatile.vm.definition": validate.Optional(validate.IsAny),
 
+	// gendoc:generate(entity=instance, group=volatile, key=volatile.vm.rtc_adjustment)
+	// Real Time Clock adjustment time to allow virtual machines to run on a different base than the host.
+	// ---
+	//  type: int64
+	//  shortdesc: Real Time Clock change adjustment
+	"volatile.vm.rtc_adjustment": validate.Optional(validate.IsInt64),
+
+	// gendoc:generate(entity=instance, group=volatile, key=volatile.vm.rtc_offset)
+	// Real Time Clock offset to allow virtual machines to run on a different base than the host.
+	// ---
+	//  type: int64
+	//  shortdesc: Real Time Clock change offset
+	"volatile.vm.rtc_offset": validate.Optional(validate.IsInt64),
+
 	// gendoc:generate(entity=instance, group=volatile, key=volatile.vsock_id)
 	//
 	// ---
@@ -1156,6 +1194,15 @@ func ConfigKeyChecker(key string, instanceType api.InstanceType) (func(value str
 		//  type: string
 		//  shortdesc: Network device MAC address
 		if strings.HasSuffix(key, ".hwaddr") {
+			return validate.IsAny, nil
+		}
+
+		// gendoc:generate(entity=instance, group=volatile, key=volatile.<name>.io.bus)
+		// The IO bus stores the actual IO bus being used, checked in case `io.bus=auto`.
+		// ---
+		//  type: string
+		//  shortdesc: IO bus in use
+		if strings.HasSuffix(key, ".io.bus") {
 			return validate.IsAny, nil
 		}
 

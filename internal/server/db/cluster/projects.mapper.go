@@ -10,8 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/mattn/go-sqlite3"
 )
 
 var projectObjects = RegisterStmt(`
@@ -188,7 +186,7 @@ func GetProjects(ctx context.Context, db dbtx, filters ...ProjectFilter) (_ []Pr
 		} else if filter.ID == nil && filter.Name == nil {
 			return nil, fmt.Errorf("Cannot filter on empty ProjectFilter")
 		} else {
-			return nil, fmt.Errorf("No statement exists for the given Filter")
+			return nil, errors.New("No statement exists for the given Filter")
 		}
 	}
 
@@ -299,11 +297,8 @@ func CreateProject(ctx context.Context, db dbtx, object Project) (_ int64, _err 
 
 	// Execute the statement.
 	result, err := stmt.Exec(args...)
-	var sqliteErr sqlite3.Error
-	if errors.As(err, &sqliteErr) {
-		if sqliteErr.Code == sqlite3.ErrConstraint {
-			return -1, ErrConflict
-		}
+	if err != nil && strings.HasPrefix(err.Error(), "UNIQUE constraint failed:") {
+		return -1, ErrConflict
 	}
 
 	if err != nil {

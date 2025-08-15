@@ -189,7 +189,7 @@ func deleteProfile(sysOS *sys.OS, fullName string, name string) error {
 	}
 
 	if aaCacheDir == "" {
-		return fmt.Errorf("Couldn't identify AppArmor cache directory")
+		return errors.New("Couldn't identify AppArmor cache directory")
 	}
 
 	err := unloadProfile(sysOS, fullName, name)
@@ -217,11 +217,20 @@ func parserSupports(sysOS *sys.OS, feature string) (bool, error) {
 	}
 
 	if aaVersion == nil {
-		return false, fmt.Errorf("Couldn't identify AppArmor version")
+		return false, errors.New("Couldn't identify AppArmor version")
 	}
 
 	if feature == "unix" {
 		minVer, err := version.NewDottedVersion("2.10.95")
+		if err != nil {
+			return false, err
+		}
+
+		return aaVersion.Compare(minVer) >= 0, nil
+	}
+
+	if feature == "userns" {
+		minVer, err := version.NewDottedVersion("4.0.0")
 		if err != nil {
 			return false, err
 		}
@@ -241,9 +250,9 @@ func profileName(prefix string, name string) string {
 
 	// Max length in AppArmor is 253 chars.
 	if len(name)+len(prefix)+3+separators >= 253 {
-		hash := sha256.New()
-		_, _ = io.WriteString(hash, name)
-		name = fmt.Sprintf("%x", hash.Sum(nil))
+		hash256 := sha256.New()
+		_, _ = io.WriteString(hash256, name)
+		name = fmt.Sprintf("%x", hash256.Sum(nil))
 	}
 
 	if len(prefix) > 0 {

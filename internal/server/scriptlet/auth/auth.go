@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 
 	"go.starlark.net/starlark"
@@ -8,9 +9,9 @@ import (
 	"github.com/lxc/incus/v6/internal/server/auth/common"
 	scriptletLoad "github.com/lxc/incus/v6/internal/server/scriptlet/load"
 	"github.com/lxc/incus/v6/internal/server/scriptlet/log"
-	"github.com/lxc/incus/v6/internal/server/scriptlet/marshal"
 	"github.com/lxc/incus/v6/shared/api"
 	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/scriptlet"
 )
 
 // AuthorizationRun runs the authorization scriptlet.
@@ -40,10 +41,10 @@ func AuthorizationRun(l logger.Logger, details *common.RequestDetails, object st
 	// Retrieve a global variable from starlark environment.
 	authorizer := globals["authorize"]
 	if authorizer == nil {
-		return false, fmt.Errorf("Scriptlet missing authorize function")
+		return false, errors.New("Scriptlet missing authorize function")
 	}
 
-	detailsv, err := marshal.StarlarkMarshal(details)
+	detailsv, err := scriptlet.StarlarkMarshal(details)
 	if err != nil {
 		return false, fmt.Errorf("Marshalling details failed: %w", err)
 	}
@@ -109,7 +110,7 @@ func getAccess(l logger.Logger, fun string, args []starlark.Tuple) (*api.Access,
 		return emptyAccess, fmt.Errorf("Failed to run: %w", err)
 	}
 
-	value, err := marshal.StarlarkUnmarshal(v)
+	value, err := scriptlet.StarlarkUnmarshal(v)
 	if err != nil {
 		return emptyAccess, err
 	}

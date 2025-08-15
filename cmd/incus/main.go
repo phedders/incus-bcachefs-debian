@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/user"
 	"path"
@@ -92,7 +94,7 @@ func aliases() []string {
 	return aliases
 }
 
-func createApp() (*cobra.Command, *cmdGlobal) {
+func createApp() (*cobra.Command, *cmdGlobal, error) {
 	// Setup the parser
 	app := &cobra.Command{}
 	app.Use = "incus"
@@ -109,9 +111,17 @@ Custom commands can be defined through aliases, use "incus alias" to control tho
 	app.CompletionOptions = cobra.CompletionOptions{HiddenDefaultCmd: true}
 	app.ValidArgs = aliases()
 
-	// Global flags
+	// Global struct.
 	globalCmd := cmdGlobal{cmd: app, asker: ask.NewAsker(bufio.NewReader(os.Stdin))}
 
+	conf, err := config.LoadConfig("")
+	if err != nil {
+		return nil, nil, fmt.Errorf(i18n.G("Failed to load configuration: %s"), err)
+	}
+
+	globalCmd.conf = conf
+
+	// Global flags.
 	app.PersistentFlags().BoolVar(&globalCmd.flagVersion, "version", false, i18n.G("Print version number"))
 	app.PersistentFlags().BoolVarP(&globalCmd.flagHelp, "help", "h", false, i18n.G("Print help"))
 	app.PersistentFlags().BoolVar(&globalCmd.flagForceLocal, "force-local", false, i18n.G("Force using the local unix socket"))
@@ -303,14 +313,18 @@ Custom commands can be defined through aliases, use "incus alias" to control tho
 	app.Flags().BoolVar(&globalCmd.flagHelpAll, "all", false, i18n.G("Show less common commands"))
 	help.Flags().BoolVar(&globalCmd.flagHelpAll, "all", false, i18n.G("Show less common commands"))
 
-	return app, &globalCmd
+	return app, &globalCmd, nil
 }
 
 func main() {
-	app, globalCmd := createApp()
+	app, globalCmd, err := createApp()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Deal with --all and --sub-commands flags as well as process aliases.
-	err := app.ParseFlags(os.Args[1:])
+	err = app.ParseFlags(os.Args[1:])
 	if err == nil {
 		if globalCmd.flagHelpAll {
 			// Show all commands
@@ -339,8 +353,8 @@ func main() {
 	err = app.Execute()
 	if err != nil {
 		// Handle non-Linux systems
-		if err == config.ErrNotLinux {
-			fmt.Fprintf(os.Stderr, i18n.G(`This client hasn't been configured to use a remote server yet.
+		if errors.Is(err, config.ErrNotLinux) {
+			fmt.Fprintf(os.Stderr, "%s", i18n.G(`This client hasn't been configured to use a remote server yet.
 As your platform can't run native Linux instances, you must connect to a remote server.
 
 If you already added a remote server, make it the default with "incus remote switch NAME".`)+"\n")
@@ -365,7 +379,8 @@ If you already added a remote server, make it the default with "incus remote swi
 	}
 }
 
-func (c *cmdGlobal) PreRun(cmd *cobra.Command, args []string) error {
+// PreRun runs for every command and pre-configures the CLI.
+func (c *cmdGlobal) PreRun(cmd *cobra.Command, _ []string) error {
 	var err error
 
 	// If calling the help, skip pre-run
@@ -395,11 +410,6 @@ func (c *cmdGlobal) PreRun(cmd *cobra.Command, args []string) error {
 		if err != nil && !os.IsExist(err) {
 			cachePath = ""
 		}
-	}
-
-	c.conf, err = config.LoadConfig("")
-	if err != nil {
-		return fmt.Errorf(i18n.G("Failed to load configuration: %s"), err)
 	}
 
 	// If no config dir could be found, treat as if --force-local was passed.
@@ -460,18 +470,21 @@ func (c *cmdGlobal) PreRun(cmd *cobra.Command, args []string) error {
 
 			flush := false
 			if runInit && (cmd.Name() != "init" || cmd.Parent() == nil || cmd.Parent().Name() != "admin") {
-				fmt.Fprintf(os.Stderr, i18n.G("If this is your first time running Incus on this machine, you should also run: incus admin init")+"\n")
+				fmt.Fprint(os.Stderr, i18n.G("If this is your first time running Incus on this machine, you should also run: incus admin init")+"\n")
 				flush = true
 			}
 
 			if !slices.Contains([]string{"admin", "create", "launch"}, cmd.Name()) && (cmd.Parent() == nil || cmd.Parent().Name() != "admin") {
-				fmt.Fprintf(os.Stderr, i18n.G(`To start your first container, try: incus launch images:ubuntu/22.04
-Or for a virtual machine: incus launch images:ubuntu/22.04 --vm`)+"\n")
+				images := []string{"debian/12", "fedora/42", "opensuse/tumbleweed", "ubuntu/24.04"}
+				image := images[rand.Intn(len(images))]
+
+				fmt.Fprintf(os.Stderr, i18n.G(`To start your first container, try: incus launch images:%s
+Or for a virtual machine: incus launch images:%s --vm`)+"\n", image, image)
 				flush = true
 			}
 
 			if flush {
-				fmt.Fprintf(os.Stderr, "\n")
+				fmt.Fprint(os.Stderr, "\n")
 			}
 		}
 
@@ -494,7 +507,8 @@ Or for a virtual machine: incus launch images:ubuntu/22.04 --vm`)+"\n")
 	return nil
 }
 
-func (c *cmdGlobal) PostRun(cmd *cobra.Command, args []string) error {
+// PostRun runs after a successful command.
+func (c *cmdGlobal) PostRun(_ *cobra.Command, _ []string) error {
 	if c.conf != nil && util.PathExists(c.confPath) {
 		// Save OIDC tokens on exit
 		c.conf.SaveOIDCTokens()
@@ -509,7 +523,7 @@ type remoteResource struct {
 	name   string
 }
 
-func (c *cmdGlobal) ParseServers(remotes ...string) ([]remoteResource, error) {
+func (c *cmdGlobal) parseServers(remotes ...string) ([]remoteResource, error) {
 	servers := map[string]incus.InstanceServer{}
 	resources := []remoteResource{}
 
@@ -548,7 +562,7 @@ func (c *cmdGlobal) ParseServers(remotes ...string) ([]remoteResource, error) {
 	return resources, nil
 }
 
-func (c *cmdGlobal) CheckArgs(cmd *cobra.Command, args []string, minArgs int, maxArgs int) (bool, error) {
+func (c *cmdGlobal) checkArgs(cmd *cobra.Command, args []string, minArgs int, maxArgs int) (bool, error) {
 	if len(args) < minArgs || (maxArgs != -1 && len(args) > maxArgs) {
 		_ = cmd.Help()
 
@@ -556,8 +570,36 @@ func (c *cmdGlobal) CheckArgs(cmd *cobra.Command, args []string, minArgs int, ma
 			return true, nil
 		}
 
-		return true, fmt.Errorf(i18n.G("Invalid number of arguments"))
+		return true, errors.New(i18n.G("Invalid number of arguments"))
 	}
 
 	return false, nil
+}
+
+// Return the default list format if the user configured it, otherwise just return "table".
+func (c *cmdGlobal) defaultListFormat() string {
+	if c.conf == nil || c.conf.Defaults.ListFormat == "" {
+		return "table"
+	}
+
+	return c.conf.Defaults.ListFormat
+}
+
+// Return "vga" if preferred console type is VGA, otherwise return "console".
+func (c *cmdGlobal) defaultConsoleType() string {
+	if c.conf == nil || c.conf.Defaults.ConsoleType == "" {
+		return "console"
+	}
+
+	return c.conf.Defaults.ConsoleType
+}
+
+// Return the default console type if the user configured it, otherwise just return "console".
+func (c *cmdGlobal) defaultConsoleSpiceCommand() string {
+	// Alternative SPICE command.
+	if c.conf == nil || c.conf.Defaults.ConsoleSpiceCommand == "" {
+		return ""
+	}
+
+	return c.conf.Defaults.ConsoleSpiceCommand
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,6 +32,7 @@ import (
 	"github.com/lxc/incus/v6/shared/logger"
 	"github.com/lxc/incus/v6/shared/revert"
 	"github.com/lxc/incus/v6/shared/util"
+	"github.com/lxc/incus/v6/shared/validate"
 )
 
 var storagePoolBucketsCmd = APIEndpoint{
@@ -363,7 +365,7 @@ func storagePoolBucketGet(d *Daemon, r *http.Request) response.Response {
 	}
 
 	if !pool.Driver().Info().Buckets {
-		return response.BadRequest(fmt.Errorf("Storage pool does not support buckets"))
+		return response.BadRequest(errors.New("Storage pool does not support buckets"))
 	}
 
 	bucketName, err := url.PathUnescape(mux.Vars(r)["bucketName"])
@@ -457,15 +459,21 @@ func storagePoolBucketsPost(d *Daemon, r *http.Request) response.Response {
 		return response.SmartError(fmt.Errorf("Failed loading storage pool: %w", err))
 	}
 
-	revert := revert.New()
-	defer revert.Fail()
+	// Quick checks.
+	err = validate.IsAPIName(req.Name, false)
+	if err != nil {
+		return response.BadRequest(fmt.Errorf("Invalid storage bucket name: %w", err))
+	}
+
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	err = pool.CreateBucket(bucketProjectName, req, nil)
 	if err != nil {
 		return response.SmartError(fmt.Errorf("Failed creating storage bucket: %w", err))
 	}
 
-	revert.Add(func() { _ = pool.DeleteBucket(bucketProjectName, req.Name, nil) })
+	reverter.Add(func() { _ = pool.DeleteBucket(bucketProjectName, req.Name, nil) })
 
 	// Create admin key for new bucket.
 	adminKeyReq := api.StorageBucketKeysPost{
@@ -495,7 +503,7 @@ func storagePoolBucketsPost(d *Daemon, r *http.Request) response.Response {
 
 	u := api.NewURL().Path(version.APIVersion, "storage-pools", pool.Name(), "buckets", req.Name)
 
-	revert.Success()
+	reverter.Success()
 	return response.SyncResponseLocation(true, adminKey, u.String())
 }
 
@@ -1094,7 +1102,7 @@ func storagePoolBucketKeyGet(d *Daemon, r *http.Request) response.Response {
 	}
 
 	if !pool.Driver().Info().Buckets {
-		return response.BadRequest(fmt.Errorf("Storage pool does not support buckets"))
+		return response.BadRequest(errors.New("Storage pool does not support buckets"))
 	}
 
 	bucketName, err := url.PathUnescape(mux.Vars(r)["bucketName"])

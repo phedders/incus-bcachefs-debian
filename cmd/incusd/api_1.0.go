@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -126,6 +127,7 @@ var api10 = []APIEndpoint{
 	storagePoolVolumeSnapshotTypeCmd,
 	storagePoolVolumesTypeCmd,
 	storagePoolVolumeTypeCmd,
+	storagePoolVolumeTypeSFTPCmd,
 	storagePoolVolumeTypeCustomBackupsCmd,
 	storagePoolVolumeTypeCustomBackupCmd,
 	storagePoolVolumeTypeCustomBackupExportCmd,
@@ -613,7 +615,7 @@ func doApi10Update(d *Daemon, r *http.Request, req api.ServerPut, patch bool) re
 			}
 
 			if curConfig["cluster.https_address"] != newClusterHTTPSAddress {
-				return fmt.Errorf("Changing cluster.https_address is currently not supported")
+				return errors.New("Changing cluster.https_address is currently not supported")
 			}
 		}
 
@@ -641,18 +643,19 @@ func doApi10Update(d *Daemon, r *http.Request, req api.ServerPut, patch bool) re
 		return err
 	})
 	if err != nil {
-		switch err.(type) {
-		case config.ErrorList:
+		var errorList *config.ErrorList
+		switch {
+		case errors.As(err, &errorList):
 			return response.BadRequest(err)
 		default:
 			return response.SmartError(err)
 		}
 	}
 
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
-	revert.Add(func() {
+	reverter.Add(func() {
 		for key := range nodeValues {
 			val, ok := oldNodeConfig[key]
 			if !ok {
@@ -704,15 +707,16 @@ func doApi10Update(d *Daemon, r *http.Request, req api.ServerPut, patch bool) re
 		return err
 	})
 	if err != nil {
-		switch err.(type) {
-		case config.ErrorList:
+		var errorList *config.ErrorList
+		switch {
+		case errors.As(err, &errorList):
 			return response.BadRequest(err)
 		default:
 			return response.SmartError(err)
 		}
 	}
 
-	revert.Add(func() {
+	reverter.Add(func() {
 		for key := range req.Config {
 			val, ok := oldClusterConfig[key]
 			if !ok {
@@ -775,7 +779,7 @@ func doApi10Update(d *Daemon, r *http.Request, req api.ServerPut, patch bool) re
 		return response.SmartError(err)
 	}
 
-	revert.Success()
+	reverter.Success()
 
 	s.Events.SendLifecycle(api.ProjectDefaultName, lifecycle.ConfigUpdated.Event(request.CreateRequestor(r), nil))
 
@@ -788,16 +792,16 @@ func doApi10UpdateTriggers(d *Daemon, nodeChanged, clusterChanged map[string]str
 	acmeChanged := false
 	bgpChanged := false
 	dnsChanged := false
-	lokiChanged := false
 	oidcChanged := false
 	openFGAChanged := false
 	ovnChanged := false
 	ovsChanged := false
 	syslogChanged := false
+	loggingChanges := map[string]struct{}{}
 
 	for key := range clusterChanged {
 		switch key {
-		case "acme.agree_tos", "acme.ca_url", "acme.challenge", "acme.domain", "acme.email", "acme.provider", "acme.provider.environment", "acme.provider.resolvers":
+		case "acme.agree_tos", "acme.ca_url", "acme.challenge", "acme.domain", "acme.email", "acme.provider", "acme.provider.environment", "acme.provider.resolvers", "acme.http.port":
 			acmeChanged = true
 
 		case "cluster.images_minimal_replica":
@@ -825,7 +829,8 @@ func doApi10UpdateTriggers(d *Daemon, nodeChanged, clusterChanged map[string]str
 			}
 
 		case "loki.api.url", "loki.auth.username", "loki.auth.password", "loki.api.ca_cert", "loki.instance", "loki.labels", "loki.loglevel", "loki.types":
-			lokiChanged = true
+			// Notify the logging mechanism about changes to the deprecated keys for backward compatibility.
+			loggingChanges["loki"] = struct{}{}
 
 		case "network.ovn.northbound_connection", "network.ovn.ca_cert", "network.ovn.client_cert", "network.ovn.client_key":
 			ovnChanged = true
@@ -946,19 +951,12 @@ func doApi10UpdateTriggers(d *Daemon, nodeChanged, clusterChanged map[string]str
 		}
 	}
 
-	if lokiChanged {
-		lokiURL, lokiUsername, lokiPassword, lokiCACert, lokiInstance, lokiLoglevel, lokiLabels, lokiTypes := clusterConfig.LokiServer()
-
-		if lokiURL == "" || lokiLoglevel == "" || len(lokiTypes) == 0 {
-			d.internalListener.RemoveHandler("loki")
-		} else {
-			err := d.setupLoki(lokiURL, lokiUsername, lokiPassword, lokiCACert, lokiInstance, lokiLoglevel, lokiLabels, lokiTypes)
-			if err != nil {
-				return err
-			}
+	if len(loggingChanges) > 0 {
+		err := d.loggingController.Reconfigure(d.State(), loggingChanges)
+		if err != nil {
+			return err
 		}
 	}
-
 	if oidcChanged {
 		oidcIssuer, oidcClientID, oidcScope, oidcAudience, oidcClaim := clusterConfig.OIDCServer()
 

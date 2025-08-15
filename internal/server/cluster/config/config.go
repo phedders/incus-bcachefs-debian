@@ -2,7 +2,9 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -312,6 +314,96 @@ func (c *Config) OpenFGA() (apiURL string, apiToken string, storeID string) {
 	return c.m.GetString("openfga.api.url"), c.m.GetString("openfga.api.token"), c.m.GetString("openfga.store.id")
 }
 
+// Loggers returns a map where the key is the logger name and the value is its type.
+func (c *Config) Loggers() (map[string]string, error) {
+	result := make(map[string]string)
+
+	// Backward compatibility with old Loki config keys
+	if c.m.GetString("loki.api.url") != "" {
+		result["loki"] = "loki"
+	}
+
+	for k, v := range c.m.Dump() {
+		if !strings.HasPrefix(k, "logging.") {
+			continue
+		}
+
+		fields := strings.Split(k, ".")
+		if len(fields) < 3 {
+			return nil, fmt.Errorf("%s is not a valid logging config key", k)
+		}
+
+		loggingKey := strings.Join(fields[2:], ".")
+
+		if loggingKey != "target.type" {
+			continue
+		}
+
+		loggerName := fields[1]
+
+		_, exists := result[loggerName]
+		if !exists {
+			result[loggerName] = v
+		}
+	}
+
+	return result, nil
+}
+
+// LoggingCommonConfig returns the logging configuration common to all types of loggers.
+func (c *Config) LoggingCommonConfig(loggerName string) (string, string, string, string) {
+	if loggerName == "loki" && c.m.GetString("loki.api.url") != "" {
+		return "", "", c.m.GetString("loki.loglevel"), c.m.GetString("loki.types")
+	}
+
+	prefix := fmt.Sprintf("logging.%s", loggerName)
+	lifecycleProjectsKey := fmt.Sprintf("%s.%s", prefix, "lifecycle.projects")
+	lifecycleTypesKey := fmt.Sprintf("%s.%s", prefix, "lifecycle.types")
+	loggingLevelKey := fmt.Sprintf("%s.%s", prefix, "logging.level")
+	typesKey := fmt.Sprintf("%s.%s", prefix, "types")
+
+	return c.m.GetString(lifecycleProjectsKey), c.m.GetString(lifecycleTypesKey), c.m.GetString(loggingLevelKey), c.m.GetString(typesKey)
+}
+
+// LoggingConfigForSyslog returns the logging configuration for the syslog logger type.
+func (c *Config) LoggingConfigForSyslog(loggerName string) (string, string) {
+	prefix := fmt.Sprintf("logging.%s", loggerName)
+	addressKey := fmt.Sprintf("%s.%s", prefix, "target.address")
+	facilityKey := fmt.Sprintf("%s.%s", prefix, "target.facility")
+
+	return c.m.GetString(addressKey), c.m.GetString(facilityKey)
+}
+
+// LoggingConfigForLoki returns all the Loki settings needed to connect to a server.
+func (c *Config) LoggingConfigForLoki(loggerName string) (string, string, string, string, string, string, int) {
+	if loggerName == "loki" && c.m.GetString("loki.api.url") != "" {
+		return c.m.GetString("loki.api.url"), c.m.GetString("loki.auth.username"), c.m.GetString("loki.auth.password"), c.m.GetString("loki.api.ca_cert"), c.m.GetString("loki.instance"), c.m.GetString("loki.labels"), 3
+	}
+
+	prefix := fmt.Sprintf("logging.%s", loggerName)
+	addressKey := fmt.Sprintf("%s.%s", prefix, "target.address")
+	usernameKey := fmt.Sprintf("%s.%s", prefix, "target.username")
+	passwordKey := fmt.Sprintf("%s.%s", prefix, "target.password")
+	caCertKey := fmt.Sprintf("%s.%s", prefix, "target.ca_cert")
+	instanceKey := fmt.Sprintf("%s.%s", prefix, "target.instance")
+	labelsKey := fmt.Sprintf("%s.%s", prefix, "target.labels")
+	retryKey := fmt.Sprintf("%s.%s", prefix, "target.retry")
+
+	return c.m.GetString(addressKey), c.m.GetString(usernameKey), c.m.GetString(passwordKey), c.m.GetString(caCertKey), c.m.GetString(instanceKey), c.m.GetString(labelsKey), int(c.m.GetInt64(retryKey))
+}
+
+// LoggingConfigForWebhook returns the logging configuration for the webhook logger type.
+func (c *Config) LoggingConfigForWebhook(loggerName string) (string, string, string, string, int) {
+	prefix := fmt.Sprintf("logging.%s", loggerName)
+	addressKey := fmt.Sprintf("%s.%s", prefix, "target.address")
+	usernameKey := fmt.Sprintf("%s.%s", prefix, "target.username")
+	passwordKey := fmt.Sprintf("%s.%s", prefix, "target.password")
+	caCertKey := fmt.Sprintf("%s.%s", prefix, "target.ca_cert")
+	retryKey := fmt.Sprintf("%s.%s", prefix, "target.retry")
+
+	return c.m.GetString(addressKey), c.m.GetString(usernameKey), c.m.GetString(passwordKey), c.m.GetString(caCertKey), int(c.m.GetInt64(retryKey))
+}
+
 // Dump current configuration keys and their values. Keys with values matching
 // their defaults are omitted.
 func (c *Config) Dump() map[string]string {
@@ -330,9 +422,7 @@ func (c *Config) Replace(values map[string]string) (map[string]string, error) {
 // Return what has actually changed.
 func (c *Config) Patch(patch map[string]string) (map[string]string, error) {
 	values := c.Dump() // Use current values as defaults
-	for name, value := range patch {
-		values[name] = value
-	}
+	maps.Copy(values, patch)
 
 	return c.update(values)
 }
@@ -441,7 +531,7 @@ var ConfigSchema = config.Schema{
 	"authorization.scriptlet": {Validator: validate.Optional(scriptletLoad.AuthorizationValidate)},
 
 	// gendoc:generate(entity=server, group=miscellaneous, key=backups.compression_algorithm)
-	// Possible values are `bzip2`, `gzip`, `lzma`, `xz`, or `none`.
+	// Possible values are `bzip2`, `gzip`, `lz4`, `lzma`, `xz`, `zstd` or `none`.
 	// ---
 	//  type: string
 	//  scope: global
@@ -674,7 +764,7 @@ var ConfigSchema = config.Schema{
 	"images.auto_update_interval": {Type: config.Int64, Default: "6"},
 
 	// gendoc:generate(entity=server, group=images, key=images.compression_algorithm)
-	// Possible values are `bzip2`, `gzip`, `lzma`, `xz`, or `none`.
+	// Possible values are `bzip2`, `gzip`, `lz4`, `lzma`, `xz`, `zstd` or `none`.
 	// ---
 	//  type: string
 	//  scope: global
@@ -742,7 +832,7 @@ var ConfigSchema = config.Schema{
 	//  type: string
 	//  scope: global
 	//  shortdesc: User name used for Loki authentication
-	"loki.auth.username": {},
+	"loki.auth.username": {Deprecated: "Use 'logging.*.target.username' instead"},
 
 	// gendoc:generate(entity=server, group=loki, key=loki.auth.password)
 	//
@@ -750,7 +840,7 @@ var ConfigSchema = config.Schema{
 	//  type: string
 	//  scope: global
 	//  shortdesc: Password used for Loki authentication
-	"loki.auth.password": {},
+	"loki.auth.password": {Deprecated: "Use 'logging.*.target.password' instead"},
 
 	// gendoc:generate(entity=server, group=loki, key=loki.api.ca_cert)
 	//
@@ -758,7 +848,7 @@ var ConfigSchema = config.Schema{
 	//  type: string
 	//  scope: global
 	//  shortdesc: CA certificate for the Loki server
-	"loki.api.ca_cert": {},
+	"loki.api.ca_cert": {Deprecated: "Use 'logging.*.target.ca_cert' instead"},
 
 	// gendoc:generate(entity=server, group=loki, key=loki.api.url)
 	// Specify the protocol, name or IP and port. For example `https://loki.example.com:3100`. Incus will automatically add the `/loki/api/v1/push` suffix so there's no need to add it here.
@@ -766,7 +856,7 @@ var ConfigSchema = config.Schema{
 	//  type: string
 	//  scope: global
 	//  shortdesc: URL to the Loki server
-	"loki.api.url": {},
+	"loki.api.url": {Deprecated: "Use 'logging.*.target.address' instead"},
 
 	// gendoc:generate(entity=server, group=loki, key=loki.instance)
 	// This allows replacing the default instance value (server host name) by a more relevant value like a cluster identifier.
@@ -775,7 +865,7 @@ var ConfigSchema = config.Schema{
 	//  scope: global
 	//  defaultdesc: Local server host name or cluster member name
 	//  shortdesc: Name to use as the instance field in Loki events.
-	"loki.instance": {},
+	"loki.instance": {Deprecated: "Use 'logging.*.target.instance' instead"},
 
 	// gendoc:generate(entity=server, group=loki, key=loki.labels)
 	// Specify a comma-separated list of values that should be used as labels for a Loki log entry.
@@ -783,7 +873,7 @@ var ConfigSchema = config.Schema{
 	//  type: string
 	//  scope: global
 	//  shortdesc: Labels for a Loki log entry
-	"loki.labels": {},
+	"loki.labels": {Deprecated: "Use 'logging.*.target.labels' instead"},
 
 	// gendoc:generate(entity=server, group=loki, key=loki.loglevel)
 	//
@@ -792,7 +882,7 @@ var ConfigSchema = config.Schema{
 	//  scope: global
 	//  defaultdesc: `info`
 	//  shortdesc: Minimum log level to send to the Loki server
-	"loki.loglevel": {Validator: logLevelValidator, Default: logrus.InfoLevel.String()},
+	"loki.loglevel": {Validator: config.LogLevelValidator, Default: logrus.InfoLevel.String(), Deprecated: "Use 'logging.*.logging.level' instead"},
 
 	// gendoc:generate(entity=server, group=loki, key=loki.types)
 	// Specify a comma-separated list of events to send to the Loki server.
@@ -802,7 +892,7 @@ var ConfigSchema = config.Schema{
 	//  scope: global
 	//  defaultdesc: `lifecycle,logging`
 	//  shortdesc: Events to send to the Loki server
-	"loki.types": {Validator: validate.Optional(validate.IsListOf(validate.IsOneOf("lifecycle", "logging", "network-acl"))), Default: "lifecycle,logging"},
+	"loki.types": {Validator: validate.Optional(validate.IsListOf(validate.IsOneOf("lifecycle", "logging", "network-acl"))), Default: "lifecycle,logging", Deprecated: "Use 'logging.*.types' instead"},
 
 	// gendoc:generate(entity=server, group=openfga, key=openfga.api.token)
 	//
@@ -925,19 +1015,6 @@ func expiryValidator(value string) error {
 	return nil
 }
 
-func logLevelValidator(value string) error {
-	if value == "" {
-		return nil
-	}
-
-	_, err := logrus.ParseLevel(value)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func offlineThresholdDefault() string {
 	return strconv.Itoa(db.DefaultOfflineThreshold)
 }
@@ -949,7 +1026,7 @@ func offlineThresholdValidator(value string) error {
 	// which is the lower bound granularity of the offline check.
 	threshold, err := strconv.Atoi(value)
 	if err != nil {
-		return fmt.Errorf("Offline threshold is not a number")
+		return errors.New("Offline threshold is not a number")
 	}
 
 	if threshold <= minThreshold {
@@ -962,11 +1039,11 @@ func offlineThresholdValidator(value string) error {
 func imageMinimalReplicaValidator(value string) error {
 	count, err := strconv.Atoi(value)
 	if err != nil {
-		return fmt.Errorf("Minimal image replica count is not a number")
+		return errors.New("Minimal image replica count is not a number")
 	}
 
 	if count < 1 && count != -1 {
-		return fmt.Errorf("Invalid value for image replica count")
+		return errors.New("Invalid value for image replica count")
 	}
 
 	return nil
@@ -975,11 +1052,11 @@ func imageMinimalReplicaValidator(value string) error {
 func maxVotersValidator(value string) error {
 	n, err := strconv.Atoi(value)
 	if err != nil {
-		return fmt.Errorf("Value is not a number")
+		return errors.New("Value is not a number")
 	}
 
 	if n < 3 || n%2 != 1 {
-		return fmt.Errorf("Value must be an odd number equal to or higher than 3")
+		return errors.New("Value must be an odd number equal to or higher than 3")
 	}
 
 	return nil
@@ -988,11 +1065,11 @@ func maxVotersValidator(value string) error {
 func maxStandByValidator(value string) error {
 	n, err := strconv.Atoi(value)
 	if err != nil {
-		return fmt.Errorf("Value is not a number")
+		return errors.New("Value is not a number")
 	}
 
 	if n < 0 || n > 5 {
-		return fmt.Errorf("Value must be between 0 and 5")
+		return errors.New("Value must be between 0 and 5")
 	}
 
 	return nil
@@ -1001,11 +1078,11 @@ func maxStandByValidator(value string) error {
 func rebalanceThresholdValidator(value string) error {
 	n, err := strconv.Atoi(value)
 	if err != nil {
-		return fmt.Errorf("Value is not a number")
+		return errors.New("Value is not a number")
 	}
 
 	if n < 10 || n > 100 {
-		return fmt.Errorf("Value must be between 10 and 100")
+		return errors.New("Value must be between 10 and 100")
 	}
 
 	return nil

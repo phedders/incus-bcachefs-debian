@@ -2,9 +2,11 @@ package network
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -75,7 +77,19 @@ func (n *bridge) checkClusterWideMACSafe(config map[string]string) error {
 	// We can't be sure that multiple clustered nodes aren't connected to the same network segment so don't
 	// use a static MAC address for the bridge interface to avoid introducing a MAC conflict.
 	if config["bridge.external_interfaces"] != "" && config["ipv4.address"] == "none" && config["ipv6.address"] == "none" {
-		return fmt.Errorf(`Cannot use static "bridge.hwaddr" MAC address when bridge has no IP addresses and has external interfaces set`)
+		return errors.New(`Cannot use static "bridge.hwaddr" MAC address when bridge has no IP addresses and has external interfaces set`)
+	}
+
+	// We may have MAC conflicts if tunnels are in use.
+	for k := range config {
+		if strings.HasPrefix(k, "tunnel.") {
+			return errors.New(`Cannot use static "bridge.hwaddr" MAC address when bridge has tunnels connected`)
+		}
+	}
+
+	// If using a generated IPv6 address, we need a unique MAC.
+	if config["ipv6.address"] != "none" && validate.IsNetworkV6(config["ipv6.address"]) == nil {
+		return errors.New(`Cannot use static "bridge.hwaddr" MAC address when bridge uses a host-specific IPv6 address`)
 	}
 
 	return nil
@@ -139,7 +153,7 @@ func (n *bridge) populateAutoConfig(config map[string]string) error {
 
 	// Re-validate config if changed.
 	if changedConfig && n.state != nil {
-		return n.Validate(config)
+		return n.Validate(config, request.ClientTypeNormal)
 	}
 
 	return nil
@@ -157,17 +171,70 @@ func (n *bridge) ValidateName(name string) error {
 }
 
 // Validate network config.
-func (n *bridge) Validate(config map[string]string) error {
+func (n *bridge) Validate(config map[string]string, clientType request.ClientType) error {
 	// Build driver specific rules dynamically.
 	rules := map[string]func(value string) error{
+		// gendoc:generate(entity=network_bridge, group=common, key=bgp.ipv4.nexthop)
+		//
+		// ---
+		//  type: string
+		//  condition: BGP server
+		//  default: local address
+		//  shortdesc: Override the next-hop for advertised prefixes
 		"bgp.ipv4.nexthop": validate.Optional(validate.IsNetworkAddressV4),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=bgp.ipv6.nexthop)
+		//
+		// ---
+		//  type: string
+		//  condition: BGP server
+		//  default: local address
+		//  shortdesc: Override the next-hop for advertised prefixes
 		"bgp.ipv6.nexthop": validate.Optional(validate.IsNetworkAddressV6),
 
-		"bridge.driver":              validate.Optional(validate.IsOneOf("native", "openvswitch")),
-		"bridge.external_interfaces": validate.Optional(validateExternalInterfaces),
-		"bridge.hwaddr":              validate.Optional(validate.IsNetworkMAC),
-		"bridge.mtu":                 validate.Optional(validate.IsNetworkMTU),
+		// gendoc:generate(entity=network_bridge, group=common, key=bridge.driver)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: `native`
+		//  shortdesc: Bridge driver: `native` or `openvswitch`
+		"bridge.driver": validate.Optional(validate.IsOneOf("native", "openvswitch")),
 
+		// gendoc:generate(entity=network_bridge, group=common, key=bridge.external_interfaces)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: -
+		//  shortdesc: Comma-separated list of unconfigured network interfaces to include in the bridge
+		"bridge.external_interfaces": validate.Optional(validateExternalInterfaces),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=bridge.hwaddr)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: -
+		//  shortdesc: MAC address for the bridge
+		"bridge.hwaddr": validate.Optional(validate.IsNetworkMAC),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=bridge.mtu)
+		//
+		// ---
+		//  type: integer
+		//  condition: -
+		//  default: `1500`
+		//  shortdesc: Bridge MTU (default varies if tunnel in use)
+		"bridge.mtu": validate.Optional(validate.IsNetworkMTU),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.address)
+		//
+		// ---
+		//  type: string
+		//  condition: standard mode
+		//  default: - (initial value on creation: `auto`)
+		//  shortdesc: IPv4 address for the bridge (use `none` to turn off IPv4 or `auto` to generate a new random unused subnet) (CIDR)
 		"ipv4.address": validate.Optional(func(value string) error {
 			if validate.IsOneOf("none", "auto")(value) == nil {
 				return nil
@@ -175,50 +242,344 @@ func (n *bridge) Validate(config map[string]string) error {
 
 			return validate.IsNetworkAddressCIDRV4(value)
 		}),
-		"ipv4.firewall":     validate.Optional(validate.IsBool),
-		"ipv4.nat":          validate.Optional(validate.IsBool),
-		"ipv4.nat.order":    validate.Optional(validate.IsOneOf("before", "after")),
-		"ipv4.nat.address":  validate.Optional(validate.IsNetworkAddressV4),
-		"ipv4.dhcp":         validate.Optional(validate.IsBool),
-		"ipv4.dhcp.gateway": validate.Optional(validate.IsNetworkAddressV4),
-		"ipv4.dhcp.expiry":  validate.IsAny,
-		"ipv4.dhcp.ranges":  validate.Optional(validate.IsListOf(validate.IsNetworkRangeV4)),
-		"ipv4.dhcp.routes":  validate.Optional(validate.IsDHCPRouteList),
-		"ipv4.routes":       validate.Optional(validate.IsListOf(validate.IsNetworkV4)),
-		"ipv4.routing":      validate.Optional(validate.IsBool),
-		"ipv4.ovn.ranges":   validate.Optional(validate.IsListOf(validate.IsNetworkRangeV4)),
 
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.firewall)
+		//
+		// ---
+		//  type: bool
+		//  condition: IPv4 address
+		//  default: `true`
+		//  shortdesc: Whether to generate filtering firewall rules for this network
+		"ipv4.firewall": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.nat)
+		//
+		// ---
+		//  type: bool
+		//  condition: IPv4 address
+		//  default: `false`(initial value on creation if `ipv4.address` is set to `auto`: `true`)
+		//  shortdesc: Whether to NAT
+		"ipv4.nat": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.nat.order)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv4 address
+		//  default: `before`
+		//  shortdesc: Whether to add the required NAT rules before or after any pre-existing rules
+		"ipv4.nat.order": validate.Optional(validate.IsOneOf("before", "after")),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.nat.address)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv4 address
+		//  default: -
+		//  shortdesc: The source address used for outbound traffic from the bridge
+		"ipv4.nat.address": validate.Optional(validate.IsNetworkAddressV4),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.dhcp)
+		//
+		// ---
+		//  type: bool
+		//  condition: IPv4 address
+		//  default: `true`
+		//  shortdesc: Whether to allocate addresses using DHCP
+		"ipv4.dhcp": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.dhcp.gateway)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv4 DHCP
+		//  default: IPv4 address
+		//  shortdesc: Address of the gateway for the subnet
+		"ipv4.dhcp.gateway": validate.Optional(validate.IsNetworkAddressV4),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.dhcp.expiry)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv4 DHCP
+		//  default: `1h`
+		//  shortdesc: When to expire DHCP leases
+		"ipv4.dhcp.expiry": validate.IsAny,
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.dhcp.ranges)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv4 DHCP
+		//  default: all addresses
+		//  shortdesc: Comma-separated list of IP ranges to use for DHCP (FIRST-LAST format)
+		"ipv4.dhcp.ranges": validate.Optional(validate.IsListOf(validate.IsNetworkRangeV4)),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.dhcp.routes)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv4 DHCP
+		//  default: -
+		//  shortdesc: Static routes to provide via DHCP option 121, as a comma-separated list of alternating subnets (CIDR) and gateway addresses (same syntax as dnsmasq)
+		"ipv4.dhcp.routes": validate.Optional(validate.IsDHCPRouteList),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.routes)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv4 address
+		//  default: -
+		//  shortdesc: Comma-separated list of additional IPv4 CIDR subnets to route to the bridge
+		"ipv4.routes": validate.Optional(validate.IsListOf(validate.IsNetworkV4)),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.routing)
+		//
+		// ---
+		//  type: bool
+		//  condition: IPv4 DHCP
+		//  default: `true`
+		//  shortdesc: Whether to route traffic in and out of the bridge
+		"ipv4.routing": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv4.ovn.ranges)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: -
+		//  shortdesc: Comma-separated list of IPv4 ranges to use for child OVN network routers (FIRST-LAST format)
+		"ipv4.ovn.ranges": validate.Optional(validate.IsListOf(validate.IsNetworkRangeV4)),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.address)
+		//
+		// ---
+		//  type: string
+		//  condition: standard mode
+		//  default: - (initial value on creation: `auto`)
+		//  shortdesc: IPv6 address for the bridge (use `none` to turn off IPv6 or `auto` to generate a new random unused subnet) (CIDR)
 		"ipv6.address": validate.Optional(func(value string) error {
 			if validate.IsOneOf("none", "auto")(value) == nil {
 				return nil
 			}
 
-			return validate.IsNetworkAddressCIDRV6(value)
+			return validate.Or(validate.IsNetworkAddressCIDRV6, validate.IsNetworkV6)(value)
 		}),
-		"ipv6.firewall":                        validate.Optional(validate.IsBool),
-		"ipv6.nat":                             validate.Optional(validate.IsBool),
-		"ipv6.nat.order":                       validate.Optional(validate.IsOneOf("before", "after")),
-		"ipv6.nat.address":                     validate.Optional(validate.IsNetworkAddressV6),
-		"ipv6.dhcp":                            validate.Optional(validate.IsBool),
-		"ipv6.dhcp.expiry":                     validate.IsAny,
-		"ipv6.dhcp.stateful":                   validate.Optional(validate.IsBool),
-		"ipv6.dhcp.ranges":                     validate.Optional(validate.IsListOf(validate.IsNetworkRangeV6)),
-		"ipv6.routes":                          validate.Optional(validate.IsListOf(validate.IsNetworkV6)),
-		"ipv6.routing":                         validate.Optional(validate.IsBool),
-		"ipv6.ovn.ranges":                      validate.Optional(validate.IsListOf(validate.IsNetworkRangeV6)),
-		"dns.nameservers":                      validate.Optional(validate.IsListOf(validate.IsNetworkAddress)),
-		"dns.domain":                           validate.IsAny,
-		"dns.mode":                             validate.Optional(validate.IsOneOf("dynamic", "managed", "none")),
-		"dns.search":                           validate.IsAny,
-		"dns.zone.forward":                     validate.IsAny,
-		"dns.zone.reverse.ipv4":                validate.IsAny,
-		"dns.zone.reverse.ipv6":                validate.IsAny,
-		"raw.dnsmasq":                          validate.IsAny,
-		"security.acls":                        validate.IsAny,
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.firewall)
+		//
+		// ---
+		//  type: bool
+		//  condition: IPv6 address
+		//  default: `true`
+		//  shortdesc: Whether to generate filtering firewall rules for this network
+		"ipv6.firewall": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.nat)
+		//
+		// ---
+		//  type: bool
+		//  condition: IPv6 address
+		//  default: `false` (initial value on creation if `ipv6.address` is set to `auto`: `true`)
+		//  shortdesc: Whether to NAT
+		"ipv6.nat": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.nat.order)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv6 address
+		//  default: `before`
+		//  shortdesc: Whether to add the required NAT rules before or after any pre-existing rules
+		"ipv6.nat.order": validate.Optional(validate.IsOneOf("before", "after")),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.nat.address)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv6 address
+		//  default: -
+		//  shortdesc: The source address used for outbound traffic from the bridge
+		"ipv6.nat.address": validate.Optional(validate.IsNetworkAddressV6),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.dhcp)
+		//
+		// ---
+		//  type: bool
+		//  condition: IPv6 DHCP
+		//  default: `true`
+		//  shortdesc: Whether to provide additional network configuration over DHCP
+		"ipv6.dhcp": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.dhcp.expiry)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv6 DHCP
+		//  default: `1h`
+		//  shortdesc: When to expire DHCP leases
+		"ipv6.dhcp.expiry": validate.IsAny,
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.dhcp.stateful)
+		//
+		// ---
+		//  type: bool
+		//  condition: IPv6 DHCP
+		//  default: `false`
+		//  shortdesc: Whether to allocate addresses using DHCP
+		"ipv6.dhcp.stateful": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.dhcp.ranges)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv6 stateful DHCP
+		//  default: all addresses
+		//  shortdesc: Comma-separated list of IPv6 ranges to use for DHCP (FIRST-LAST format)
+		"ipv6.dhcp.ranges": validate.Optional(validate.IsListOf(validate.IsNetworkRangeV6)),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.routes)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv6 address
+		//  default: -
+		//  shortdesc: Comma-separated list of additional IPv6 CIDR subnets to route to the bridge
+		"ipv6.routes": validate.Optional(validate.IsListOf(validate.IsNetworkV6)),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.routing)
+		//
+		// ---
+		//  type: bool
+		//  condition: IPv6 address
+		//  default: `true`
+		//  shortdesc: Whether to route traffic in and out of the bridge
+		"ipv6.routing": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=ipv6.ovn.ranges)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: -
+		//  shortdesc: Comma-separated list of IPv6 ranges to use for child OVN network routers (FIRST-LAST format)
+		"ipv6.ovn.ranges": validate.Optional(validate.IsListOf(validate.IsNetworkRangeV6)),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=dns.nameservers)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: IPv4 and IPv6 address
+		//  shortdesc: DNS server IPs to advertise to DHCP clients and via Router Advertisements. Both IPv4 and IPv6 addresses get pushed via DHCP, and IPv6 addresses are also advertised as RDNSS via RA.
+		"dns.nameservers": validate.Optional(validate.IsListOf(validate.IsNetworkAddress)),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=dns.domain)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: `incus`
+		//  shortdesc: Domain to advertise to DHCP clients and use for DNS resolution
+		"dns.domain": validate.IsAny,
+
+		// gendoc:generate(entity=network_bridge, group=common, key=dns.mode)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: `managed`
+		//  shortdesc: DNS registration mode: none for no DNS record, managed for Incus-generated static records or dynamic for client-generated records
+		"dns.mode": validate.Optional(validate.IsOneOf("dynamic", "managed", "none")),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=dns.search)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: -
+		//  shortdesc: Full comma-separated domain search list, defaulting to `dns.domain` value
+		"dns.search": validate.IsAny,
+
+		// gendoc:generate(entity=network_bridge, group=common, key=dns.zone.forward)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: `managed`
+		//  shortdesc: Comma-separated list of DNS zone names for forward DNS records
+		"dns.zone.forward": validate.IsAny,
+
+		// gendoc:generate(entity=network_bridge, group=common, key=dns.zone.reverse.ipv4)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: `managed`
+		//  shortdesc: DNS zone name for IPv4 reverse DNS records
+		"dns.zone.reverse.ipv4": validate.IsAny,
+
+		// gendoc:generate(entity=network_bridge, group=common, key=dns.zone.reverse.ipv6)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: `managed`
+		//  shortdesc: DNS zone name for IPv6 reverse DNS records
+		"dns.zone.reverse.ipv6": validate.IsAny,
+
+		// gendoc:generate(entity=network_bridge, group=common, key=raw.dnsmasq)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: -
+		//  shortdesc: Additional dnsmasq configuration to append to the configuration file
+		"raw.dnsmasq": validate.IsAny,
+
+		// gendoc:generate(entity=network_bridge, group=common, key=security.acls)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: -
+		//  shortdesc: Comma-separated list of Network ACLs to apply to NICs connected to this network (see {ref}`network-acls-bridge-limitations`)
+		"security.acls": validate.IsAny,
+		// gendoc:generate(entity=network_bridge, group=common, key=security.acls.default.ingress.action)
+		//
+		// ---
+		//  type: string
+		//  condition: `security.acls`
+		//  default: `reject`
+		//  shortdesc: Action to use for ingress traffic that doesn't match any ACL rule
 		"security.acls.default.ingress.action": validate.Optional(validate.IsOneOf(acl.ValidActions...)),
-		"security.acls.default.egress.action":  validate.Optional(validate.IsOneOf(acl.ValidActions...)),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=security.acls.default.egress.action)
+		//
+		// ---
+		//  type: string
+		//  condition: `security.acls`
+		//  default: `reject`
+		//  shortdesc: Action to use for egress traffic that doesn't match any ACL rule
+		"security.acls.default.egress.action": validate.Optional(validate.IsOneOf(acl.ValidActions...)),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=security.acls.default.ingress.logged)
+		//
+		// ---
+		//  type: bool
+		//  condition: `security.acls`
+		//  default: `false`
+		//  shortdesc: Whether to log ingress traffic that doesn't match any ACL rule
 		"security.acls.default.ingress.logged": validate.Optional(validate.IsBool),
-		"security.acls.default.egress.logged":  validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=network_bridge, group=common, key=security.acls.default.egress.logged)
+		//
+		// ---
+		//  type: bool
+		//  condition: `security.acls`
+		//  default: `false`
+		//  shortdesc: Whether to log egress traffic that doesn't match any ACL rule
+		"security.acls.default.egress.logged": validate.Optional(validate.IsBool),
 	}
 
 	// Add dynamic validation rules.
@@ -240,24 +601,112 @@ func (n *bridge) Validate(config map[string]string) error {
 			// Add the correct validation rule for the dynamic field based on last part of key.
 			switch tunnelKey {
 			case "protocol":
+				// gendoc:generate(entity=network_bridge, group=common, key=tunnel.NAME.protocol)
+				//
+				// ---
+				//  type: string
+				//  condition: standard mode
+				//  default: -
+				//  shortdesc: Tunneling protocol: `vxlan` or `gre`
 				rules[k] = validate.Optional(validate.IsOneOf("gre", "vxlan"))
 			case "local":
+				// gendoc:generate(entity=network_bridge, group=common, key=tunnel.NAME.local)
+				//
+				// ---
+				//  type: string
+				//  condition: `gre` or `vxlan`
+				//  default: -
+				//  shortdesc: Local address for the tunnel (not necessary for multicast `vxlan`)
 				rules[k] = validate.Optional(validate.IsNetworkAddress)
 			case "remote":
+				// gendoc:generate(entity=network_bridge, group=common, key=tunnel.NAME.remote)
+				//
+				// ---
+				//  type: string
+				//  condition: `gre` or `vxlan`
+				//  default: -
+				//  shortdesc: Remote address for the tunnel (not necessary for multicast `vxlan`)
 				rules[k] = validate.Optional(validate.IsNetworkAddress)
 			case "port":
+				// gendoc:generate(entity=network_bridge, group=common, key=tunnel.NAME.port)
+				//
+				// ---
+				//  type: integer
+				//  condition: `vxlan`
+				//  default: `0`
+				//  shortdesc: Specific port to use for the `vxlan` tunnel
 				rules[k] = networkValidPort
 			case "group":
+				// gendoc:generate(entity=network_bridge, group=common, key=tunnel.NAME.group)
+				//
+				// ---
+				//  type: string
+				//  condition: `vxlan`
+				//  default: `239.0.0.1`
+				//  shortdesc: Multicast address for `vxlan` (used if local and remote aren't set)
 				rules[k] = validate.Optional(validate.IsNetworkAddress)
 			case "id":
+				// gendoc:generate(entity=network_bridge, group=common, key=tunnel.NAME.id)
+				//
+				// ---
+				//  type: integer
+				//  condition: `vxlan`
+				//  default: `0`
+				//  shortdesc: Specific tunnel ID to use for the `vxlan` tunnel
 				rules[k] = validate.Optional(validate.IsInt64)
 			case "interface":
+				// gendoc:generate(entity=network_bridge, group=common, key=tunnel.NAME.interface)
+				//
+				// ---
+				//  type: string
+				//  condition: `vxlan`
+				//  default: -
+				//  shortdesc: Specific host interface to use for the tunnel
 				rules[k] = validate.IsInterfaceName
 			case "ttl":
+				// gendoc:generate(entity=network_bridge, group=common, key=tunnel.NAME.ttl)
+				//
+				// ---
+				//  type: integer
+				//  condition: `vxlan`
+				//  default: `1`
+				//  shortdesc: Specific TTL to use for multicast routing topologies
 				rules[k] = validate.Optional(validate.IsUint8)
 			}
 		}
 	}
+
+	// gendoc:generate(entity=network_bridge, group=bgp, key=bgp.peers.NAME.address)
+	//
+	// ---
+	// type: string
+	// condition: BGP server
+	// defaultdesc: -
+	// shortdesc: Peer address (IPv4 or IPv6) for use by `ovn` downstream networks
+
+	// gendoc:generate(entity=network_bridge, group=bgp, key=bgp.peers.NAME.asn)
+	//
+	// ---
+	// type: integer
+	// condition: BGP server
+	// defaultdesc: -
+	// shortdesc: Peer AS number for use by `ovn` downstream networks
+
+	// gendoc:generate(entity=network_bridge, group=bgp, key=bgp.peers.NAME.password)
+	//
+	// ---
+	// type: string
+	// condition: BGP server
+	// defaultdesc: - (no password)
+	// shortdesc: Peer session password (optional) for use by `ovn` downstream networks
+
+	// gendoc:generate(entity=network_bridge, group=bgp, key=bgp.peers.NAME.holdtime)
+	//
+	// ---
+	// type: integer
+	// condition: BGP server
+	// defaultdesc: `180`
+	// shortdesc: Peer session hold time (in seconds; optional)
 
 	// Add the BGP validation rules.
 	bgpRules, err := n.bgpValidationRules(config)
@@ -265,9 +714,15 @@ func (n *bridge) Validate(config map[string]string) error {
 		return err
 	}
 
-	for k, v := range bgpRules {
-		rules[k] = v
-	}
+	maps.Copy(rules, bgpRules)
+
+	// gendoc:generate(entity=network_bridge, group=common, key=user.*)
+	//
+	// ---
+	//  type: string
+	//  condition: -
+	//  default: -
+	//  shortdesc: User-provided free-form key/value pairs
 
 	// Validate the configuration.
 	err = n.validate(config, rules)
@@ -294,12 +749,12 @@ func (n *bridge) Validate(config map[string]string) error {
 
 			ipv6 := config["ipv6.address"]
 			if ipv6 != "" && ipv6 != "none" && mtu < 1280 {
-				return fmt.Errorf("The minimum MTU for an IPv6 network is 1280")
+				return errors.New("The minimum MTU for an IPv6 network is 1280")
 			}
 
 			ipv4 := config["ipv4.address"]
 			if ipv4 != "" && ipv4 != "none" && mtu < 68 {
-				return fmt.Errorf("The minimum MTU for an IPv4 network is 68")
+				return errors.New("The minimum MTU for an IPv4 network is 68")
 			}
 		}
 	}
@@ -319,7 +774,7 @@ func (n *bridge) Validate(config map[string]string) error {
 
 		if dhcpSubnet != nil {
 			if config["ipv4.dhcp.ranges"] == "" {
-				return fmt.Errorf(`"ipv4.ovn.ranges" must be used in conjunction with non-overlapping "ipv4.dhcp.ranges" when DHCPv4 is enabled`)
+				return errors.New(`"ipv4.ovn.ranges" must be used in conjunction with non-overlapping "ipv4.dhcp.ranges" when DHCPv4 is enabled`)
 			}
 
 			allowedNets = append(allowedNets, dhcpSubnet)
@@ -351,7 +806,7 @@ func (n *bridge) Validate(config map[string]string) error {
 
 		if dhcpSubnet != nil {
 			if config["ipv6.dhcp.ranges"] == "" && util.IsTrue(config["ipv6.dhcp.stateful"]) {
-				return fmt.Errorf(`"ipv6.ovn.ranges" must be used in conjunction with non-overlapping "ipv6.dhcp.ranges" when stateful DHCPv6 is enabled`)
+				return errors.New(`"ipv6.ovn.ranges" must be used in conjunction with non-overlapping "ipv6.dhcp.ranges" when stateful DHCPv6 is enabled`)
 			}
 
 			allowedNets = append(allowedNets, dhcpSubnet)
@@ -481,17 +936,17 @@ func (n *bridge) Rename(newName string) error {
 func (n *bridge) Start() error {
 	n.logger.Debug("Start")
 
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
-	revert.Add(func() { n.setUnavailable() })
+	reverter.Add(func() { n.setUnavailable() })
 
 	err := n.setup(nil)
 	if err != nil {
 		return err
 	}
 
-	revert.Success()
+	reverter.Success()
 
 	// Ensure network is marked as available now its started.
 	n.setAvailable()
@@ -508,8 +963,8 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 
 	n.logger.Debug("Setting up network")
 
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	// Create directory.
 	if !util.PathExists(internalUtil.VarPath("networks", n.name)) {
@@ -605,7 +1060,7 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 				return err
 			}
 
-			revert.Add(func() { _ = vswitch.DeleteBridge(context.Background(), n.name) })
+			reverter.Add(func() { _ = vswitch.DeleteBridge(context.Background(), n.name) })
 		} else {
 			// Add and configure the interface in one operation to reduce the number of executions and
 			// to avoid systemd-udevd from applying the default MACAddressPolicy=persistent policy.
@@ -614,7 +1069,7 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 				return err
 			}
 
-			revert.Add(func() { _ = bridge.Delete() })
+			reverter.Add(func() { _ = bridge.Delete() })
 		}
 	} else {
 		// If bridge already exists then re-apply settings. If we just created a bridge then we don't
@@ -638,7 +1093,7 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 	// IPv6 bridge configuration.
 	if !util.IsNoneOrEmpty(n.config["ipv6.address"]) {
 		if !util.PathExists("/proc/sys/net/ipv6") {
-			return fmt.Errorf("Network has ipv6.address but kernel IPv6 support is missing")
+			return errors.New("Network has ipv6.address but kernel IPv6 support is missing")
 		}
 
 		err := localUtil.SysctlSet(fmt.Sprintf("net/ipv6/conf/%s/disable_ipv6", n.name), "0")
@@ -683,7 +1138,7 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 
 		err = dummy.Add()
 		if err == nil {
-			revert.Add(func() { _ = dummy.Delete() })
+			reverter.Add(func() { _ = dummy.Delete() })
 			err = dummy.SetUp()
 			if err == nil {
 				_ = AttachInterface(n.state, n.name, fmt.Sprintf("%s-mtu", n.name))
@@ -745,12 +1200,12 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 				}
 			} else if vlanID > 0 {
 				// If the interface exists and VLAN ID was provided, ensure it has the same parent and VLAN ID and is not attached to a different network.
-				linkInfo, err := ip.GetLinkInfoByName(entry)
+				linkInfo, err := ip.LinkByName(entry)
 				if err != nil {
 					return fmt.Errorf("Failed to get link info for external interface %q", entry)
 				}
 
-				if linkInfo.Info.Kind != "vlan" || linkInfo.Link != ifParent || linkInfo.Info.Data.ID != vlanID || !(linkInfo.Master == "" || linkInfo.Master == n.name) {
+				if linkInfo.Kind != "vlan" || linkInfo.Parent != ifParent || linkInfo.VlanID != vlanID || (linkInfo.Master != "" && linkInfo.Master != n.name) {
 					return fmt.Errorf("External interface %q already in use", entry)
 				}
 			}
@@ -768,7 +1223,7 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 			}
 
 			if !unused {
-				return fmt.Errorf("Only unconfigured network interfaces can be bridged")
+				return errors.New("Only unconfigured network interfaces can be bridged")
 			}
 
 			err = AttachInterface(n.state, n.name, entry)
@@ -899,7 +1354,7 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 		// --quiet options are only supported on >2.67.
 		minVer, _ := version.NewDottedVersion("2.67")
 
-		if err == nil && dnsmasqVersion.Compare(minVer) > 0 {
+		if dnsmasqVersion.Compare(minVer) > 0 {
 			dnsmasqCmd = append(dnsmasqCmd, []string{"--quiet-dhcp", "--quiet-dhcp6", "--quiet-ra"}...)
 		}
 	}
@@ -972,8 +1427,11 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 		// Add the address.
 		addr := &ip.Addr{
 			DevName: n.name,
-			Address: n.config["ipv4.address"],
-			Family:  ip.FamilyV4,
+			Address: &net.IPNet{
+				IP:   ipAddress,
+				Mask: subnet.Mask,
+			},
+			Family: ip.FamilyV4,
 		}
 
 		err = addr.Add()
@@ -1002,7 +1460,11 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 		// Add additional routes.
 		if n.config["ipv4.routes"] != "" {
 			for _, route := range strings.Split(n.config["ipv4.routes"], ",") {
-				route = strings.TrimSpace(route)
+				route, err := ip.ParseIPNet(strings.TrimSpace(route))
+				if err != nil {
+					return err
+				}
+
 				r := &ip.Route{
 					DevName: n.name,
 					Route:   route,
@@ -1067,6 +1529,18 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 
 		subnetSize, _ := subnet.Mask.Size()
 
+		// Check if we need to generate a host-specific address.
+		if ipAddress.String() == subnet.IP.String() {
+			if subnetSize != 64 {
+				return errors.New("Can't generate an EUI64 derived IPv6 address with a mask other than /64")
+			}
+
+			ipAddress, err = eui64.ParseMAC(subnet.IP, bridge.Address)
+			if err != nil {
+				return fmt.Errorf("Failed generating EUI64 value for ipv6.address: %w", err)
+			}
+		}
+
 		if subnetSize > 64 {
 			n.logger.Warn("IPv6 networks with a prefix larger than 64 aren't properly supported by dnsmasq")
 
@@ -1122,6 +1596,8 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 			} else {
 				dnsmasqCmd = append(dnsmasqCmd, fmt.Sprintf("--dhcp-option-force=option6:dns-server,[%s]", strings.Join(dnsIPv6, ",")))
 			}
+		} else {
+			dnsmasqCmd = append(dnsmasqCmd, fmt.Sprintf("--dhcp-option-force=option6:dns-server,[%s]", ipAddress.String()))
 		}
 
 		// Allow forwarding.
@@ -1169,8 +1645,11 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 		// Add the address.
 		addr := &ip.Addr{
 			DevName: n.name,
-			Address: n.config["ipv6.address"],
-			Family:  ip.FamilyV6,
+			Address: &net.IPNet{
+				IP:   ipAddress,
+				Mask: subnet.Mask,
+			},
+			Family: ip.FamilyV6,
 		}
 
 		err = addr.Add()
@@ -1199,7 +1678,11 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 		// Add additional routes.
 		if n.config["ipv6.routes"] != "" {
 			for _, route := range strings.Split(n.config["ipv6.routes"], ",") {
-				route = strings.TrimSpace(route)
+				route, err := ip.ParseIPNet(route)
+				if err != nil {
+					return err
+				}
+
 				r := &ip.Route{
 					DevName: n.name,
 					Route:   route,
@@ -1220,19 +1703,20 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 
 	// Configure tunnels.
 	for _, tunnel := range tunnels {
+
 		getConfig := func(key string) string {
 			return n.config[fmt.Sprintf("tunnel.%s.%s", tunnel, key)]
 		}
 
 		tunProtocol := getConfig("protocol")
-		tunLocal := getConfig("local")
-		tunRemote := getConfig("remote")
+		tunLocal := net.ParseIP(getConfig("local"))
+		tunRemote := net.ParseIP(getConfig("remote"))
 		tunName := fmt.Sprintf("%s-%s", n.name, tunnel)
 
 		// Configure the tunnel.
 		if tunProtocol == "gre" {
 			// Skip partial configs.
-			if tunProtocol == "" || tunLocal == "" || tunRemote == "" {
+			if tunLocal == nil || tunRemote == nil {
 				continue
 			}
 
@@ -1247,29 +1731,24 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 				return err
 			}
 		} else if tunProtocol == "vxlan" {
-			tunGroup := getConfig("group")
+			tunGroup := net.ParseIP(getConfig("group"))
 			tunInterface := getConfig("interface")
-
-			// Skip partial configs.
-			if tunProtocol == "" {
-				continue
-			}
 
 			vxlan := &ip.Vxlan{
 				Link:  ip.Link{Name: tunName},
 				Local: tunLocal,
 			}
 
-			if tunRemote != "" {
+			if tunRemote != nil {
 				// Skip partial configs.
-				if tunLocal == "" {
+				if tunLocal == nil {
 					continue
 				}
 
 				vxlan.Remote = tunRemote
 			} else {
-				if tunGroup == "" {
-					tunGroup = "239.0.0.1"
+				if tunGroup == nil {
+					tunGroup = net.IPv4(239, 0, 0, 1) // 239.0.0.1
 				}
 
 				devName := tunInterface
@@ -1285,25 +1764,32 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 			}
 
 			tunPort := getConfig("port")
-			if tunPort == "" {
-				tunPort = "0"
+			if tunPort != "" {
+				vxlan.DstPort, err = strconv.Atoi(tunPort)
+				if err != nil {
+					return err
+				}
 			}
-
-			vxlan.DstPort = tunPort
 
 			tunID := getConfig("id")
 			if tunID == "" {
-				tunID = "1"
+				vxlan.VxlanID = 1
+			} else {
+				vxlan.VxlanID, err = strconv.Atoi(tunID)
+				if err != nil {
+					return err
+				}
 			}
-
-			vxlan.VxlanID = tunID
 
 			tunTTL := getConfig("ttl")
 			if tunTTL == "" {
-				tunTTL = "1"
+				vxlan.TTL = 1
+			} else {
+				vxlan.TTL, err = strconv.Atoi(tunTTL)
+				if err != nil {
+					return err
+				}
 			}
-
-			vxlan.TTL = tunTTL
 
 			err := vxlan.Add()
 			if err != nil {
@@ -1363,7 +1849,7 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 		}
 
 		// Create a config file to contain additional config (and to prevent dnsmasq from reading /etc/dnsmasq.conf)
-		err = os.WriteFile(internalUtil.VarPath("networks", n.name, "dnsmasq.raw"), []byte(fmt.Sprintf("%s\n", n.config["raw.dnsmasq"])), 0o644)
+		err = os.WriteFile(internalUtil.VarPath("networks", n.name, "dnsmasq.raw"), fmt.Appendf(nil, "%s\n", n.config["raw.dnsmasq"]), 0o644)
 		if err != nil {
 			return err
 		}
@@ -1390,7 +1876,7 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 		// Check for dnsmasq.
 		_, err := exec.LookPath("dnsmasq")
 		if err != nil {
-			return fmt.Errorf("dnsmasq is required for managed bridges")
+			return errors.New("dnsmasq is required for managed bridges")
 		}
 
 		// Update the static leases.
@@ -1447,7 +1933,7 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 		if err != nil {
 			// Kill Process if started, but could not save the file.
 			err2 := p.Stop()
-			if err != nil {
+			if err2 != nil {
 				return fmt.Errorf("Could not kill subprocess while handling saving error: %s: %s", err, err2)
 			}
 
@@ -1507,7 +1993,8 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 		return err
 	}
 
-	revert.Success()
+	reverter.Success()
+
 	return nil
 }
 
@@ -1609,13 +2096,13 @@ func (n *bridge) Update(newNetwork api.NetworkPut, targetNode string, clientType
 		return n.common.update(newNetwork, targetNode, clientType)
 	}
 
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	// Perform any pre-update cleanup needed if local member network was already created.
 	if len(changedKeys) > 0 {
 		// Define a function which reverts everything.
-		revert.Add(func() {
+		reverter.Add(func() {
 			// Reset changes to all nodes and database.
 			_ = n.common.update(oldNetwork, targetNode, clientType)
 
@@ -1687,7 +2174,8 @@ func (n *bridge) Update(newNetwork api.NetworkPut, targetNode string, clientType
 		}
 	}
 
-	revert.Success()
+	reverter.Success()
+
 	return nil
 }
 
@@ -1709,14 +2197,14 @@ func (n *bridge) getTunnels() []string {
 }
 
 // bootRoutesV4 returns a list of IPv4 boot routes on the network's device.
-func (n *bridge) bootRoutesV4() ([]string, error) {
+func (n *bridge) bootRoutesV4() ([]ip.Route, error) {
 	r := &ip.Route{
 		DevName: n.name,
 		Proto:   "boot",
 		Family:  ip.FamilyV4,
 	}
 
-	routes, err := r.Show()
+	routes, err := r.List()
 	if err != nil {
 		return nil, err
 	}
@@ -1725,14 +2213,14 @@ func (n *bridge) bootRoutesV4() ([]string, error) {
 }
 
 // bootRoutesV6 returns a list of IPv6 boot routes on the network's device.
-func (n *bridge) bootRoutesV6() ([]string, error) {
+func (n *bridge) bootRoutesV6() ([]ip.Route, error) {
 	r := &ip.Route{
 		DevName: n.name,
 		Proto:   "boot",
 		Family:  ip.FamilyV6,
 	}
 
-	routes, err := r.Show()
+	routes, err := r.List()
 	if err != nil {
 		return nil, err
 	}
@@ -1741,15 +2229,9 @@ func (n *bridge) bootRoutesV6() ([]string, error) {
 }
 
 // applyBootRoutesV4 applies a list of IPv4 boot routes to the network's device.
-func (n *bridge) applyBootRoutesV4(routes []string) {
+func (n *bridge) applyBootRoutesV4(routes []ip.Route) {
 	for _, route := range routes {
-		r := &ip.Route{
-			DevName: n.name,
-			Proto:   "boot",
-			Family:  ip.FamilyV4,
-		}
-
-		err := r.Replace(strings.Fields(route))
+		err := route.Replace()
 		if err != nil {
 			// If it fails, then we can't stop as the route has already gone, so just log and continue.
 			n.logger.Error("Failed to restore route", logger.Ctx{"err": err})
@@ -1758,15 +2240,9 @@ func (n *bridge) applyBootRoutesV4(routes []string) {
 }
 
 // applyBootRoutesV6 applies a list of IPv6 boot routes to the network's device.
-func (n *bridge) applyBootRoutesV6(routes []string) {
+func (n *bridge) applyBootRoutesV6(routes []ip.Route) {
 	for _, route := range routes {
-		r := &ip.Route{
-			DevName: n.name,
-			Proto:   "boot",
-			Family:  ip.FamilyV6,
-		}
-
-		err := r.Replace(strings.Fields(route))
+		err := route.Replace()
 		if err != nil {
 			// If it fails, then we can't stop as the route has already gone, so just log and continue.
 			n.logger.Error("Failed to restore route", logger.Ctx{"err": err})
@@ -1855,6 +2331,7 @@ func (n *bridge) forwardConvertToFirewallForwards(listenAddress net.IP, defaultT
 			TargetAddress: portMap.target.address,
 			ListenPorts:   portMap.listenPorts,
 			TargetPorts:   portMap.target.ports,
+			SNAT:          portMap.snat,
 		})
 	}
 
@@ -2029,9 +2506,38 @@ func (n *bridge) getExternalSubnetInUse() ([]externalSubnetUsage, error) {
 		}
 
 		// Get all network forward listen addresses for forwards assigned to this specific cluster member.
-		projectNetworksForwardsOnUplink, err = tx.GetProjectNetworkForwardListenAddressesOnMember(ctx)
+		networksByProjects, err := tx.GetNetworksAllProjects(ctx)
 		if err != nil {
 			return fmt.Errorf("Failed loading network forward listen addresses: %w", err)
+		}
+
+		for projectName, networks := range networksByProjects {
+			for _, networkName := range networks {
+				networkID, err := tx.GetNetworkID(ctx, projectName, networkName)
+				if err != nil {
+					return fmt.Errorf("Failed loading network forward listen addresses: %w", err)
+				}
+
+				// Get all network forward listen addresses for all networks (of any type) connected to our uplink.
+				networkForwards, err := dbCluster.GetNetworkForwards(ctx, tx.Tx(), dbCluster.NetworkForwardFilter{
+					NetworkID: &networkID,
+				})
+				if err != nil {
+					return fmt.Errorf("Failed loading network forward listen addresses: %w", err)
+				}
+
+				projectNetworksForwardsOnUplink = make(map[string]map[int64][]string)
+				for _, forward := range networkForwards {
+					// Filter network forwards that belong to this specific cluster member
+					if forward.NodeID.Valid && (forward.NodeID.Int64 == tx.GetNodeID()) {
+						if projectNetworksForwardsOnUplink[projectName] == nil {
+							projectNetworksForwardsOnUplink[projectName] = make(map[int64][]string)
+						}
+
+						projectNetworksForwardsOnUplink[projectName][networkID] = append(projectNetworksForwardsOnUplink[projectName][networkID], forward.ListenAddress)
+					}
+				}
+			}
 		}
 
 		externalSubnets, err = n.common.getExternalSubnetInUse(ctx, tx, n.name, true)
@@ -2131,9 +2637,37 @@ func (n *bridge) ForwardCreate(forward api.NetworkForwardsPost, clientType reque
 
 	err := n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
 		// Check if there is an existing forward using the same listen address.
-		_, _, err := tx.GetNetworkForward(ctx, n.ID(), memberSpecific, forward.ListenAddress)
+		networkID := n.ID()
+		dbRecords, err := dbCluster.GetNetworkForwards(ctx, tx.Tx(), dbCluster.NetworkForwardFilter{
+			NetworkID:     &networkID,
+			ListenAddress: &forward.ListenAddress,
+		})
+		if err != nil {
+			return err
+		}
 
-		return err
+		filteredRecords := make([]dbCluster.NetworkForward, 0, len(dbRecords))
+		for _, dbRecord := range dbRecords {
+			// bridge supports per-member forwards so do memberSpecific filtering
+			if !dbRecord.NodeID.Valid || (dbRecord.NodeID.Int64 == tx.GetNodeID()) {
+				filteredRecords = append(filteredRecords, dbRecord)
+			}
+		}
+
+		if len(filteredRecords) == 0 {
+			return api.StatusErrorf(http.StatusNotFound, "Network forward not found")
+		}
+
+		if len(filteredRecords) > 1 {
+			return api.StatusErrorf(http.StatusConflict, "Network forward found on more than one cluster member. Please target a specific member")
+		}
+
+		_, err = filteredRecords[0].ToAPI(ctx, tx.Tx())
+		if err != nil {
+			return err
+		}
+
+		return nil
 	})
 	if err == nil {
 		return api.StatusErrorf(http.StatusConflict, "A forward for that listen address already exists")
@@ -2173,24 +2707,49 @@ func (n *bridge) ForwardCreate(forward api.NetworkForwardsPost, clientType reque
 		}
 	}
 
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	var forwardID int64
 
 	err = n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
 		// Create forward DB record.
-		forwardID, err = tx.CreateNetworkForward(ctx, n.ID(), memberSpecific, &forward)
+		nodeID := sql.NullInt64{
+			Valid: memberSpecific,
+			Int64: tx.GetNodeID(),
+		}
 
-		return err
+		dbRecord := dbCluster.NetworkForward{
+			NetworkID:     n.ID(),
+			NodeID:        nodeID,
+			ListenAddress: forward.ListenAddress,
+			Description:   forward.Description,
+			Ports:         forward.Ports,
+		}
+
+		if forward.Ports == nil {
+			dbRecord.Ports = []api.NetworkForwardPort{}
+		}
+
+		forwardID, err = dbCluster.CreateNetworkForward(ctx, tx.Tx(), dbRecord)
+		if err != nil {
+			return err
+		}
+
+		err = dbCluster.CreateNetworkForwardConfig(ctx, tx.Tx(), forwardID, forward.Config)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	})
 	if err != nil {
 		return err
 	}
 
-	revert.Add(func() {
+	reverter.Add(func() {
 		_ = n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
-			return tx.DeleteNetworkForward(ctx, n.ID(), forwardID)
+			return dbCluster.DeleteNetworkForward(ctx, tx.Tx(), n.ID(), forwardID)
 		})
 		_ = n.forwardSetupFirewall()
 		_ = n.forwardBGPSetupPrefixes()
@@ -2219,7 +2778,20 @@ func (n *bridge) ForwardCreate(forward api.NetworkForwardsPost, clientType reque
 			var listenAddresses map[int64]string
 
 			err := n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
-				listenAddresses, err = tx.GetNetworkForwardListenAddresses(ctx, n.ID(), true)
+				networkID := n.ID()
+				dbRecords, err := dbCluster.GetNetworkForwards(ctx, tx.Tx(), dbCluster.NetworkForwardFilter{
+					NetworkID: &networkID,
+				})
+				if err != nil {
+					return err
+				}
+
+				listenAddresses = make(map[int64]string)
+				for _, dbRecord := range dbRecords {
+					if !dbRecord.NodeID.Valid || (dbRecord.NodeID.Int64 == tx.GetNodeID()) {
+						listenAddresses[dbRecord.ID] = dbRecord.ListenAddress
+					}
+				}
 
 				return err
 			})
@@ -2282,23 +2854,54 @@ func (n *bridge) ForwardCreate(forward api.NetworkForwardsPost, clientType reque
 		return fmt.Errorf("Failed applying BGP prefixes for address forwards: %w", err)
 	}
 
-	revert.Success()
+	reverter.Success()
+
 	return nil
 }
 
 // ForwardUpdate updates a network forward.
 func (n *bridge) ForwardUpdate(listenAddress string, req api.NetworkForwardPut, clientType request.ClientType) error {
-	memberSpecific := true // bridge supports per-member forwards.
-
 	var curForwardID int64
 	var curForward *api.NetworkForward
+
+	var curNodeID sql.NullInt64
 
 	err := n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
 		var err error
 
-		curForwardID, curForward, err = tx.GetNetworkForward(ctx, n.ID(), memberSpecific, listenAddress)
+		networkID := n.ID()
+		dbRecords, err := dbCluster.GetNetworkForwards(ctx, tx.Tx(), dbCluster.NetworkForwardFilter{
+			NetworkID:     &networkID,
+			ListenAddress: &listenAddress,
+		})
+		if err != nil {
+			return err
+		}
 
-		return err
+		filteredRecords := make([]dbCluster.NetworkForward, 0, len(dbRecords))
+		for _, dbRecord := range dbRecords {
+			// bridge supports per-member forwards so do memberSpecific filtering
+			if !dbRecord.NodeID.Valid || (dbRecord.NodeID.Int64 == tx.GetNodeID()) {
+				filteredRecords = append(filteredRecords, dbRecord)
+			}
+		}
+
+		if len(filteredRecords) == 0 {
+			return api.StatusErrorf(http.StatusNotFound, "Network forward not found")
+		}
+
+		if len(filteredRecords) > 1 {
+			return api.StatusErrorf(http.StatusConflict, "Network forward found on more than one cluster member. Please target a specific member")
+		}
+
+		curForwardID = filteredRecords[0].ID
+		curNodeID = filteredRecords[0].NodeID
+		curForward, err = filteredRecords[0].ToAPI(ctx, tx.Tx())
+		if err != nil {
+			return err
+		}
+
+		return nil
 	})
 	if err != nil {
 		return err
@@ -2328,19 +2931,55 @@ func (n *bridge) ForwardUpdate(listenAddress string, req api.NetworkForwardPut, 
 		return nil // Nothing has changed.
 	}
 
-	revert := revert.New()
-	defer revert.Fail()
+	reverter := revert.New()
+	defer reverter.Fail()
 
 	err = n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
-		return tx.UpdateNetworkForward(ctx, n.ID(), curForwardID, &newForward.NetworkForwardPut)
+		fwd := dbCluster.NetworkForward{
+			NetworkID:     n.ID(),
+			NodeID:        curNodeID,
+			ListenAddress: listenAddress,
+			Description:   newForward.Description,
+			Ports:         newForward.Ports,
+		}
+
+		err = dbCluster.UpdateNetworkForward(ctx, tx.Tx(), n.ID(), listenAddress, fwd)
+		if err != nil {
+			return err
+		}
+
+		err = dbCluster.UpdateNetworkForwardConfig(ctx, tx.Tx(), curForwardID, newForward.Config)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	})
 	if err != nil {
 		return err
 	}
 
-	revert.Add(func() {
+	reverter.Add(func() {
 		_ = n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
-			return tx.UpdateNetworkForward(ctx, n.ID(), curForwardID, &curForward.NetworkForwardPut)
+			fwd := dbCluster.NetworkForward{
+				NetworkID:     n.ID(),
+				NodeID:        curNodeID,
+				ListenAddress: listenAddress,
+				Description:   curForward.Description,
+				Ports:         curForward.Ports,
+			}
+
+			err = dbCluster.UpdateNetworkForward(ctx, tx.Tx(), n.ID(), listenAddress, fwd)
+			if err != nil {
+				return err
+			}
+
+			err = dbCluster.UpdateNetworkForwardConfig(ctx, tx.Tx(), curForwardID, curForward.Config)
+			if err != nil {
+				return err
+			}
+
+			return nil
 		})
 		_ = n.forwardSetupFirewall()
 		_ = n.forwardBGPSetupPrefixes()
@@ -2351,7 +2990,8 @@ func (n *bridge) ForwardUpdate(listenAddress string, req api.NetworkForwardPut, 
 		return err
 	}
 
-	revert.Success()
+	reverter.Success()
+
 	return nil
 }
 
@@ -2364,32 +3004,81 @@ func (n *bridge) ForwardDelete(listenAddress string, clientType request.ClientTy
 	err := n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
 		var err error
 
-		forwardID, forward, err = tx.GetNetworkForward(ctx, n.ID(), memberSpecific, listenAddress)
-
-		return err
-	})
-	if err != nil {
-		return err
-	}
-
-	revert := revert.New()
-	defer revert.Fail()
-
-	err = n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
-		return tx.DeleteNetworkForward(ctx, n.ID(), forwardID)
-	})
-	if err != nil {
-		return err
-	}
-
-	revert.Add(func() {
-		newForward := api.NetworkForwardsPost{
-			NetworkForwardPut: forward.NetworkForwardPut,
-			ListenAddress:     forward.ListenAddress,
+		networkID := n.ID()
+		dbRecords, err := dbCluster.GetNetworkForwards(ctx, tx.Tx(), dbCluster.NetworkForwardFilter{
+			NetworkID:     &networkID,
+			ListenAddress: &listenAddress,
+		})
+		if err != nil {
+			return err
 		}
 
+		filteredRecords := make([]dbCluster.NetworkForward, 0, len(dbRecords))
+		for _, dbRecord := range dbRecords {
+			// bridge supports per-member forwards so do memberSpecific filtering
+			if !dbRecord.NodeID.Valid || (dbRecord.NodeID.Int64 == tx.GetNodeID()) {
+				filteredRecords = append(filteredRecords, dbRecord)
+			}
+		}
+
+		if len(filteredRecords) == 0 {
+			return api.StatusErrorf(http.StatusNotFound, "Network forward not found")
+		}
+
+		if len(filteredRecords) > 1 {
+			return api.StatusErrorf(http.StatusConflict, "Network forward found on more than one cluster member. Please target a specific member")
+		}
+
+		forwardID = filteredRecords[0].ID
+		forward, err = filteredRecords[0].ToAPI(ctx, tx.Tx())
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	reverter := revert.New()
+	defer reverter.Fail()
+
+	err = n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+		return dbCluster.DeleteNetworkForward(ctx, tx.Tx(), n.ID(), forwardID)
+	})
+	if err != nil {
+		return err
+	}
+
+	reverter.Add(func() {
 		_ = n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
-			_, _ = tx.CreateNetworkForward(ctx, n.ID(), memberSpecific, &newForward)
+			nodeID := sql.NullInt64{
+				Valid: memberSpecific,
+				Int64: tx.GetNodeID(),
+			}
+
+			dbRecord := dbCluster.NetworkForward{
+				NetworkID:     n.ID(),
+				NodeID:        nodeID,
+				ListenAddress: forward.ListenAddress,
+				Description:   forward.Description,
+				Ports:         forward.Ports,
+			}
+
+			if forward.Ports == nil {
+				dbRecord.Ports = []api.NetworkForwardPort{}
+			}
+
+			forwardID, err = dbCluster.CreateNetworkForward(ctx, tx.Tx(), dbRecord)
+			if err != nil {
+				return err
+			}
+
+			err = dbCluster.CreateNetworkForwardConfig(ctx, tx.Tx(), forwardID, forward.Config)
+			if err != nil {
+				return err
+			}
 
 			return nil
 		})
@@ -2409,20 +3098,37 @@ func (n *bridge) ForwardDelete(listenAddress string, clientType request.ClientTy
 		return fmt.Errorf("Failed applying BGP prefixes for address forwards: %w", err)
 	}
 
-	revert.Success()
+	reverter.Success()
+
 	return nil
 }
 
 // forwardSetupFirewall applies all network address forwards defined for this network and this member.
 func (n *bridge) forwardSetupFirewall() error {
-	memberSpecific := true // Get all forwards for this cluster member.
-
 	var forwards map[int64]*api.NetworkForward
 
 	err := n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
 		var err error
 
-		forwards, err = tx.GetNetworkForwards(ctx, n.ID(), memberSpecific)
+		networkID := n.ID()
+		dbRecords, err := dbCluster.GetNetworkForwards(ctx, tx.Tx(), dbCluster.NetworkForwardFilter{
+			NetworkID: &networkID,
+		})
+		if err != nil {
+			return err
+		}
+
+		forwards = make(map[int64]*api.NetworkForward)
+		for _, dbRecord := range dbRecords {
+			if !dbRecord.NodeID.Valid || (dbRecord.NodeID.Int64 == tx.GetNodeID()) {
+				forward, err := dbRecord.ToAPI(ctx, tx.Tx())
+				if err != nil {
+					return err
+				}
+
+				forwards[dbRecord.ID] = forward
+			}
+		}
 
 		return err
 	})
@@ -2706,7 +3412,15 @@ func (n *bridge) UsesDNSMasq() bool {
 
 	// Start dnsmassq if IPv6 is used (needed for SLAAC or DHCPv6).
 	if !util.IsNoneOrEmpty(n.config["ipv6.address"]) {
-		return true
+		ipAddress, _, err := net.ParseCIDR(n.config["ipv6.address"])
+		if err != nil {
+			return true
+		}
+
+		// Only require dnsmasq if using a global address.
+		if !ipAddress.IsLinkLocalUnicast() {
+			return true
+		}
 	}
 
 	// Start dnsmasq if IPv4 DHCP is used.
@@ -2739,9 +3453,10 @@ func (n *bridge) deleteChildren() error {
 	}
 
 	for _, iface := range ifaces {
-		l, err := ip.LinkFromName(iface.Name)
+		l, err := ip.LinkByName(iface.Name)
 		if err != nil {
-			return err
+			// If we can't load the link, chances are the interface isn't one that we should be deleting.
+			continue
 		}
 
 		if l.Master != n.name || slices.Contains(externalInterfaces, iface.Name) || !slices.Contains(kinds, l.Kind) {

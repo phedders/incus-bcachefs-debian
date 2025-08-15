@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/lxc/incus/v6/internal/server/certificate"
-	"github.com/mattn/go-sqlite3"
 )
 
 var certificateObjects = RegisterStmt(`
@@ -189,7 +188,7 @@ func GetCertificates(ctx context.Context, db dbtx, filters ...CertificateFilter)
 		} else if filter.ID == nil && filter.Fingerprint == nil && filter.Name == nil && filter.Type == nil {
 			return nil, fmt.Errorf("Cannot filter on empty CertificateFilter")
 		} else {
-			return nil, fmt.Errorf("No statement exists for the given Filter")
+			return nil, errors.New("No statement exists for the given Filter")
 		}
 	}
 
@@ -310,11 +309,8 @@ func CreateCertificate(ctx context.Context, db dbtx, object Certificate) (_ int6
 
 	// Execute the statement.
 	result, err := stmt.Exec(args...)
-	var sqliteErr sqlite3.Error
-	if errors.As(err, &sqliteErr) {
-		if sqliteErr.Code == sqlite3.ErrConstraint {
-			return -1, ErrConflict
-		}
+	if err != nil && strings.HasPrefix(err.Error(), "UNIQUE constraint failed:") {
+		return -1, ErrConflict
 	}
 
 	if err != nil {

@@ -30,6 +30,18 @@ var DefaultRemotes = map[string]Remote{
 	"local":  LocalRemote,
 }
 
+// DefaultSettings are the configurations for the Config Struct.
+type DefaultSettings struct {
+	// Default flag format for list commands.
+	ListFormat string `yaml:"list_format"`
+
+	// Preferred console type.
+	ConsoleType string `yaml:"console_type"`
+
+	// Alternative SPICE command (SOCKET will be replaced by the socket path).
+	ConsoleSpiceCommand string `yaml:"console_spice_command"`
+}
+
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
