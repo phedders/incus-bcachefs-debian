@@ -1,3 +1,10 @@
+incus (6.15.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release
+    - Rebase d/p/002-adjust-import-paths.patch
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 16 Aug 2025 02:15:17 +0000
+
 incus (6.0.5-1) unstable; urgency=medium
 
   * New upstream release:
