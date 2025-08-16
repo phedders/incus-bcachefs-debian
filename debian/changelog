@@ -1,4 +1,4 @@
-incus (6.0.5-1) UNRELEASED; urgency=medium
+incus (6.0.5-1) unstable; urgency=medium
 
   * New upstream release:
     - Add patch to import IncusOS network struct definitions
@@ -12,7 +12,7 @@ incus (6.0.5-1) UNRELEASED; urgency=medium
     - Fix Breaks version
   * Update paths in d/copyright
 
- -- Mathias Gibbens <gibmat@debian.org>  Fri, 15 Aug 2025 13:34:01 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 16 Aug 2025 01:49:46 +0000
 
 incus (6.0.4-3) unstable; urgency=medium
 
