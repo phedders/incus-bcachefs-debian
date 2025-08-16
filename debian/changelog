@@ -1,3 +1,33 @@
+incus (6.0.5-1) unstable; urgency=medium
+
+  * New upstream release:
+    - Add patch to import IncusOS network struct definitions
+    - Rebase d/p/002-adjust-import-paths.patch
+    - Drop custom userns patch
+    - Drop upstream cherry-picked commits
+    - Update logic for building incus-agent binaries, including ones for
+      Windows
+  * d/control:
+    - Update Build-Depends and Depends
+    - Fix Breaks version
+  * Update paths in d/copyright
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 16 Aug 2025 01:49:46 +0000
+
+incus (6.0.4-3) unstable; urgency=medium
+
+  * Document packaging policy for LTS and Feature releases
+  * Add patch for building with updated zitadel-oidc
+  * d/control:
+    - Limit VM dependencies to supported host architectures: amd64, arm64,
+      ppc64el, and s390x
+    - Update Build-Depends and Depends
+    - Add Breaks for distrobuilder
+    - Don't Suggest ceph-common for 32bit architectures
+  * Update d/README.Debian
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 10 Aug 2025 15:56:48 +0000
+
 incus (6.14.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release
@@ -9,18 +39,6 @@ incus (6.14.0-1~exp1) experimental; urgency=medium
     - Rebase d/p/002-adjust-import-paths.patch
 
  -- Mathias Gibbens <gibmat@debian.org>  Fri, 27 Jun 2025 17:30:50 +0000
-
-incus (6.0.4-3) UNRELEASED; urgency=medium
-
-  * Document packaging policy for LTS and Feature releases
-  * d/control:
-    - Limit VM dependencies to supported host architectures: amd64, arm64,
-      ppc64el, and s390x
-    - Update Build-Depends and Depends
-    - Don't Suggest ceph-common for 32bit architectures
-  * Update d/README.Debian
-
- -- Mathias Gibbens <gibmat@debian.org>  Sun, 01 Jun 2025 03:16:35 +0000
 
 incus (6.0.4-2) unstable; urgency=medium
 
