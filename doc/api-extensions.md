@@ -2869,3 +2869,14 @@ The following target keys are supported:
 * `logging.NAME.target.retry` (How many times to retry the transmission)
 
 The webhook data matches what's sent over the existing events API.
+
+## `storage_driver_truenas`
+
+This adds a TrueNAS storage driver.
+
+## `container_disk_tmpfs`
+
+This adds tmpfs support for disk devices.
+
+* `source=tmpfs:` mounts a tmpfs file system, respecting `size`, `uid`, `gid` and `mode` options
+* `source=tmpfs-overlay:` same as tmpfs but with additional overlayfs behavior

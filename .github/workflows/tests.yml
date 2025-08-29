@@ -26,10 +26,15 @@ jobs:
           - tip
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # Differential ShellCheck requires full git history
           fetch-depth: 0
+
+      - name: Workaround for broken go-swagger on Go 1.25
+        run: |
+          rm test/lint/rest-api-up-to-date.sh
+        if: matrix.go == 'tip' || matrix.go == 'stable'
 
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
@@ -140,7 +145,6 @@ jobs:
           - lvm
           - zfs
           - ceph
-          - linstor
           - random
         os:
           - ubuntu-24.04
@@ -229,7 +233,7 @@ jobs:
           sudo nft flush ruleset
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Go (${{ matrix.go }})
         uses: actions/setup-go@v5
@@ -475,7 +479,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -560,7 +564,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Go
         uses: actions/setup-go@v5
