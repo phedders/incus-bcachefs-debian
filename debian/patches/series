@@ -1,4 +1,4 @@
 001-skip-TestConvertNetworkConfig.patch
 002-adjust-import-paths.patch
 003-Compile-against-go-criu-v7.patch
-004-apparmor-4x-userns.patch
+004-include-incusos-network-structs.patch

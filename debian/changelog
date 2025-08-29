@@ -1,3 +1,13 @@
+incus (6.16.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Update minimum version of golang
+    - Add patch to import IncusOS network struct definitions
+    - Drop custom userns patch
+  * Update paths in d/copyright
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 29 Aug 2025 12:57:42 +0000
+
 incus (6.15.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release

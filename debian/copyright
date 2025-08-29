@@ -35,7 +35,7 @@ Files: shared/tls/cert.go
 Copyright: 2009 The Go Authors
 License: BSD-3-clause
 
-Files: internal/usbid/*
+Files: shared/resources/usbid/*
 Copyright:
  Copyright 2013 Google Inc
  Copyright 2016 the gousb Authors
