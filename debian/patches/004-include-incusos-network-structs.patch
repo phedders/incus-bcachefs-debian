@@ -1,25 +1,25 @@
 From: Mathias Gibbens <gibmat@debian.org>
 Description: Incus now consumes the IncusOS network API. This causes a dependency loop, so extract the relevant structs needed by Incus.
 Forwarded: not-needed
-diff --git a/cmd/incusd/networks.go b/cmd/incusd/networks.go
-index f6ea927ca..7a1b93ce1 100644
---- a/cmd/incusd/networks.go
-+++ b/cmd/incusd/networks.go
-@@ -16,7 +16,7 @@ import (
- 	"time"
+diff --git a/internal/incusos/api_system.go b/internal/incusos/api_system.go
+index 4fdc7d848..defc56e1e 100644
+--- a/internal/incusos/api_system.go
++++ b/internal/incusos/api_system.go
+@@ -1,7 +1,7 @@
+ package incusos
  
- 	"github.com/gorilla/mux"
+ import (
 -	osapi "github.com/lxc/incus-os/incus-osd/api"
 +	"github.com/lxc/incus/v6/internal/osapi"
+ )
  
- 	incus "github.com/lxc/incus/v6/client"
- 	"github.com/lxc/incus/v6/internal/filter"
+ // GetSystemNetwork returns the IncusOS network configuration and state.
 diff --git a/internal/osapi/system_network.go b/internal/osapi/system_network.go
 new file mode 100644
-index 000000000..d0e41d8ad
+index 000000000..c59cffd5b
 --- /dev/null
 +++ b/internal/osapi/system_network.go
-@@ -0,0 +1,179 @@
+@@ -0,0 +1,177 @@
 +package osapi
 +
 +// Copied from https://raw.githubusercontent.com/lxc/incus-os/refs/heads/main/incus-osd/api/system_network.go
@@ -65,7 +65,6 @@ index 000000000..d0e41d8ad
 +type SystemNetworkInterface struct {
 +	Name              string               `json:"name"                          yaml:"name"`
 +	MTU               int                  `json:"mtu,omitempty"                 yaml:"mtu,omitempty"`
-+	VLAN              int                  `json:"vlan,omitempty"                yaml:"vlan,omitempty"`
 +	VLANTags          []int                `json:"vlan_tags,omitempty"           yaml:"vlan_tags,omitempty"`
 +	Addresses         []string             `json:"addresses,omitempty"           yaml:"addresses,omitempty"`
 +	RequiredForOnline string               `json:"required_for_online,omitempty" yaml:"required_for_online,omitempty"`
@@ -80,7 +79,6 @@ index 000000000..d0e41d8ad
 +	Name              string               `json:"name"                          yaml:"name"`
 +	Mode              string               `json:"mode"                          yaml:"mode"`
 +	MTU               int                  `json:"mtu,omitempty"                 yaml:"mtu,omitempty"`
-+	VLAN              int                  `json:"vlan,omitempty"                yaml:"vlan,omitempty"`
 +	VLANTags          []int                `json:"vlan_tags,omitempty"           yaml:"vlan_tags,omitempty"`
 +	Addresses         []string             `json:"addresses,omitempty"           yaml:"addresses,omitempty"`
 +	RequiredForOnline string               `json:"required_for_online,omitempty" yaml:"required_for_online,omitempty"`

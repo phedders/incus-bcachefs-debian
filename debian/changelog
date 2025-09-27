@@ -1,3 +1,10 @@
+incus (6.17.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release
+    - Rebase IncusOS network struct patch
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 27 Sep 2025 19:49:39 +0000
+
 incus (6.0.5-2) unstable; urgency=medium
 
   * Temporarily revert commit that broke running `incus exec` for VMs
