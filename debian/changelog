@@ -1,3 +1,12 @@
+incus (6.0.5-2) unstable; urgency=medium
+
+  * Temporarily revert commit that broke running `incus exec` for VMs
+    (Closes: #1114918)
+  * Update IncusOS network struct patch
+  * Drop redundant Rules-Requires-Root from d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 27 Sep 2025 19:35:06 +0000
+
 incus (6.16.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release:

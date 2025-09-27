@@ -79,7 +79,6 @@ Standards-Version: 4.7.2
 Vcs-Browser: https://salsa.debian.org/go-team/packages/incus
 Vcs-Git: https://salsa.debian.org/go-team/packages/incus.git
 Homepage: https://linuxcontainers.org/incus/
-Rules-Requires-Root: no
 XS-Go-Import-Path: github.com/lxc/incus
 
 Package: golang-github-lxc-incus-dev
