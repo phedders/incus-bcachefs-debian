@@ -19,7 +19,7 @@ new file mode 100644
 index 000000000..d0e41d8ad
 --- /dev/null
 +++ b/internal/osapi/system_network.go
-@@ -0,0 +1,179 @@
+@@ -0,0 +1,177 @@
 +package osapi
 +
 +// Copied from https://raw.githubusercontent.com/lxc/incus-os/refs/heads/main/incus-osd/api/system_network.go
@@ -65,7 +65,6 @@ index 000000000..d0e41d8ad
 +type SystemNetworkInterface struct {
 +	Name              string               `json:"name"                          yaml:"name"`
 +	MTU               int                  `json:"mtu,omitempty"                 yaml:"mtu,omitempty"`
-+	VLAN              int                  `json:"vlan,omitempty"                yaml:"vlan,omitempty"`
 +	VLANTags          []int                `json:"vlan_tags,omitempty"           yaml:"vlan_tags,omitempty"`
 +	Addresses         []string             `json:"addresses,omitempty"           yaml:"addresses,omitempty"`
 +	RequiredForOnline string               `json:"required_for_online,omitempty" yaml:"required_for_online,omitempty"`
@@ -80,7 +79,6 @@ index 000000000..d0e41d8ad
 +	Name              string               `json:"name"                          yaml:"name"`
 +	Mode              string               `json:"mode"                          yaml:"mode"`
 +	MTU               int                  `json:"mtu,omitempty"                 yaml:"mtu,omitempty"`
-+	VLAN              int                  `json:"vlan,omitempty"                yaml:"vlan,omitempty"`
 +	VLANTags          []int                `json:"vlan_tags,omitempty"           yaml:"vlan_tags,omitempty"`
 +	Addresses         []string             `json:"addresses,omitempty"           yaml:"addresses,omitempty"`
 +	RequiredForOnline string               `json:"required_for_online,omitempty" yaml:"required_for_online,omitempty"`
