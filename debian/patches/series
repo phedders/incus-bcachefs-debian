@@ -3,3 +3,4 @@
 003-Compile-against-go-criu-v7.patch
 004-include-incusos-network-structs.patch
 005-revert-4e828ca.patch
+006-update-libovsdb-import-path.patch

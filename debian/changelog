@@ -1,3 +1,9 @@
+incus (6.0.5-3) UNRELEASED; urgency=medium
+
+  * Cherry-pick upstream changes for libovsdb import path change
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 18 Oct 2025 16:36:30 +0000
+
 incus (6.0.5-2) unstable; urgency=medium
 
   * Temporarily revert commit that broke running `incus exec` for VMs
