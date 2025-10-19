@@ -1,8 +1,8 @@
-incus (6.0.5-3) UNRELEASED; urgency=medium
+incus (6.0.5-3) unstable; urgency=medium
 
   * Cherry-pick upstream changes for libovsdb import path change
 
- -- Mathias Gibbens <gibmat@debian.org>  Sat, 18 Oct 2025 16:36:30 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 19 Oct 2025 23:28:28 +0000
 
 incus (6.0.5-2) unstable; urgency=medium
 
