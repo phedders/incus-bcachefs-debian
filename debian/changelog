@@ -1,3 +1,9 @@
+incus (6.0.5-5) unstable; urgency=high
+
+  * Cherry-pick small update for GHSA-56mx-8g9f-5crf fix
+
+ -- Mathias Gibbens <gibmat@debian.org>  Mon, 10 Nov 2025 13:25:31 +0000
+
 incus (6.0.5-4) unstable; urgency=high
 
   * Cherry-pick upstream fix for GHSA-56mx-8g9f-5crf
