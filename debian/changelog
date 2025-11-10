@@ -1,3 +1,9 @@
+incus (6.0.5-4) unstable; urgency=high
+
+  * Cherry-pick upstream fix for GHSA-56mx-8g9f-5crf
+
+ -- Mathias Gibbens <gibmat@debian.org>  Mon, 10 Nov 2025 04:06:47 +0000
+
 incus (6.0.5-3) unstable; urgency=medium
 
   * Cherry-pick upstream changes for libovsdb import path change
