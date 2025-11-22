@@ -1,3 +1,9 @@
+incus (6.0.5-6) unstable; urgency=medium
+
+  * Cherry-pick fix for running nested docker in containers (Closes: #1121011)
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 22 Nov 2025 15:10:50 +0000
+
 incus (6.0.5-5) unstable; urgency=high
 
   * Cherry-pick small update for GHSA-56mx-8g9f-5crf fix
