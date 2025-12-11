@@ -1,3 +1,10 @@
+incus (6.0.5-7) unstable; urgency=medium
+
+  * Team upload.
+  * Use B-D/D on golang-github-cenkalti-backoff-v4-dev
+
+ -- Simon Josefsson <simon@josefsson.org>  Thu, 11 Dec 2025 18:22:57 +0100
+
 incus (6.0.5-6) unstable; urgency=medium
 
   * Cherry-pick fix for running nested docker in containers (Closes: #1121011)
