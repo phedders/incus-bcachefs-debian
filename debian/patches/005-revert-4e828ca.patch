@@ -2,7 +2,7 @@ From: Mathias Gibbens <gibmat@debian.org>
 Description: Temporarily revert commit that broke running `incus exec` for VMs
 Forwarded: https://github.com/lxc/incus/issues/2513
 diff --git a/cmd/incus-agent/dev_incus.go b/cmd/incus-agent/dev_incus.go
-index 9dbf0c175..bc64243b6 100644
+index dedaffd6c..868e64962 100644
 --- a/cmd/incus-agent/dev_incus.go
 +++ b/cmd/incus-agent/dev_incus.go
 @@ -4,11 +4,14 @@ import (
@@ -31,7 +31,7 @@ index 9dbf0c175..bc64243b6 100644
  		return &devIncusResponse{"bad request", http.StatusBadRequest, "raw"}
  	}
  
-@@ -248,7 +251,8 @@ func hoistReq(f func(*Daemon, http.ResponseWriter, *http.Request) *devIncusRespo
+@@ -249,7 +252,8 @@ func hoistReq(f func(*Daemon, http.ResponseWriter, *http.Request) *devIncusRespo
  }
  
  func devIncusAPI(d *Daemon) http.Handler {

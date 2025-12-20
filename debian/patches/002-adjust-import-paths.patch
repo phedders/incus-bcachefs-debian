@@ -2,7 +2,7 @@ From: Mathias Gibbens <gibmat@debian.org>
 Description: Adjust import paths to reflect Debian packaging
 Forwarded: not-needed
 diff --git a/cmd/incusd/daemon.go b/cmd/incusd/daemon.go
-index b310c67be..f18de74a2 100644
+index ade6c66b3..5cb235446 100644
 --- a/cmd/incusd/daemon.go
 +++ b/cmd/incusd/daemon.go
 @@ -23,7 +23,7 @@ import (
@@ -15,7 +15,7 @@ index b310c67be..f18de74a2 100644
  
  	internalIO "github.com/lxc/incus/v6/internal/io"
 diff --git a/cmd/incusd/instance_console.go b/cmd/incusd/instance_console.go
-index 1631c6146..d9685a4c8 100644
+index 4e4f51860..72a39eb6f 100644
 --- a/cmd/incusd/instance_console.go
 +++ b/cmd/incusd/instance_console.go
 @@ -17,7 +17,7 @@ import (
@@ -67,7 +67,7 @@ index aad7fcb73..5b1c4612d 100644
  	"golang.org/x/sys/unix"
  
 diff --git a/cmd/incusd/storage_volumes_snapshot.go b/cmd/incusd/storage_volumes_snapshot.go
-index f9c31d8af..d6eee5b6b 100644
+index f2f9a23db..ad3811e29 100644
 --- a/cmd/incusd/storage_volumes_snapshot.go
 +++ b/cmd/incusd/storage_volumes_snapshot.go
 @@ -13,7 +13,7 @@ import (
@@ -80,10 +80,10 @@ index f9c31d8af..d6eee5b6b 100644
  
  	internalInstance "github.com/lxc/incus/v6/internal/instance"
 diff --git a/cmd/lxc-to-incus/main_migrate.go b/cmd/lxc-to-incus/main_migrate.go
-index 3ee5b02b5..759cac96a 100644
+index 91ad5e0c1..971535311 100644
 --- a/cmd/lxc-to-incus/main_migrate.go
 +++ b/cmd/lxc-to-incus/main_migrate.go
-@@ -10,7 +10,7 @@ import (
+@@ -9,7 +9,7 @@ import (
  	"strconv"
  	"strings"
  
@@ -132,10 +132,10 @@ index eb8293bf6..13661598e 100644
  	"github.com/lxc/incus/v6/internal/linux"
  	"github.com/lxc/incus/v6/internal/server/apparmor"
 diff --git a/internal/server/instance/drivers/driver_lxc.go b/internal/server/instance/drivers/driver_lxc.go
-index 3ab85b5b3..0e705aeb9 100644
+index 767aa4211..e2e71b1f6 100644
 --- a/internal/server/instance/drivers/driver_lxc.go
 +++ b/internal/server/instance/drivers/driver_lxc.go
-@@ -27,11 +27,11 @@ import (
+@@ -28,11 +28,11 @@ import (
  	"time"
  
  	"github.com/checkpoint-restore/go-criu/v6/crit"
@@ -150,10 +150,10 @@ index 3ab85b5b3..0e705aeb9 100644
  	"github.com/pkg/sftp"
  	"golang.org/x/sync/errgroup"
 diff --git a/internal/server/instance/drivers/driver_qemu.go b/internal/server/instance/drivers/driver_qemu.go
-index f652dea88..35df791fa 100644
+index 02d004ee0..17ae380f5 100644
 --- a/internal/server/instance/drivers/driver_qemu.go
 +++ b/internal/server/instance/drivers/driver_qemu.go
-@@ -31,7 +31,7 @@ import (
+@@ -32,7 +32,7 @@ import (
  	"time"
  	"unsafe"
  
@@ -163,7 +163,7 @@ index f652dea88..35df791fa 100644
  	"github.com/gorilla/websocket"
  	"github.com/kballard/go-shellquote"
 diff --git a/internal/server/instance/instance_interface.go b/internal/server/instance/instance_interface.go
-index 8251a93c2..438c5f697 100644
+index e313814a6..74f4654bc 100644
 --- a/internal/server/instance/instance_interface.go
 +++ b/internal/server/instance/instance_interface.go
 @@ -8,7 +8,7 @@ import (
@@ -176,7 +176,7 @@ index 8251a93c2..438c5f697 100644
  	"google.golang.org/protobuf/proto"
  
 diff --git a/internal/server/instance/instance_utils.go b/internal/server/instance/instance_utils.go
-index dfdf17903..7a884c65e 100644
+index 15b2a9af1..7c441a060 100644
 --- a/internal/server/instance/instance_utils.go
 +++ b/internal/server/instance/instance_utils.go
 @@ -16,7 +16,7 @@ import (
@@ -189,7 +189,7 @@ index dfdf17903..7a884c65e 100644
  
  	incus "github.com/lxc/incus/v6/client"
 diff --git a/internal/server/network/driver_ovn.go b/internal/server/network/driver_ovn.go
-index ade4887dc..cdc4209af 100644
+index dc9c18378..09056efb6 100644
 --- a/internal/server/network/driver_ovn.go
 +++ b/internal/server/network/driver_ovn.go
 @@ -18,7 +18,7 @@ import (
@@ -199,8 +199,8 @@ index ade4887dc..cdc4209af 100644
 -	"github.com/flosch/pongo2/v6"
 +	"github.com/flosch/pongo2"
  	"github.com/mdlayher/netx/eui64"
- 	ovsClient "github.com/ovn-org/libovsdb/client"
- 	ovsdbModel "github.com/ovn-org/libovsdb/model"
+ 	ovsClient "github.com/ovn-kubernetes/libovsdb/client"
+ 	ovsdbModel "github.com/ovn-kubernetes/libovsdb/model"
 diff --git a/internal/server/seccomp/seccomp.go b/internal/server/seccomp/seccomp.go
 index b0bb47596..b760a1a98 100644
 --- a/internal/server/seccomp/seccomp.go

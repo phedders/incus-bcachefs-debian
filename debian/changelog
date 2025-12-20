@@ -1,3 +1,43 @@
+incus (6.20.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Rebase patches
+    - Update IncusOS network struct and cli patch
+  * Update Build-Depends and Depends in d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 20 Dec 2025 16:52:10 +0000
+
+incus (6.0.5-7) unstable; urgency=medium
+
+  * Team upload.
+  * Use B-D/D on golang-github-cenkalti-backoff-v4-dev
+
+ -- Simon Josefsson <simon@josefsson.org>  Thu, 11 Dec 2025 18:22:57 +0100
+
+incus (6.0.5-6) unstable; urgency=medium
+
+  * Cherry-pick fix for running nested docker in containers (Closes: #1121011)
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 22 Nov 2025 15:10:50 +0000
+
+incus (6.0.5-5) unstable; urgency=high
+
+  * Cherry-pick small update for GHSA-56mx-8g9f-5crf fix
+
+ -- Mathias Gibbens <gibmat@debian.org>  Mon, 10 Nov 2025 13:25:31 +0000
+
+incus (6.0.5-4) unstable; urgency=high
+
+  * Cherry-pick upstream fix for GHSA-56mx-8g9f-5crf
+
+ -- Mathias Gibbens <gibmat@debian.org>  Mon, 10 Nov 2025 04:06:47 +0000
+
+incus (6.0.5-3) unstable; urgency=medium
+
+  * Cherry-pick upstream changes for libovsdb import path change
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 19 Oct 2025 23:28:28 +0000
+
 incus (6.17.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release
