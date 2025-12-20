@@ -270,8 +270,6 @@ definitions:
     ClusterGroup:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Cluster group configuration map
                 example:
                     user.mykey: foo
@@ -296,6 +294,16 @@ definitions:
                 example: group1
                 type: string
                 x-go-name: Name
+            used_by:
+                description: List of URLs of objects using this cluster group
+                example:
+                    - /1.0/cluster/members/server01
+                    - /1.0/project/default
+                items:
+                    type: string
+                readOnly: true
+                type: array
+                x-go-name: UsedBy
         title: ClusterGroup represents a cluster group.
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
@@ -312,8 +320,6 @@ definitions:
     ClusterGroupPut:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Cluster group configuration map
                 example:
                     user.mykey: foo
@@ -339,8 +345,6 @@ definitions:
     ClusterGroupsPost:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Cluster group configuration map
                 example:
                     user.mykey: foo
@@ -376,8 +380,6 @@ definitions:
                 type: string
                 x-go-name: Architecture
             config:
-                additionalProperties:
-                    type: string
                 description: Additional configuration information
                 example:
                     scheduler.instance: all
@@ -522,8 +524,6 @@ definitions:
         description: ClusterMemberPut represents the modifiable fields of a cluster member
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Additional configuration information
                 example:
                     scheduler.instance: all
@@ -678,6 +678,26 @@ definitions:
                 type: string
                 x-go-name: ServerName
         title: ClusterPut represents the fields required to bootstrap or join a cluster.
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
+    ConfigMap:
+        additionalProperties:
+            type: string
+        description: |-
+            ConfigMap type is used to hold incus config. In contrast to plain
+            map[string]string it provides unmarshal methods for JSON and YAML, which
+            gracefully handle numbers and bools.
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
+    DevicesMap:
+        additionalProperties:
+            additionalProperties:
+                type: string
+            type: object
+        description: |-
+            DevicesMap type is used to hold incus devices configurations. In contrast to
+            plain map[string]map[string]string it provides unmarshal methods for JSON and
+            YAML, which gracefully handle numbers and bools.
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
     Event:
@@ -1292,8 +1312,6 @@ definitions:
                 type: array
                 x-go-name: ClusterGroups
             config:
-                additionalProperties:
-                    type: string
                 description: Server configuration map (refer to doc/server.md)
                 example:
                     core.https_address: :8443
@@ -1344,8 +1362,6 @@ definitions:
                 example: '"default"'
                 type: string
             config:
-                additionalProperties:
-                    type: string
                 description: Network configuration map (refer to doc/networks.md)
                 example:
                     ipv4.address: 10.0.0.1/24
@@ -1387,8 +1403,6 @@ definitions:
                 example: '"default"'
                 type: string
             config:
-                additionalProperties:
-                    type: string
                 description: Instance configuration map (refer to doc/instances.md)
                 example:
                     limits.cpu: "4"
@@ -1401,10 +1415,6 @@ definitions:
                 type: string
                 x-go-name: Description
             devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: List of devices
                 example:
                     eth0:
@@ -1436,8 +1446,6 @@ definitions:
                 example: '"default"'
                 type: string
             config:
-                additionalProperties:
-                    type: string
                 description: Storage volume configuration map (refer to doc/storage.md)
                 example:
                     size: 50GiB
@@ -1482,8 +1490,6 @@ definitions:
                 type: string
                 x-go-name: Architecture
             config:
-                additionalProperties:
-                    type: string
                 description: Instance configuration (see doc/instances.md)
                 example:
                     security.nesting: "true"
@@ -1501,10 +1507,6 @@ definitions:
                 type: string
                 x-go-name: Description
             devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: Instance devices (see doc/instances.md)
                 example:
                     root:
@@ -1519,18 +1521,12 @@ definitions:
                 type: boolean
                 x-go-name: Ephemeral
             expanded_config:
-                additionalProperties:
-                    type: string
                 description: Expanded configuration (all profiles and local config merged)
                 example:
                     security.nesting: "true"
                 type: object
                 x-go-name: ExpandedConfig
             expanded_devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: Expanded devices (all profiles and local devices merged)
                 example:
                     root:
@@ -1773,8 +1769,6 @@ definitions:
                 type: array
                 x-go-name: Backups
             config:
-                additionalProperties:
-                    type: string
                 description: Instance configuration (see doc/instances.md)
                 example:
                     security.nesting: "true"
@@ -1792,10 +1786,6 @@ definitions:
                 type: string
                 x-go-name: Description
             devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: Instance devices (see doc/instances.md)
                 example:
                     root:
@@ -1810,18 +1800,12 @@ definitions:
                 type: boolean
                 x-go-name: Ephemeral
             expanded_config:
-                additionalProperties:
-                    type: string
                 description: Expanded configuration (all profiles and local config merged)
                 example:
                     security.nesting: "true"
                 type: object
                 x-go-name: ExpandedConfig
             expanded_devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: Expanded devices (all profiles and local devices merged)
                 example:
                     root:
@@ -1895,17 +1879,11 @@ definitions:
     InstancePost:
         properties:
             Config:
-                additionalProperties:
-                    type: string
                 description: Instance configuration file.
                 example:
                     security.nesting: "true"
                 type: object
             Devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: Instance devices.
                 example:
                     root:
@@ -1992,8 +1970,6 @@ definitions:
                 type: string
                 x-go-name: Architecture
             config:
-                additionalProperties:
-                    type: string
                 description: Instance configuration (see doc/instances.md)
                 example:
                     security.nesting: "true"
@@ -2005,10 +1981,6 @@ definitions:
                 type: string
                 x-go-name: Description
             devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: Instance devices (see doc/instances.md)
                 example:
                     root:
@@ -2058,8 +2030,6 @@ definitions:
                 type: string
                 x-go-name: Architecture
             config:
-                additionalProperties:
-                    type: string
                 description: Instance configuration (see doc/instances.md)
                 example:
                     security.nesting: "true"
@@ -2077,10 +2047,6 @@ definitions:
                 type: string
                 x-go-name: Description
             devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: Instance devices (see doc/instances.md)
                 example:
                     root:
@@ -2095,18 +2061,12 @@ definitions:
                 type: boolean
                 x-go-name: Ephemeral
             expanded_config:
-                additionalProperties:
-                    type: string
                 description: Expanded configuration (all profiles and local config merged)
                 example:
                     security.nesting: "true"
                 type: object
                 x-go-name: ExpandedConfig
             expanded_devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: Expanded devices (all profiles and local devices merged)
                 example:
                     root:
@@ -2625,8 +2585,6 @@ definitions:
                 type: string
                 x-go-name: Architecture
             config:
-                additionalProperties:
-                    type: string
                 description: Instance configuration (see doc/instances.md)
                 example:
                     security.nesting: "true"
@@ -2638,10 +2596,6 @@ definitions:
                 type: string
                 x-go-name: Description
             devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: Instance devices (see doc/instances.md)
                 example:
                     root:
@@ -2711,9 +2665,8 @@ definitions:
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
     MetadataConfigEntityName:
-        description: |-
-            MetadataConfigEntityName represents a main API object type
-            Example: instance
+        description: MetadataConfigEntityName represents a main API object type
+        example: instance
         type: string
         x-go-package: github.com/lxc/incus/v6/shared/api
     MetadataConfigGroup:
@@ -2729,9 +2682,8 @@ definitions:
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
     MetadataConfigGroupName:
-        description: |-
-            MetadataConfigGroupName represents the name of a group of config keys
-            Example: volatile
+        description: MetadataConfigGroupName represents the name of a group of config keys
+        example: volatile
         type: string
         x-go-package: github.com/lxc/incus/v6/shared/api
     MetadataConfigKey:
@@ -2785,8 +2737,6 @@ definitions:
         description: Network represents a network
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Network configuration map (refer to doc/networks.md)
                 example:
                     ipv4.address: 10.0.0.1/24
@@ -2854,8 +2804,6 @@ definitions:
     NetworkACL:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: ACL configuration map (refer to doc/network-acls.md)
                 example:
                     user.mykey: foo
@@ -2915,8 +2863,6 @@ definitions:
     NetworkACLPut:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: ACL configuration map (refer to doc/network-acls.md)
                 example:
                     user.mykey: foo
@@ -3001,8 +2947,6 @@ definitions:
     NetworkACLsPost:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: ACL configuration map (refer to doc/network-acls.md)
                 example:
                     user.mykey: foo
@@ -3046,8 +2990,6 @@ definitions:
                 type: array
                 x-go-name: Addresses
             config:
-                additionalProperties:
-                    type: string
                 description: Address set configuration map (refer to doc/network-address-sets.md)
                 example:
                     user.mykey: foo
@@ -3104,8 +3046,6 @@ definitions:
                 type: array
                 x-go-name: Addresses
             config:
-                additionalProperties:
-                    type: string
                 description: Address set configuration map (refer to doc/network-address-sets.md)
                 example:
                     user.mykey: foo
@@ -3131,8 +3071,6 @@ definitions:
                 type: array
                 x-go-name: Addresses
             config:
-                additionalProperties:
-                    type: string
                 description: Address set configuration map (refer to doc/network-address-sets.md)
                 example:
                     user.mykey: foo
@@ -3182,8 +3120,6 @@ definitions:
     NetworkForward:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Forward configuration map (refer to doc/network-forwards.md)
                 example:
                     user.mykey: foo
@@ -3252,8 +3188,6 @@ definitions:
         description: NetworkForwardPut represents the modifiable fields of a network address forward
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Forward configuration map (refer to doc/network-forwards.md)
                 example:
                     user.mykey: foo
@@ -3276,8 +3210,6 @@ definitions:
         description: NetworkForwardsPost represents the fields of a new network address forward
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Forward configuration map (refer to doc/network-forwards.md)
                 example:
                     user.mykey: foo
@@ -3304,8 +3236,6 @@ definitions:
     NetworkIntegration:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Integration configuration map (refer to doc/network-integrations.md)
                 example:
                     user.mykey: foo
@@ -3353,8 +3283,6 @@ definitions:
         description: NetworkIntegrationPut represents the modifiable fields of a network integration
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Integration configuration map (refer to doc/network-integrations.md)
                 example:
                     user.mykey: foo
@@ -3371,8 +3299,6 @@ definitions:
         description: NetworkIntegrationsPost represents the fields of a new network integration
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Integration configuration map (refer to doc/network-integrations.md)
                 example:
                     user.mykey: foo
@@ -3435,8 +3361,6 @@ definitions:
                 type: array
                 x-go-name: Backends
             config:
-                additionalProperties:
-                    type: string
                 description: Load balancer configuration map (refer to doc/network-load-balancers.md)
                 example:
                     user.mykey: foo
@@ -3529,8 +3453,6 @@ definitions:
                 type: array
                 x-go-name: Backends
             config:
-                additionalProperties:
-                    type: string
                 description: Load balancer configuration map (refer to doc/network-load-balancers.md)
                 example:
                     user.mykey: foo
@@ -3597,8 +3519,6 @@ definitions:
                 type: array
                 x-go-name: Backends
             config:
-                additionalProperties:
-                    type: string
                 description: Load balancer configuration map (refer to doc/network-load-balancers.md)
                 example:
                     user.mykey: foo
@@ -3625,8 +3545,6 @@ definitions:
     NetworkPeer:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Peer configuration map (refer to doc/network-peers.md)
                 example:
                     user.mykey: foo
@@ -3688,8 +3606,6 @@ definitions:
         description: NetworkPeerPut represents the modifiable fields of a network peering
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Peer configuration map (refer to doc/network-peers.md)
                 example:
                     user.mykey: foo
@@ -3706,8 +3622,6 @@ definitions:
         description: NetworkPeersPost represents the fields of a new network peering
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Peer configuration map (refer to doc/network-peers.md)
                 example:
                     user.mykey: foo
@@ -3759,8 +3673,6 @@ definitions:
         description: NetworkPut represents the modifiable fields of a network
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Network configuration map (refer to doc/networks.md)
                 example:
                     ipv4.address: 10.0.0.1/24
@@ -4008,8 +3920,6 @@ definitions:
     NetworkZone:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Zone configuration map (refer to doc/network-zones.md)
                 example:
                     user.mykey: foo
@@ -4047,8 +3957,6 @@ definitions:
         description: NetworkZonePut represents the modifiable fields of a network zone
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Zone configuration map (refer to doc/network-zones.md)
                 example:
                     user.mykey: foo
@@ -4064,8 +3972,6 @@ definitions:
     NetworkZoneRecord:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Advanced configuration for the record
                 example:
                     user.mykey: foo
@@ -4115,8 +4021,6 @@ definitions:
         description: NetworkZoneRecordPut represents the modifiable fields of a network zone record
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Advanced configuration for the record
                 example:
                     user.mykey: foo
@@ -4139,8 +4043,6 @@ definitions:
         description: NetworkZoneRecordsPost represents the fields of a new network zone record
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Advanced configuration for the record
                 example:
                     user.mykey: foo
@@ -4168,8 +4070,6 @@ definitions:
         description: NetworkZonesPost represents the fields of a new network zone
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Zone configuration map (refer to doc/network-zones.md)
                 example:
                     user.mykey: foo
@@ -4191,8 +4091,6 @@ definitions:
         description: NetworksPost represents the fields of a new network
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Network configuration map (refer to doc/networks.md)
                 example:
                     ipv4.address: 10.0.0.1/24
@@ -4304,8 +4202,6 @@ definitions:
         description: Profile represents a profile
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Instance configuration map (refer to doc/instances.md)
                 example:
                     limits.cpu: "4"
@@ -4318,10 +4214,6 @@ definitions:
                 type: string
                 x-go-name: Description
             devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: List of devices
                 example:
                     eth0:
@@ -4371,8 +4263,6 @@ definitions:
         description: ProfilePut represents the modifiable fields of a profile
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Instance configuration map (refer to doc/instances.md)
                 example:
                     limits.cpu: "4"
@@ -4385,10 +4275,6 @@ definitions:
                 type: string
                 x-go-name: Description
             devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: List of devices
                 example:
                     eth0:
@@ -4407,8 +4293,6 @@ definitions:
         description: ProfilesPost represents the fields of a new profile
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Instance configuration map (refer to doc/instances.md)
                 example:
                     limits.cpu: "4"
@@ -4421,10 +4305,6 @@ definitions:
                 type: string
                 x-go-name: Description
             devices:
-                additionalProperties:
-                    additionalProperties:
-                        type: string
-                    type: object
                 description: List of devices
                 example:
                     eth0:
@@ -4448,8 +4328,6 @@ definitions:
         description: Project represents a project
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Project configuration map (refer to doc/projects.md)
                 example:
                     features.networks: "false"
@@ -4496,8 +4374,6 @@ definitions:
         description: ProjectPut represents the modifiable fields of a project
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Project configuration map (refer to doc/projects.md)
                 example:
                     features.networks: "false"
@@ -4549,8 +4425,6 @@ definitions:
         description: ProjectsPost represents the fields of a new project
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Project configuration map (refer to doc/projects.md)
                 example:
                     features.networks: "false"
@@ -4584,6 +4458,8 @@ definitions:
                 $ref: '#/definitions/ResourcesNetwork'
             pci:
                 $ref: '#/definitions/ResourcesPCI'
+            serial:
+                $ref: '#/definitions/ResourcesSerial'
             storage:
                 $ref: '#/definitions/ResourcesStorage'
             system:
@@ -5421,6 +5297,73 @@ definitions:
                 x-go-name: ProductName
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
+    ResourcesSerial:
+        description: ResourcesSerial represents the serial devices available on the system
+        properties:
+            devices:
+                description: List of serial devices
+                items:
+                    $ref: '#/definitions/ResourcesSerialDevice'
+                type: array
+                x-go-name: Devices
+            total:
+                description: Total number of serial devices
+                example: 1
+                format: uint64
+                type: integer
+                x-go-name: Total
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
+    ResourcesSerialDevice:
+        description: ResourcesSerialDevice represents a serial device
+        properties:
+            device:
+                description: Device number (major:minor)
+                example: "188:0"
+                type: string
+                x-go-name: Device
+            device_id:
+                description: Path to /dev/serial/by-id entry
+                example: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_AB0J1234-if00-port0
+                type: string
+                x-go-name: DeviceID
+            device_path:
+                description: Path to /dev/serial/by-path entry
+                example: /dev/serial/by-path/pci-0000:00:14.0-usb-0:2:1.0-port0
+                type: string
+                x-go-name: DevicePath
+            driver:
+                description: kernel driver name (cdc_acm, ftdi_sio, pl2303, cp210x...)
+                example: cdc_acm
+                type: string
+                x-go-name: Driver
+            id:
+                description: Kernel device name (e.g. ttyUSB0, ttyACM0)
+                example: ttyUSB0
+                type: string
+                x-go-name: ID
+            product:
+                description: USB product name
+                example: Arduino Uno
+                type: string
+                x-go-name: Product
+            product_id:
+                description: USB product ID
+                example: "0043"
+                type: string
+                x-go-name: ProductID
+            vendor:
+                description: USB vendor name
+                example: Arduino LLC
+                type: string
+                x-go-name: Vendor
+            vendor_id:
+                description: USB vendor ID
+                example: "2341"
+                type: string
+                x-go-name: VendorID
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
     ResourcesStorage:
         description: ResourcesStorage represents the local storage
         properties:
@@ -5904,8 +5847,6 @@ definitions:
                 type: string
                 x-go-name: AuthUserName
             config:
-                additionalProperties:
-                    type: string
                 description: Server configuration map (refer to doc/server.md)
                 example:
                     core.https_address: :8443
@@ -6070,8 +6011,6 @@ definitions:
         description: ServerPut represents the modifiable fields of a server configuration
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Server configuration map (refer to doc/server.md)
                 example:
                     core.https_address: :8443
@@ -6139,8 +6078,6 @@ definitions:
                 type: array
                 x-go-name: AuthMethods
             config:
-                additionalProperties:
-                    type: string
                 description: Server configuration map (refer to doc/server.md)
                 example:
                     core.https_address: :8443
@@ -6163,8 +6100,6 @@ definitions:
         description: StorageBucket represents the fields of a storage pool bucket
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Storage bucket configuration map
                 example:
                     size: 50GiB
@@ -6200,11 +6135,12 @@ definitions:
     StorageBucketBackup:
         description: StorageBucketBackup represents the fields available for a new storage bucket backup
         properties:
-            compression_algorithm:
-                description: What compression algorithm to use
-                example: gzip
+            created_at:
+                description: When the backup was created
+                example: "2021-03-23T16:38:37.753398689-04:00"
+                format: date-time
                 type: string
-                x-go-name: CompressionAlgorithm
+                x-go-name: CreatedAt
             expires_at:
                 description: When the backup expires (gets auto-deleted)
                 example: "2021-03-23T17:38:37.753398689-04:00"
@@ -6247,6 +6183,54 @@ definitions:
                 example: backup0
                 type: string
                 x-go-name: Name
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
+    StorageBucketFull:
+        properties:
+            backups:
+                description: List of backups.
+                items:
+                    $ref: '#/definitions/StorageBucketBackup'
+                type: array
+                x-go-name: Backups
+            config:
+                description: Storage bucket configuration map
+                example:
+                    size: 50GiB
+                type: object
+                x-go-name: Config
+            description:
+                description: Description of the storage bucket
+                example: My custom bucket
+                type: string
+                x-go-name: Description
+            keys:
+                description: List of keys.
+                items:
+                    $ref: '#/definitions/StorageBucketKey'
+                type: array
+                x-go-name: Keys
+            location:
+                description: What cluster member this record was found on
+                example: server01
+                type: string
+                x-go-name: Location
+            name:
+                description: Bucket name
+                example: foo
+                type: string
+                x-go-name: Name
+            project:
+                description: Project name
+                example: project1
+                type: string
+                x-go-name: Project
+            s3_url:
+                description: Bucket S3 URL
+                example: https://127.0.0.1:8080/foo
+                type: string
+                x-go-name: S3URL
+        title: StorageBucketFull is a combination of StorageBucket, StorageBucketBackup and StorageBucketKey.
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
     StorageBucketKey:
@@ -6338,8 +6322,6 @@ definitions:
         description: StorageBucketPut represents the modifiable fields of a storage pool bucket
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Storage bucket configuration map
                 example:
                     size: 50GiB
@@ -6356,8 +6338,6 @@ definitions:
         description: StorageBucketsPost represents the fields of a new storage pool bucket
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Storage bucket configuration map
                 example:
                     size: 50GiB
@@ -6378,8 +6358,6 @@ definitions:
     StoragePool:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Storage pool configuration map (refer to doc/storage.md)
                 example:
                     volume.block.filesystem: ext4
@@ -6433,8 +6411,6 @@ definitions:
     StoragePoolPut:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Storage pool configuration map (refer to doc/storage.md)
                 example:
                     volume.block.filesystem: ext4
@@ -6462,8 +6438,6 @@ definitions:
         description: StoragePoolsPost represents the fields of a new storage pool
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Storage pool configuration map (refer to doc/storage.md)
                 example:
                     volume.block.filesystem: ext4
@@ -6490,8 +6464,6 @@ definitions:
     StorageVolume:
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Storage volume configuration map (refer to doc/storage.md)
                 example:
                     size: 50GiB
@@ -6625,6 +6597,81 @@ definitions:
                 x-go-name: VolumeOnly
         type: object
         x-go-package: github.com/lxc/incus/v6/shared/api
+    StorageVolumeFull:
+        properties:
+            backups:
+                description: List of backups.
+                items:
+                    $ref: '#/definitions/StorageVolumeBackup'
+                type: array
+                x-go-name: Backups
+            config:
+                description: Storage volume configuration map (refer to doc/storage.md)
+                example:
+                    size: 50GiB
+                    zfs.remove_snapshots: "true"
+                type: object
+                x-go-name: Config
+            content_type:
+                description: Volume content type (filesystem or block)
+                example: filesystem
+                type: string
+                x-go-name: ContentType
+            created_at:
+                description: Volume creation timestamp
+                example: "2021-03-23T20:00:00-04:00"
+                format: date-time
+                type: string
+                x-go-name: CreatedAt
+            description:
+                description: Description of the storage volume
+                example: My custom volume
+                type: string
+                x-go-name: Description
+            location:
+                description: What cluster member this record was found on
+                example: server01
+                type: string
+                x-go-name: Location
+            name:
+                description: Volume name
+                example: foo
+                type: string
+                x-go-name: Name
+            project:
+                description: Project containing the volume.
+                example: default
+                type: string
+                x-go-name: Project
+            restore:
+                description: Name of a snapshot to restore
+                example: snap0
+                type: string
+                x-go-name: Restore
+            snapshots:
+                description: List of snapshots.
+                items:
+                    $ref: '#/definitions/StorageVolumeSnapshot'
+                type: array
+                x-go-name: Snapshots
+            state:
+                $ref: '#/definitions/StorageVolumeState'
+            type:
+                description: Volume type
+                example: custom
+                type: string
+                x-go-name: Type
+            used_by:
+                description: List of URLs of objects using this storage volume
+                example:
+                    - /1.0/instances/blah
+                items:
+                    type: string
+                type: array
+                x-go-name: UsedBy
+        title: StorageVolumeFull is a combination of StorageVolume, StorageVolumeBackup, StorageVolumeSnapshot and StorageVolumeState.
+        type: object
+        x-go-package: github.com/lxc/incus/v6/shared/api
     StorageVolumePost:
         description: StorageVolumePost represents the fields required to rename a storage pool volume
         properties:
@@ -6686,8 +6733,6 @@ definitions:
         description: StorageVolumePut represents the modifiable fields of a storage volume
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Storage volume configuration map (refer to doc/storage.md)
                 example:
                     size: 50GiB
@@ -6710,8 +6755,6 @@ definitions:
         description: StorageVolumeSnapshot represents a storage volume snapshot
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Storage volume configuration map (refer to doc/storage.md)
                 example:
                     size: 50GiB
@@ -6892,8 +6935,6 @@ definitions:
         description: StorageVolumesPost represents the fields of a new storage pool volume
         properties:
             config:
-                additionalProperties:
-                    type: string
                 description: Storage volume configuration map (refer to doc/storage.md)
                 example:
                     size: 50GiB
@@ -10821,7 +10862,7 @@ paths:
                         description: Sync response
                         properties:
                             metadata:
-                                $ref: '#/definitions/Instance'
+                                $ref: '#/definitions/InstanceFull'
                             status:
                                 description: Status description
                                 example: Success
@@ -15684,6 +15725,46 @@ paths:
             summary: Get the storage pool bucket keys
             tags:
                 - storage
+    /1.0/storage-pools/{poolName}/buckets/{bucketName}?recursion=1:
+        get:
+            description: Gets a specific storage pool bucket with all details (backups and keys).
+            operationId: storage_pool_bucket_get_recursion1
+            parameters:
+                - description: Project name
+                  example: default
+                  in: query
+                  name: project
+                  type: string
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: Storage pool bucket
+                    schema:
+                        description: Sync response
+                        properties:
+                            metadata:
+                                $ref: '#/definitions/StorageBucketFull'
+                            status:
+                                description: Status description
+                                example: Success
+                                type: string
+                            status_code:
+                                description: Status code
+                                example: 200
+                                type: integer
+                            type:
+                                description: Response type
+                                example: sync
+                                type: string
+                        type: object
+                "403":
+                    $ref: '#/responses/Forbidden'
+                "500":
+                    $ref: '#/responses/InternalServerError'
+            summary: Get the full storage pool bucket details
+            tags:
+                - storage
     /1.0/storage-pools/{poolName}/buckets?recursion=1:
         get:
             description: Returns a list of storage pool buckets (structs).
@@ -15735,6 +15816,59 @@ paths:
                 "500":
                     $ref: '#/responses/InternalServerError'
             summary: Get the storage pool buckets
+            tags:
+                - storage
+    /1.0/storage-pools/{poolName}/buckets?recursion=2:
+        get:
+            description: Returns a list of storage pool buckets with all details (structs).
+            operationId: storage_pool_buckets_get_recursion2
+            parameters:
+                - description: Project name
+                  example: default
+                  in: query
+                  name: project
+                  type: string
+                - description: Retrieve storage pool buckets from all projects
+                  example: true
+                  in: query
+                  name: all-projects
+                  type: boolean
+                - description: Collection filter
+                  example: default
+                  in: query
+                  name: filter
+                  type: string
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: API endpoints
+                    schema:
+                        description: Sync response
+                        properties:
+                            metadata:
+                                description: List of storage pool buckets
+                                items:
+                                    $ref: '#/definitions/StorageBucketFull'
+                                type: array
+                            status:
+                                description: Status description
+                                example: Success
+                                type: string
+                            status_code:
+                                description: Status code
+                                example: 200
+                                type: integer
+                            type:
+                                description: Response type
+                                example: sync
+                                type: string
+                        type: object
+                "403":
+                    $ref: '#/responses/Forbidden'
+                "500":
+                    $ref: '#/responses/InternalServerError'
+            summary: Get the storage pool bucket details
             tags:
                 - storage
     /1.0/storage-pools/{poolName}/volumes:
@@ -16396,6 +16530,183 @@ paths:
             summary: Get the storage volume backups
             tags:
                 - storage
+    /1.0/storage-pools/{poolName}/volumes/{type}/{volumeName}/files:
+        delete:
+            description: Removes the file.
+            operationId: storage_pool_volume_type_files_delete
+            parameters:
+                - description: Path to the file
+                  example: default
+                  in: query
+                  name: path
+                  type: string
+                - description: Project name
+                  example: default
+                  in: query
+                  name: project
+                  type: string
+            produces:
+                - application/json
+            responses:
+                "200":
+                    $ref: '#/responses/EmptySyncResponse'
+                "400":
+                    $ref: '#/responses/BadRequest'
+                "403":
+                    $ref: '#/responses/Forbidden'
+                "404":
+                    $ref: '#/responses/NotFound'
+                "500":
+                    $ref: '#/responses/InternalServerError'
+            summary: Delete a file
+            tags:
+                - storage
+        get:
+            description: Gets the file content. If it's a directory, a json list of files will be returned instead.
+            operationId: storage_pool_volume_type_files_get
+            parameters:
+                - description: Path to the file
+                  example: default
+                  in: query
+                  name: path
+                  type: string
+                - description: Project name
+                  example: default
+                  in: query
+                  name: project
+                  type: string
+            produces:
+                - application/json
+                - application/octet-stream
+            responses:
+                "200":
+                    description: Raw file or directory listing
+                    headers:
+                        X-Incus-gid:
+                            description: File owner GID
+                        X-Incus-mode:
+                            description: Mode mask
+                        X-Incus-modified:
+                            description: Last modified date
+                        X-Incus-type:
+                            description: Type of file (file, symlink or directory)
+                        X-Incus-uid:
+                            description: File owner UID
+                "400":
+                    $ref: '#/responses/BadRequest'
+                "403":
+                    $ref: '#/responses/Forbidden'
+                "404":
+                    $ref: '#/responses/NotFound'
+                "500":
+                    $ref: '#/responses/InternalServerError'
+            summary: Get a file
+            tags:
+                - storage
+        head:
+            description: Gets the file or directory metadata.
+            operationId: storage_pool_volume_type_files_head
+            parameters:
+                - description: Path to the file
+                  example: default
+                  in: query
+                  name: path
+                  type: string
+                - description: Project name
+                  example: default
+                  in: query
+                  name: project
+                  type: string
+            responses:
+                "200":
+                    description: Raw file or directory listing
+                    headers:
+                        X-Incus-gid:
+                            description: File owner GID
+                        X-Incus-mode:
+                            description: Mode mask
+                        X-Incus-modified:
+                            description: Last modified date
+                        X-Incus-type:
+                            description: Type of file (file, symlink or directory)
+                        X-Incus-uid:
+                            description: File owner UID
+                "400":
+                    $ref: '#/responses/BadRequest'
+                "403":
+                    $ref: '#/responses/Forbidden'
+                "404":
+                    $ref: '#/responses/NotFound'
+                "500":
+                    $ref: '#/responses/InternalServerError'
+            summary: Get metadata for a file
+            tags:
+                - storage
+        post:
+            consumes:
+                - application/octet-stream
+            description: Creates a new file in the storage volume.
+            operationId: storage_pool_volume_type_files_post
+            parameters:
+                - description: Path to the file
+                  example: default
+                  in: query
+                  name: path
+                  type: string
+                - description: Project name
+                  example: default
+                  in: query
+                  name: project
+                  type: string
+                - description: Raw file content
+                  in: body
+                  name: raw_file
+                - description: File owner UID
+                  example: 1000
+                  in: header
+                  name: X-Incus-uid
+                  schema:
+                    type: integer
+                - description: File owner GID
+                  example: 1000
+                  in: header
+                  name: X-Incus-gid
+                  schema:
+                    type: integer
+                - description: File mode
+                  example: 420
+                  in: header
+                  name: X-Incus-mode
+                  schema:
+                    type: integer
+                - description: Type of file (file, symlink or directory)
+                  example: file
+                  in: header
+                  name: X-Incus-type
+                  schema:
+                    type: string
+                - description: Write mode (overwrite or append)
+                  example: overwrite
+                  in: header
+                  name: X-Incus-write
+                  schema:
+                    type: string
+            produces:
+                - application/json
+            responses:
+                "200":
+                    $ref: '#/responses/EmptySyncResponse'
+                "400":
+                    $ref: '#/responses/BadRequest'
+                "403":
+                    $ref: '#/responses/Forbidden'
+                "404":
+                    $ref: '#/responses/NotFound'
+                "500":
+                    $ref: '#/responses/InternalServerError'
+            summary: Create or replace a file
+            tags:
+                - storage
     /1.0/storage-pools/{poolName}/volumes/{type}/{volumeName}/sftp:
         get:
             description: Upgrades the request to an SFTP connection of the storage volume's filesystem.
@@ -16786,6 +17097,51 @@ paths:
             summary: Get the storage volume state
             tags:
                 - storage
+    /1.0/storage-pools/{poolName}/volumes/{type}/{volumeName}?recursion=1:
+        get:
+            description: Gets a specific storage volume with all details (backups, snapshots and state0..
+            operationId: storage_pool_volume_type_get_recursion1
+            parameters:
+                - description: Project name
+                  example: default
+                  in: query
+                  name: project
+                  type: string
+                - description: Cluster member name
+                  example: server01
+                  in: query
+                  name: target
+                  type: string
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: Storage volume
+                    schema:
+                        description: Sync response
+                        properties:
+                            metadata:
+                                $ref: '#/definitions/StorageVolumeFull'
+                            status:
+                                description: Status description
+                                example: Success
+                                type: string
+                            status_code:
+                                description: Status code
+                                example: 200
+                                type: integer
+                            type:
+                                description: Response type
+                                example: sync
+                                type: string
+                        type: object
+                "403":
+                    $ref: '#/responses/Forbidden'
+                "500":
+                    $ref: '#/responses/InternalServerError'
+            summary: Get the full storage volume details
+            tags:
+                - storage
     /1.0/storage-pools/{poolName}/volumes/{type}?recursion=1:
         get:
             description: Returns a list of storage volumes (structs) (type specific endpoint).
@@ -16832,6 +17188,54 @@ paths:
                 "500":
                     $ref: '#/responses/InternalServerError'
             summary: Get the storage volumes
+            tags:
+                - storage
+    /1.0/storage-pools/{poolName}/volumes/{type}?recursion=2:
+        get:
+            description: Returns a list of storage volumes (structs) including all details (type specific endpoint).
+            operationId: storage_pool_volumes_type_get_recursion2
+            parameters:
+                - description: Project name
+                  example: default
+                  in: query
+                  name: project
+                  type: string
+                - description: Cluster member name
+                  example: server01
+                  in: query
+                  name: target
+                  type: string
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: API endpoints
+                    schema:
+                        description: Sync response
+                        properties:
+                            metadata:
+                                description: List of storage volumes
+                                items:
+                                    $ref: '#/definitions/StorageVolumeFull'
+                                type: array
+                            status:
+                                description: Status description
+                                example: Success
+                                type: string
+                            status_code:
+                                description: Status code
+                                example: 200
+                                type: integer
+                            type:
+                                description: Response type
+                                example: sync
+                                type: string
+                        type: object
+                "403":
+                    $ref: '#/responses/Forbidden'
+                "500":
+                    $ref: '#/responses/InternalServerError'
+            summary: Get the storage volumes with all details
             tags:
                 - storage
     /1.0/storage-pools/{poolName}/volumes?recursion=1:

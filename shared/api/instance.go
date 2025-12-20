@@ -114,13 +114,13 @@ type InstancePost struct {
 	// Example: {"security.nesting": "true"}
 	//
 	// API extension: instance_move_config
-	Config map[string]string
+	Config ConfigMap
 
 	// Instance devices.
 	// Example: {"root": {"type": "disk", "pool": "default", "path": "/"}}
 	//
 	// API extension: instance_move_config
-	Devices map[string]map[string]string
+	Devices DevicesMap
 
 	// List of profiles applied to the instance.
 	// Example: ["default"]
@@ -160,11 +160,11 @@ type InstancePut struct {
 
 	// Instance configuration (see doc/instances.md)
 	// Example: {"security.nesting": "true"}
-	Config map[string]string `json:"config" yaml:"config"`
+	Config ConfigMap `json:"config" yaml:"config"`
 
 	// Instance devices (see doc/instances.md)
 	// Example: {"root": {"type": "disk", "pool": "default", "path": "/"}}
-	Devices map[string]map[string]string `json:"devices" yaml:"devices"`
+	Devices DevicesMap `json:"devices" yaml:"devices"`
 
 	// Whether the instance is ephemeral (deleted on shutdown)
 	// Example: false
@@ -211,11 +211,11 @@ type Instance struct {
 
 	// Expanded configuration (all profiles and local config merged)
 	// Example: {"security.nesting": "true"}
-	ExpandedConfig map[string]string `json:"expanded_config,omitempty" yaml:"expanded_config,omitempty"`
+	ExpandedConfig ConfigMap `json:"expanded_config,omitempty" yaml:"expanded_config,omitempty"`
 
 	// Expanded devices (all profiles and local devices merged)
 	// Example: {"root": {"type": "disk", "pool": "default", "path": "/"}}
-	ExpandedDevices map[string]map[string]string `json:"expanded_devices,omitempty" yaml:"expanded_devices,omitempty"`
+	ExpandedDevices DevicesMap `json:"expanded_devices,omitempty" yaml:"expanded_devices,omitempty"`
 
 	// Instance name
 	// Example: foo

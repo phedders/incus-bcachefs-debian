@@ -12,11 +12,12 @@ import (
 	"maps"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
@@ -300,7 +301,7 @@ func (d *zfs) CreateVolume(vol Volume, filler *VolumeFiller, op *operations.Oper
 			}
 
 			// Run the filler.
-			err = d.runFiller(vol, devPath, filler, allowUnsafeResize)
+			err = genericRunFiller(d, vol, devPath, filler, allowUnsafeResize)
 			if err != nil {
 				return err
 			}
@@ -1580,19 +1581,178 @@ func (d *zfs) HasVolume(vol Volume) (bool, error) {
 // commonVolumeRules returns validation rules which are common for pool and volume.
 func (d *zfs) commonVolumeRules() map[string]func(value string) error {
 	return map[string]func(value string) error{
-		"block.filesystem":     validate.Optional(validate.IsOneOf(blockBackedAllowedFilesystems...)),
-		"block.mount_options":  validate.IsAny,
-		"zfs.block_mode":       validate.Optional(validate.IsBool),
-		"zfs.blocksize":        validate.Optional(ValidateZfsBlocksize),
+		// gendoc:generate(entity=storage_volume_zfs, group=common, key=block.filesystem)
+		//
+		// ---
+		//  type: string
+		//  condition: block-based volume with content type `filesystem` (`zfs.block_mode` enabled)
+		//  default: same as `volume.block.filesystem`
+		//  shortdesc: {{block_filesystem}}
+		"block.filesystem": validate.Optional(validate.IsOneOf(blockBackedAllowedFilesystems...)),
+
+		// gendoc:generate(entity=storage_volume_zfs, group=common, key=block.mount_options)
+		//
+		// ---
+		//  type: string
+		//  condition: block-based volume with content type `filesystem` (`zfs.block_mode` enabled)
+		//  default: same as `volume.block.mount_options`
+		//  shortdesc: Mount options for block-backed file system volumes
+		"block.mount_options": validate.IsAny,
+
+		// gendoc:generate(entity=storage_volume_zfs, group=common, key=zfs.blocksize)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: same as `volume.zfs.blocksize`
+		//  shortdesc: Size of the ZFS block in range from 512 bytes to 16 MiB (must be power of 2) - for block volume, a maximum value of 128 KiB will be used even if a higher value is set
+		"zfs.blocksize": validate.Optional(ValidateZfsBlocksize),
+
+		// gendoc:generate(entity=storage_volume_zfs, group=common, key=zfs.block_mode)
+		//
+		// ---
+		//  type: bool
+		//  condition: -
+		//  default: same as `volume.zfs.block_mode`
+		//  shortdesc: Whether to use a formatted `zvol` rather than a {spellexception}`dataset` (`zfs.block_mode` can be set only for custom storage volumes; use `volume.zfs.block_mode` to enable ZFS block mode for all storage volumes in the pool, including instance volumes)
+		"zfs.block_mode": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=storage_volume_zfs, group=common, key=zfs.remove_snapshots)
+		//
+		// ---
+		//  type: bool
+		//  condition: -
+		//  default: same as `volume.zfs.remove_snapshots` or `false`
+		//  shortdesc: Remove snapshots as needed
 		"zfs.remove_snapshots": validate.Optional(validate.IsBool),
-		"zfs.reserve_space":    validate.Optional(validate.IsBool),
-		"zfs.use_refquota":     validate.Optional(validate.IsBool),
-		"zfs.delegate":         validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=storage_volume_zfs, group=common, key=zfs.reserve_space)
+		//
+		// ---
+		//  type: bool
+		//  condition: -
+		//  default: same as `volume.zfs.reserve_space` or `false`
+		//  shortdesc: Use `reservation`/`refreservation` along with `quota`/`refquota`
+		"zfs.reserve_space": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=storage_volume_zfs, group=common, key=zfs.use_refquota)
+		//
+		// ---
+		//  type: bool
+		//  condition: -
+		//  default: same as `volume.zfsuse_refquota` or `false`
+		//  shortdesc: Use `refquota` instead of `quota` for space
+		"zfs.use_refquota": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=storage_volume_zfs, group=common, key=zfs.delegate)
+		//
+		// ---
+		//  type: bool
+		//  condition: ZFS 2.2 or higher
+		//  default: same as `volume.zfs.delegate`
+		//  shortdesc: Controls whether to delegate the ZFS dataset and anything underneath it to the container(s) using it. Allows the use of the `zfs` command in the container
+		"zfs.delegate": validate.Optional(validate.IsBool),
 	}
 }
 
 // ValidateVolume validates the supplied volume config.
 func (d *zfs) ValidateVolume(vol Volume, removeUnknownKeys bool) error {
+	// gendoc:generate(entity=storage_volume_zfs, group=common, key=initial.gid)
+	//
+	// ---
+	//  type: int
+	//  condition: custom volume with content type `filesystem`
+	//  default: same as `volume.initial.gid` or `0`
+	//  shortdesc: GID of the volume owner in the instance
+
+	// gendoc:generate(entity=storage_volume_zfs, group=common, key=initial.mode)
+	//
+	// ---
+	//  type: int
+	//  condition: custom volume with content type `filesystem`
+	//  default: same as `volume.initial.mode` or `711`
+	//  shortdesc: Mode of the volume in the instance
+
+	// gendoc:generate(entity=storage_volume_zfs, group=common, key=initial.uid)
+	//
+	// ---
+	//  type: int
+	//  condition: custom volume with content type `filesystem`
+	//  default: same as `volume.initial.uid` or `0`
+	//  shortdesc: UID of the volume owner in the instance
+
+	// gendoc:generate(entity=storage_volume_zfs, group=common, key=security.shared)
+	//
+	// ---
+	//  type: bool
+	//  condition: custom block volume
+	//  default: same as `volume.security.shared` or `false`
+	//  shortdesc: Enable sharing the volume across multiple instances
+
+	// gendoc:generate(entity=storage_volume_zfs, group=common, key=security.shifted)
+	//
+	// ---
+	//  type: bool
+	//  condition: custom volume
+	//  default: same as `volume.security.shifted` or `false`
+	//  shortdesc: {{enable_ID_shifting}}
+
+	// gendoc:generate(entity=storage_volume_zfs, group=common, key=security.unmapped)
+	//
+	// ---
+	//  type: bool
+	//  condition: custom volume
+	//  default: same as `volume.security.unmapped` or `false`
+	//  shortdesc: Disable ID mapping for the volume
+
+	// gendoc:generate(entity=storage_volume_zfs, group=common, key=size)
+	//
+	// ---
+	//  type: string
+	//  condition: -
+	//  default: same as `volume.size`
+	//  shortdesc: Size/quota of the storage volume
+
+	// gendoc:generate(entity=storage_volume_zfs, group=common, key=snapshots.expiry)
+	//
+	// ---
+	//  type: string
+	//  condition: custom volume
+	//  default: same as `volume.snapshot.expiry`
+	//  shortdesc: {{snapshot_expiry_format}}
+
+	// gendoc:generate(entity=storage_volume_zfs, group=common, key=snapshots.expiry.manual)
+	//
+	// ---
+	//  type: string
+	//  condition: custom volume
+	//  default: same as `volume.snapshot.expiry.manual`
+	//  shortdesc: {{snapshot_expiry_format}}
+
+	// gendoc:generate(entity=storage_volume_zfs, group=common, key=snapshots.pattern)
+	//
+	// ---
+	//  type: string
+	//  condition: custom volume
+	//  default: same as `volume.snapshot.pattern` or `snap%d`
+	//  shortdesc: {{snapshot_pattern_format}} [^*]
+
+	// gendoc:generate(entity=storage_volume_zfs, group=common, key=snapshots.schedule)
+	//
+	// ---
+	//  type: string
+	//  condition: custom volume
+	//  default: same as `volume.snapshot.schedule`
+	//  shortdesc: {{snapshot_schedule_format}}
+
+	// gendoc:generate(entity=storage_bucket_zfs, group=common, key=size)
+	//
+	// ---
+	//  type: string
+	//  condition: appropriate driver
+	//  default: same as `volume.size`
+	//  shortdesc: Size/quota of the storage bucket
+
 	commonRules := d.commonVolumeRules()
 
 	// Disallow block.* settings for regular custom block volumes. These settings only make sense
@@ -1952,49 +2112,90 @@ func (d *zfs) tryGetVolumeDiskPathFromDataset(ctx context.Context, dataset strin
 }
 
 func (d *zfs) getVolumeDiskPathFromDataset(dataset string) (string, error) {
-	// Shortcut for udev.
-	if util.PathExists(filepath.Join("/dev/zvol", dataset)) && linux.IsBlockdevPath(filepath.Join("/dev/zvol", dataset)) {
-		return filepath.Join("/dev/zvol", dataset), nil
-	}
-
-	// Locate zvol_id.
-	zvolid := "/lib/udev/zvol_id"
-	if !util.PathExists(zvolid) {
-		var err error
-
-		zvolid, err = exec.LookPath("zvol_id")
-		if err != nil {
-			return "", err
-		}
-	}
-
-	// List all the device nodes.
-	entries, err := os.ReadDir("/dev")
+	// Read all the top-level /dev entries.
+	entries, err := os.ReadDir("/dev/")
 	if err != nil {
-		return "", fmt.Errorf("Failed to read /dev: %w", err)
+		return "", err
 	}
 
+	// Filter only the relevant ZFS entries.
+	zfsEntries := make([]os.DirEntry, 0, len(entries))
 	for _, entry := range entries {
-		entryName := entry.Name()
-
-		// Ignore non-zvol devices.
-		if !strings.HasPrefix(entryName, "zd") {
+		// Skip non-ZFS entries.
+		if !strings.HasPrefix(entry.Name(), "zd") {
 			continue
 		}
 
-		if strings.Contains(entryName, "p") {
+		// Skip partitions.
+		if strings.Contains(entry.Name(), "p") {
 			continue
 		}
 
-		// Resolve the dataset path.
-		entryPath := filepath.Join("/dev", entryName)
-		output, err := subprocess.RunCommand(zvolid, entryPath)
+		zfsEntries = append(zfsEntries, entry)
+	}
+
+	// Sort by reverse creation date.
+	slices.SortFunc(zfsEntries, func(a os.DirEntry, b os.DirEntry) int {
+		var (
+			aCreate time.Time
+			bCreate time.Time
+		)
+
+		aInfo, _ := a.Info()
+		if aInfo != nil {
+			stat, ok := aInfo.Sys().(*syscall.Stat_t)
+
+			if ok {
+				aCreate = time.Unix(int64(stat.Ctim.Sec), int64(stat.Ctim.Nsec))
+			}
+		}
+
+		bInfo, _ := b.Info()
+		if bInfo != nil {
+			stat, ok := bInfo.Sys().(*syscall.Stat_t)
+
+			if ok {
+				bCreate = time.Unix(int64(stat.Ctim.Sec), int64(stat.Ctim.Nsec))
+			}
+		}
+
+		if aCreate.Equal(bCreate) {
+			return 0
+		}
+
+		if aCreate.Before(bCreate) {
+			return 1
+		}
+
+		return -1
+	})
+
+	zfsDataset := func(devPath string) string {
+		// Open the device.
+		r, err := os.OpenFile(devPath, unix.O_RDONLY|unix.O_CLOEXEC, 0)
 		if err != nil {
-			continue
+			return ""
 		}
 
-		if strings.TrimSpace(output) == dataset && linux.IsBlockdevPath(entryPath) {
-			return entryPath, nil
+		defer func() { _ = r.Close() }()
+
+		// Perform the BLKZNAME ioctl.
+		buf := [256]byte{}
+		_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(r.Fd()), linux.IoctlBlkZname, uintptr(unsafe.Pointer(&buf)))
+		if errno != 0 {
+			return ""
+		}
+
+		return string(bytes.Trim(buf[:], "\x00"))
+	}
+
+	// Check each entry for a dataset match.
+	for _, entry := range zfsEntries {
+		// Check if it's our dataset.
+		zfsDev := "/dev/" + entry.Name()
+
+		if zfsDataset(zfsDev) == dataset {
+			return zfsDev, nil
 		}
 	}
 
@@ -2786,7 +2987,7 @@ func (d *zfs) readonlySnapshot(vol Volume) (string, revert.Hook, error) {
 }
 
 // BackupVolume creates an exported version of a volume.
-func (d *zfs) BackupVolume(vol Volume, tarWriter *instancewriter.InstanceTarWriter, optimized bool, snapshots []string, op *operations.Operation) error {
+func (d *zfs) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, optimized bool, snapshots []string, op *operations.Operation) error {
 	// Handle the non-optimized tarballs through the generic packer.
 	if !optimized {
 		// Because the generic backup method will not take a consistent backup if files are being modified
@@ -2805,7 +3006,7 @@ func (d *zfs) BackupVolume(vol Volume, tarWriter *instancewriter.InstanceTarWrit
 			vol.mountCustomPath = snapshotPath
 		}
 
-		return genericVFSBackupVolume(d, vol, tarWriter, snapshots, op)
+		return genericVFSBackupVolume(d, vol, writer, snapshots, op)
 	}
 
 	// Optimized backup.
@@ -2821,7 +3022,7 @@ func (d *zfs) BackupVolume(vol Volume, tarWriter *instancewriter.InstanceTarWrit
 	// Backup VM config volumes first.
 	if vol.IsVMBlock() {
 		fsVol := vol.NewVMBlockFilesystemVolume()
-		err := d.BackupVolume(fsVol, tarWriter, optimized, snapshots, op)
+		err := d.BackupVolume(fsVol, writer, optimized, snapshots, op)
 		if err != nil {
 			return err
 		}
@@ -2872,7 +3073,7 @@ func (d *zfs) BackupVolume(vol Volume, tarWriter *instancewriter.InstanceTarWrit
 			return err
 		}
 
-		err = tarWriter.WriteFile(fileName, tmpFile.Name(), tmpFileInfo, false)
+		err = writer.WriteFile(fileName, tmpFile.Name(), tmpFileInfo, false)
 		if err != nil {
 			return err
 		}

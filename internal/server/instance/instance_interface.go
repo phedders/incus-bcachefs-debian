@@ -98,6 +98,8 @@ type Instance interface {
 	Backups() ([]backup.InstanceBackup, error)
 	UpdateBackupFile() error
 	CanLiveMigrate() bool
+	CreateQcow2Snapshot(snapshotName string, backingFilename string) error
+	DeleteQcow2Snapshot(snapshotIndex int, backingFilename string) error
 
 	// Config handling.
 	Rename(newName string, applyTemplateTrigger bool) error
@@ -140,6 +142,7 @@ type Instance interface {
 	Description() string
 	CreationDate() time.Time
 	LastUsedDate() time.Time
+	GuestOS() string
 
 	Profiles() []api.Profile
 	InitPID() int
@@ -148,6 +151,7 @@ type Instance interface {
 	FillNetworkDevice(name string, m deviceConfig.Device) (deviceConfig.Device, error)
 
 	ETag() []any
+	MACPattern() string
 
 	// Paths.
 	Path() string

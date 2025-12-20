@@ -2899,3 +2899,62 @@ This adds support for network tunnels to OVN networks.
 ## `init_preseed_cluster_groups`
 
 This API extension provides the ability to configure cluster groups in preseed init.
+
+## `usb_attached`
+
+This introduces a new `attached` property to USB devices describing whether they are plugged in or not.
+
+## `backup_iso`
+
+This allows to backup ISO custom volumes by simply copying them. It enables exporting ISO volumes with `incus storage volume export` and get an ISO back.
+
+## `instance_systemd_credentials`
+
+This adds two categories of configuration options, `systemd.credential.*` and `systemd.credential-binary.*`, which allow passing systemd credentials through a bind-mounted directory for containers and `SMBIOS Type 11` for virtual machines.
+
+## `cluster_group_usedby`
+
+A `used_by` field was added to the `GET /1.0/cluster/groups/{name}` endpoint.
+`used_by` holds the URLs of all instances and projects using the cluster group.
+
+## `bpf_token_delegation`
+
+This adds support for [eBPF token delegation](https://docs.ebpf.io/linux/concepts/token/).
+
+## `file_storage_volume`
+
+This adds file transfer API on the custom volumes.
+Implements `DELETE`, `GET`, `HEAD`, `POST` operations on the `/1.0/storage-pools/{poolName}/volumes/{type}/{volumeName}/files` endpoint.
+
+## `network_hwaddr_pattern`
+
+This adds `network.hwaddr_pattern` global and per-project configuration keys to customize MAC address allocation.
+
+## `storage_volume_full`
+
+This adds `?recursion=1` support to `/1.0/storage-pools/POOL/volumes/VOLUME` and `?recursion=2` support to `/1.0/storage-pools/POOL/volumes`.
+
+As well as a matching `StorageVolumeFull` struct.
+
+## `storage_bucket_full`
+
+This adds `?recursion=1` support to `/1.0/storage-pools/POOL/buckets/VOLUME` and `?recursion=2` support to `/1.0/storage-pools/POOL/buckets`.
+
+As well as a matching `StorageBucketFull` struct.
+
+## `device_pci_firmware`
+
+This extension introduces a new boolean `firmware` option for PCI devices.
+When set to `false`, Incus tells QEMU to disable the ROM-BAR (`rombar=0`) for the device.
+
+## `resources_serial`
+
+This adds serial device tracking to the resources API.
+
+## `ovn_nic_limits`
+
+This adds support for `limits.egress`, `limits.ingress`, `limits.max` and `limits.priority` on `ovn` type network devices.
+
+## `storage_lvmcluster_qcow2`
+
+This adds support for running virtual machines from `QCOW2` images. Support is currently limited to `lvmcluster` storage driver.

@@ -310,23 +310,6 @@ func (d *common) moveGPTAltHeader(devPath string) error {
 	return err
 }
 
-// runFiller runs the supplied filler, and setting the returned volume size back into filler.
-func (d *common) runFiller(vol Volume, devPath string, filler *VolumeFiller, allowUnsafeResize bool) error {
-	if filler == nil || filler.Fill == nil {
-		return nil
-	}
-
-	vol.driver.Logger().Debug("Running filler function", logger.Ctx{"dev": devPath, "path": vol.MountPath()})
-	volSize, err := filler.Fill(vol, devPath, allowUnsafeResize)
-	if err != nil {
-		return err
-	}
-
-	filler.Size = volSize
-
-	return nil
-}
-
 // CreateVolume creates a new storage volume on disk.
 func (d *common) CreateVolume(vol Volume, filler *VolumeFiller, op *operations.Operation) error {
 	return ErrNotSupported
@@ -424,7 +407,7 @@ func (d *common) MigrateVolume(vol Volume, conn io.ReadWriteCloser, volSrcArgs *
 }
 
 // BackupVolume creates an exported version of a volume.
-func (d *common) BackupVolume(vol Volume, tarWriter *instancewriter.InstanceTarWriter, optimized bool, snapshots []string, op *operations.Operation) error {
+func (d *common) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, optimized bool, snapshots []string, op *operations.Operation) error {
 	return ErrNotSupported
 }
 
@@ -573,4 +556,14 @@ func (d *common) filesystemFreeze(path string) (func() error, error) {
 // CacheVolumeSnapshots causes snapshot data to be cached for later use (for bulk queries).
 func (d *common) CacheVolumeSnapshots(vol Volume) error {
 	return nil
+}
+
+// GetQcow2BackingFilePath generates the backing file path for the specified volume.
+func (d *common) GetQcow2BackingFilePath(vol Volume) (string, error) {
+	return "", ErrNotSupported
+}
+
+// Qcow2DeletionCleanup performs post block-commit cleanup of qcow2 snapshot artifacts.
+func (d *common) Qcow2DeletionCleanup(vol Volume, childName string) error {
+	return ErrNotSupported
 }

@@ -16,10 +16,10 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 
-	cli "github.com/lxc/incus/v6/internal/cmd"
 	internalUtil "github.com/lxc/incus/v6/internal/util"
 	"github.com/lxc/incus/v6/shared/api"
 	"github.com/lxc/incus/v6/shared/archive"
+	cli "github.com/lxc/incus/v6/shared/cmd"
 	"github.com/lxc/incus/v6/shared/osarch"
 	"github.com/lxc/incus/v6/shared/simplestreams"
 )
@@ -92,11 +92,12 @@ func (c *cmdAdd) parseImage(metaFile *os.File, dataFile *os.File) (*dataItem, er
 
 	item.Extension = extension
 
-	if item.Extension == ".squashfs" {
+	switch item.Extension {
+	case ".squashfs":
 		item.FileType = "squashfs"
-	} else if item.Extension == ".qcow2" {
+	case ".qcow2":
 		item.FileType = "disk-kvm.img"
-	} else {
+	default:
 		return nil, fmt.Errorf("Unsupported data type %q", item.Extension)
 	}
 
@@ -152,7 +153,7 @@ func (c *cmdAdd) parseImage(metaFile *os.File, dataFile *os.File) (*dataItem, er
 // Run runs the actual command logic.
 func (c *cmdAdd) Run(cmd *cobra.Command, args []string) error {
 	// Quick checks.
-	exit, err := c.global.CheckArgs(cmd, args, 1, 2)
+	exit, err := cli.CheckArgs(cmd, args, 1, 2)
 	if exit {
 		return err
 	}
@@ -406,9 +407,10 @@ func (c *cmdAdd) Run(cmd *cobra.Command, args []string) error {
 
 		// Add the combined hash.
 		metaItem := version.Items["incus.tar.xz"]
-		if data.FileType == "squashfs" {
+		switch data.FileType {
+		case "squashfs":
 			metaItem.CombinedSha256SquashFs = data.combinedSha256
-		} else if data.FileType == "disk-kvm.img" {
+		case "disk-kvm.img":
 			metaItem.CombinedSha256DiskKvmImg = data.combinedSha256
 		}
 

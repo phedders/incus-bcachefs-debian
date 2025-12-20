@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -366,7 +367,14 @@ func (d *qemu) qmpConnect() (*qmp.Monitor, error) {
 // Callers should check that the instance is running (and therefore mounted) before calling this function,
 // otherwise the qmp.Connect call will fail to use the monitor socket file.
 func (d *qemu) getAgentClient() (*http.Client, error) {
-	if d.isWindows() {
+	// Check that the VM is in a state where the agent may be reachable.
+	status := d.statusCode()
+	if !d.isRunningStatusCode(status) || status == api.Frozen {
+		return nil, errQemuAgentOffline
+	}
+
+	// Only Linux supports VirtIO vsock.
+	if d.GuestOS() != "unknown" {
 		// Get known network details.
 		networks, err := d.getNetworkState()
 		if err != nil {
@@ -1731,31 +1739,32 @@ func (d *qemu) start(stateful bool, op *operationlock.InstanceOperation) error {
 		}
 	}
 
-	// APply the RTC configuration.
-	adjustment := d.getStartupRTCAdjustment()
-
-	base := time.Now().Add(adjustment)
-	if d.isWindows() {
-		// Set base to localtime on windows.
-		base = base.Local()
-	} else {
-		// set base to UTC on !windows.
-		base = base.UTC()
-	}
-
-	datetime := base.Format("2006-01-02T15:04:05")
-	qemuArgs = append(qemuArgs, "-rtc", fmt.Sprintf("base=%s", datetime))
-
 	// SMBIOS only on x86_64 and aarch64.
 	if d.architectureSupportsUEFI(d.architecture) {
 		qemuArgs = append(qemuArgs, "-smbios", "type=2,manufacturer=LinuxContainers,product=Incus")
 
 		for k, v := range d.expandedConfig {
-			if !strings.HasPrefix(k, "smbios11.") {
+			var configPrefix, smbiosPrefix string
+			if strings.HasPrefix(k, "smbios11.") {
+				configPrefix = "smbios11."
+				smbiosPrefix = ""
+			} else if strings.HasPrefix(k, "systemd.credential.") {
+				configPrefix = "systemd.credential."
+				smbiosPrefix = "io.systemd.credential:"
+			} else if strings.HasPrefix(k, "systemd.credential-binary.") {
+				configPrefix = "systemd.credential-binary."
+				smbiosPrefix = "io.systemd.credential.binary:"
+				data, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(v, "="))
+				if err != nil {
+					return fmt.Errorf("Invalid base64 value for %q: %q", k, v)
+				}
+
+				v = base64.StdEncoding.EncodeToString(data)
+			} else {
 				continue
 			}
 
-			qemuArgs = append(qemuArgs, "-smbios", fmt.Sprintf("type=11,value=%s=%s", strings.TrimPrefix(k, "smbios11."), qemuEscapeCmdline(v)))
+			qemuArgs = append(qemuArgs, "-smbios", fmt.Sprintf("type=11,value=%s%s=%s", smbiosPrefix, strings.TrimPrefix(k, configPrefix), qemuEscapeCmdline(v)))
 		}
 	}
 
@@ -1841,6 +1850,26 @@ func (d *qemu) start(stateful bool, op *operationlock.InstanceOperation) error {
 		}
 
 		qemuArgs = append(qemuArgs, fields...)
+	}
+
+	// Apply the RTC configuration.
+	// This needs to happen close to creating the full qemu cmd or the time might drift in between.
+	adjustment := d.getStartupRTCAdjustment()
+
+	// only apply the rtc adjustment if the adjustment is not zero
+	// this way qemu can take care of using the correct time
+	if adjustment != 0 {
+		base := time.Now().Add(adjustment)
+		if d.GuestOS() == "windows" {
+			// set base to localtime on windows.
+			base = base.Local()
+		} else {
+			// set base to UTC on !windows.
+			base = base.UTC()
+		}
+
+		datetime := base.Format("2006-01-02T15:04:05")
+		qemuArgs = append(qemuArgs, "-rtc", fmt.Sprintf("base=%s", datetime))
 	}
 
 	d.cmdArgs = qemuArgs
@@ -3026,7 +3055,6 @@ func (d *qemu) spiceCmdlineConfig() string {
 // inside the VM's config volume so that it can be restricted by quota.
 // Requires the instance be mounted before calling this function.
 func (d *qemu) generateConfigShare() error {
-	isWindows := d.isWindows()
 	configDrivePath := filepath.Join(d.Path(), "config")
 
 	// Create config drive dir if doesn't exist, if it does exist, leave it around so we don't regenerate all
@@ -3036,12 +3064,18 @@ func (d *qemu) generateConfigShare() error {
 		return err
 	}
 
-	if !isWindows {
+	guestOS := d.GuestOS()
+	if guestOS == "unknown" {
+		guestOS = "linux"
+	}
+
+	// Windows doesn't handle shares.
+	if guestOS != "windows" {
 		// Add the VM agent loader.
 		agentSrcPath, _ := exec.LookPath("incus-agent")
 		if util.PathExists(os.Getenv("INCUS_AGENT_PATH")) {
 			// Install incus-agent script (loads from agent share).
-			agentFile, err := incusAgentLoader.ReadFile("agent-loader/incus-agent")
+			agentFile, err := incusAgentLoader.ReadFile("agent-loader/incus-agent-" + guestOS)
 			if err != nil {
 				return err
 			}
@@ -3051,13 +3085,11 @@ func (d *qemu) generateConfigShare() error {
 				return err
 			}
 
-			if !isWindows {
-				// Legacy support.
-				_ = os.Remove(filepath.Join(configDrivePath, "lxd-agent"))
-				err = os.Symlink("incus-agent", filepath.Join(configDrivePath, "lxd-agent"))
-				if err != nil {
-					return err
-				}
+			// Legacy support.
+			_ = os.Remove(filepath.Join(configDrivePath, "lxd-agent"))
+			err = os.Symlink("incus-agent", filepath.Join(configDrivePath, "lxd-agent"))
+			if err != nil {
+				return err
 			}
 		} else if agentSrcPath != "" {
 			// Install agent into config drive dir if found.
@@ -3144,7 +3176,9 @@ func (d *qemu) generateConfigShare() error {
 		return err
 	}
 
-	if !isWindows {
+	// OS-specific configuration.
+	switch guestOS {
+	case "linux":
 		// Systemd units.
 		err = os.MkdirAll(filepath.Join(configDrivePath, "systemd"), 0o500)
 		if err != nil {
@@ -3167,7 +3201,7 @@ func (d *qemu) generateConfigShare() error {
 		// Setup script for incus-agent that is executed by the incus-agent systemd unit before incus-agent is started.
 		// The script sets up a temporary mount point, copies data from the mount (including incus-agent binary),
 		// and then unmounts it. It also ensures appropriate permissions for the Incus agent's runtime directory.
-		agentFile, err = incusAgentLoader.ReadFile("agent-loader/incus-agent-setup")
+		agentFile, err = incusAgentLoader.ReadFile("agent-loader/incus-agent-setup-linux")
 		if err != nil {
 			return err
 		}
@@ -3194,12 +3228,79 @@ func (d *qemu) generateConfigShare() error {
 		}
 
 		// Install script for manual installs.
-		agentFile, err = incusAgentLoader.ReadFile("agent-loader/install.sh")
+		agentFile, err = incusAgentLoader.ReadFile("agent-loader/install-linux.sh")
 		if err != nil {
 			return err
 		}
 
 		err = os.WriteFile(filepath.Join(configDrivePath, "install.sh"), agentFile, 0o700)
+		if err != nil {
+			return err
+		}
+
+	case "macos":
+		// Launchd daemons.
+		err = os.MkdirAll(filepath.Join(configDrivePath, "launchd"), 0o500)
+		if err != nil {
+			return err
+		}
+
+		// Launchd daemon for incus-agent.
+		agentFile, err := incusAgentLoader.ReadFile("agent-loader/launchd/org.linuxcontainers.incus.macos-agent.plist")
+		if err != nil {
+			return err
+		}
+
+		err = os.WriteFile(filepath.Join(configDrivePath, "launchd", "org.linuxcontainers.incus.macos-agent.plist"), agentFile, 0o644)
+		if err != nil {
+			return err
+		}
+
+		// Setup script for incus-agent that is executed by launchd. For convenience, this script also
+		// launches the agent. Because of Apple TCC, sh must be given full disk access in the relevant
+		// system settings page. Other than that, this agent behaves roughly the same as the Linux one.
+		agentFile, err = incusAgentLoader.ReadFile("agent-loader/incus-agent-setup-macos")
+		if err != nil {
+			return err
+		}
+
+		err = os.WriteFile(filepath.Join(configDrivePath, "incus-agent-setup"), agentFile, 0o500)
+		if err != nil {
+			return err
+		}
+
+		// Install script for manual installs.
+		agentFile, err = incusAgentLoader.ReadFile("agent-loader/install-macos.sh")
+		if err != nil {
+			return err
+		}
+
+		err = os.WriteFile(filepath.Join(configDrivePath, "install.sh"), agentFile, 0o700)
+		if err != nil {
+			return err
+		}
+
+	case "windows":
+		// Setup script for incus-agent that is executed by Service Control Manager (SCM). Since by
+		// default Windows cannot run a PowerShell script as a service without the help of a third
+		// party, a bat file is used to then execute the PowerShell script doing the job.
+		agentFile, err := incusAgentLoader.ReadFile("agent-loader/incus-agent-setup.ps1")
+		if err != nil {
+			return err
+		}
+
+		err = os.WriteFile(filepath.Join(configDrivePath, "incus-agent-setup.ps1"), agentFile, 0o500)
+		if err != nil {
+			return err
+		}
+
+		// Install script for manual installs.
+		agentFile, err = incusAgentLoader.ReadFile("agent-loader/install.ps1")
+		if err != nil {
+			return err
+		}
+
+		err = os.WriteFile(filepath.Join(configDrivePath, "install.ps1"), agentFile, 0o700)
 		if err != nil {
 			return err
 		}
@@ -3247,7 +3348,8 @@ func (d *qemu) generateConfigShare() error {
 		}
 	}
 
-	if !isWindows {
+	// Only Linux guests support dynamic NIC configuration.
+	if guestOS == "linux" {
 		// Clear NICConfigDir to ensure that no leftover configuration is erroneously applied by the agent.
 		nicConfigPath := filepath.Join(configDrivePath, deviceConfig.NICConfigDir)
 		_ = os.RemoveAll(nicConfigPath)
@@ -3452,11 +3554,6 @@ func (d *qemu) deviceBootPriorities(base int) (map[string]int, error) {
 	return sortedDevs, nil
 }
 
-// isWindows returns whether the VM is Windows.
-func (d *qemu) isWindows() bool {
-	return strings.Contains(strings.ToLower(d.expandedConfig["image.os"]), "windows")
-}
-
 func (d *qemu) getStartupRTCAdjustment() time.Duration {
 	// Get the current values.
 	adjustment := d.parseRTC("volatile.vm.rtc_adjustment")
@@ -3516,7 +3613,7 @@ func (d *qemu) onRTCChange(change int) error {
 func (d *qemu) generateQemuConfig(machineDefinition string, cpuType string, cpuInfo *cpuTopology, mountInfo *storagePools.MountInfo, busName string, vsockFD int, devConfs []*deviceConfig.RunConfig, fdFiles *[]*os.File) ([]monitorHook, error) {
 	var monHooks []monitorHook
 
-	isWindows := d.isWindows()
+	isWindows := d.GuestOS() == "windows"
 	conf := qemuBase(&qemuBaseOpts{d.Architecture(), util.IsTrue(d.expandedConfig["security.iommu"]), machineDefinition})
 
 	err := d.addCPUMemoryConfig(&conf, cpuType, cpuInfo)
@@ -3700,6 +3797,19 @@ func (d *qemu) generateQemuConfig(machineDefinition string, cpuType string, cpuI
 		}
 
 		conf = append(conf, qemuUSB(&usbOpts)...)
+	}
+
+	// virtio-sound-pci devices can't be migrated and don't have a CCW equivalent.
+	if !isWindows && !d.CanLiveMigrate() && d.architecture != osarch.ARCH_64BIT_S390_BIG_ENDIAN {
+		devBus, devAddr, multi = bus.allocate(busFunctionGroupGeneric)
+		audioOpts := qemuDevOpts{
+			busName:       bus.name,
+			devBus:        devBus,
+			devAddr:       devAddr,
+			multifunction: multi,
+		}
+
+		conf = append(conf, qemuAudio(&audioOpts)...)
 	}
 
 	if util.IsTrue(d.expandedConfig["security.csm"]) {
@@ -3951,7 +4061,7 @@ func (d *qemu) generateQemuConfig(machineDefinition string, cpuType string, cpuI
 		bus.allocate(busFunctionGroupNone)
 	}
 
-	if !d.isWindows() {
+	if !isWindows {
 		// Write the agent mount config.
 		agentMountJSON, err := json.Marshal(agentMounts)
 		if err != nil {
@@ -4224,12 +4334,12 @@ func (d *qemu) addRootDriveConfig(qemuDev map[string]any, mountInfo *storagePool
 
 	// Generate a new device config with the root device path expanded.
 	driveConf := deviceConfig.MountEntryItem{
-		DevName:    rootDriveConf.DevName,
-		DevPath:    mountInfo.DiskPath,
-		Opts:       rootDriveConf.Opts,
-		TargetPath: rootDriveConf.TargetPath,
-		Limits:     rootDriveConf.Limits,
-		Attached:   true,
+		DevName:     rootDriveConf.DevName,
+		DevPath:     mountInfo.DiskPath,
+		BackingPath: mountInfo.BackingPath,
+		Opts:        rootDriveConf.Opts,
+		TargetPath:  rootDriveConf.TargetPath,
+		Limits:      rootDriveConf.Limits,
 	}
 
 	if d.storagePool.Driver().Info().Remote {
@@ -4428,13 +4538,14 @@ func (d *qemu) addDriveConfig(qemuDev map[string]any, bootIndexes map[string]int
 	}
 
 	var isBlockDev bool
+	var srcDevPath string
 
 	// Detect device caches and I/O modes.
 	if isRBDImage {
 		// For RBD, we want writeback to allow for the system-configured "rbd cache" to take effect if present.
 		cacheMode = "writeback"
 	} else {
-		srcDevPath := driveConf.DevPath // This should not be used for passing to QEMU, only for probing.
+		srcDevPath = driveConf.DevPath // This should not be used for passing to QEMU, only for probing.
 
 		// Detect if existing file descriptor format is being supplied.
 		if strings.HasPrefix(driveConf.DevPath, fmt.Sprintf("%s:", device.DiskFileDescriptorMountPrefix)) {
@@ -4740,10 +4851,43 @@ func (d *qemu) addDriveConfig(qemuDev map[string]any, bootIndexes map[string]int
 				_ = m.RemoveFDFromFDSet(nodeName)
 			})
 
-			blockDev["filename"] = fmt.Sprintf("/dev/fdset/%d", info.ID)
+			isQcow2, err := d.isQCOW2(srcDevPath)
+			if err != nil {
+				return fmt.Errorf("Failed checking disk format: %w", err)
+			}
+
+			if isQcow2 {
+				blockDev = map[string]any{
+					"driver":    "qcow2",
+					"discard":   "unmap", // Forward as an unmap request. This is the same as `discard=on` in the qemu config file.
+					"node-name": d.blockNodeName(escapedDeviceName),
+					"read-only": false,
+					"file": map[string]any{
+						"driver":   "host_device",
+						"filename": fmt.Sprintf("/dev/fdset/%d", info.ID),
+						"aio":      aioMode,
+						"cache": map[string]any{
+							"direct":   directCache,
+							"no-flush": noFlushCache,
+						},
+					},
+				}
+
+				// If there are any children, load block information about them.
+				if len(driveConf.BackingPath) > 0 {
+					backingBlockDev, err := d.qcow2BlockDev(m, nodeName, aioMode, directCache, noFlushCache, permissions, readonly, driveConf.BackingPath, 0)
+					if err != nil {
+						return nil
+					}
+
+					blockDev["backing"] = backingBlockDev
+				}
+			} else {
+				blockDev["filename"] = fmt.Sprintf("/dev/fdset/%d", info.ID)
+			}
 		}
 
-		err := m.AddBlockDevice(blockDev, qemuDev, driveConf.Attached, bus == "usb")
+		err := m.AddBlockDevice(blockDev, qemuDev, bus == "usb")
 		if err != nil {
 			return fmt.Errorf("Failed adding block device for disk device %q: %w", driveConf.DevName, err)
 		}
@@ -5104,11 +5248,15 @@ func (d *qemu) writeNICDevConfig(mtuStr string, devName string, nicName string, 
 // addPCIDevConfig adds the qemu config required for adding a raw PCI device.
 func (d *qemu) addPCIDevConfig(conf *[]cfg.Section, bus *qemuBus, pciConfig []deviceConfig.RunConfigItem) error {
 	var devName, pciSlotName string
+
+	firmware := true
 	for _, pciItem := range pciConfig {
 		if pciItem.Key == "devName" {
 			devName = pciItem.Value
 		} else if pciItem.Key == "pciSlotName" {
 			pciSlotName = pciItem.Value
+		} else if pciItem.Key == "firmware" {
+			firmware = util.IsTrue(pciItem.Value)
 		}
 	}
 
@@ -5122,6 +5270,7 @@ func (d *qemu) addPCIDevConfig(conf *[]cfg.Section, bus *qemuBus, pciConfig []de
 		},
 		devName:     devName,
 		pciSlotName: pciSlotName,
+		firmware:    firmware,
 	}
 	*conf = append(*conf, qemuPCIPhysical(&pciPhysicalOpts)...)
 
@@ -5930,7 +6079,7 @@ func qemuDetachDisk(s *state.State, id int) func(string) error {
 
 // Detach a disk from the instance.
 func (d *qemu) detachDisk(name string) error {
-	diskName := strings.TrimPrefix(name, qemuDeviceIDPrefix)
+	diskName := linux.PathNameDecode(strings.TrimPrefix(name, qemuDeviceIDPrefix))
 
 	// Load and detach the disk.
 	config, ok := d.expandedDevices[diskName]
@@ -7550,7 +7699,7 @@ func (d *qemu) migrateSendLive(pool storagePools.Pool, clusterMoveSourceName str
 				"driver":   "file",
 				"filename": fmt.Sprintf("/dev/fdset/%d", info.ID),
 			},
-		}, nil, true, false)
+		}, nil, false)
 		if err != nil {
 			return fmt.Errorf("Failed adding migration storage snapshot block device: %w", err)
 		}
@@ -7573,7 +7722,7 @@ func (d *qemu) migrateSendLive(pool storagePools.Pool, clusterMoveSourceName str
 			}
 
 			// Try and merge snapshot back to the source disk on failure so we don't lose writes.
-			err = monitor.BlockCommit(rootSnapshotDiskName)
+			err = monitor.BlockCommit(rootSnapshotDiskName, "", "")
 			if err != nil {
 				d.logger.Error("Failed merging migration storage snapshot", logger.Ctx{"err": err})
 			}
@@ -7693,7 +7842,7 @@ func (d *qemu) migrateSendLive(pool storagePools.Pool, clusterMoveSourceName str
 					"path":     strings.TrimPrefix(listener.Addr().String(), "@"),
 				},
 			},
-		}, nil, true, false)
+		}, nil, false)
 		if err != nil {
 			return fmt.Errorf("Failed adding NBD device: %w", err)
 		}
@@ -7850,7 +7999,7 @@ func (d *qemu) migrateSendLive(pool storagePools.Pool, clusterMoveSourceName str
 
 		// Merge snapshot back to the source disk so we don't lose the writes.
 		d.logger.Debug("Merge migration storage snapshot on source started")
-		err = monitor.BlockCommit(rootSnapshotDiskName)
+		err = monitor.BlockCommit(rootSnapshotDiskName, "", "")
 		if err != nil {
 			return fmt.Errorf("Failed merging migration storage snapshot: %w", err)
 		}
@@ -8724,88 +8873,110 @@ func (d *qemu) RenderFull(hostInterfaces []net.Interface) (*api.InstanceFull, an
 
 // renderState returns just state info about the instance.
 func (d *qemu) renderState(statusCode api.StatusCode) (*api.InstanceState, error) {
-	var err error
+	// Initialize the return struct.
+	status := &api.InstanceState{
+		Processes:  -1,
+		Status:     statusCode.String(),
+		StatusCode: statusCode,
+	}
 
-	status := &api.InstanceState{}
-	pid, _ := d.pid()
+	// If VM is stopped, we're done here.
+	if !d.isRunningStatusCode(statusCode) {
+		return status, nil
+	}
 
-	if d.isRunningStatusCode(statusCode) {
-		if d.agentMetricsEnabled() {
-			// Try and get state info from agent.
-			status, err = d.agentGetState()
-			if err != nil {
-				if !errors.Is(err, errQemuAgentOffline) {
-					d.logger.Warn("Could not get VM state from agent", logger.Ctx{"err": err})
-				}
-
-				// Fallback data if agent is not reachable.
-				status = &api.InstanceState{}
-				status.Processes = -1
-			}
-
-			if len(status.Network) == 0 {
-				status.Network, err = d.getNetworkState()
-				if err != nil {
-					return nil, err
-				}
-			}
-		} else {
-			status.Processes = -1
-
-			status.Network, err = d.getNetworkState()
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		// Populate the CPU time allocation
-		limitsCPU, ok := d.expandedConfig["limits.cpu"]
-		if ok {
-			cpuCount, err := strconv.ParseInt(limitsCPU, 10, 64)
-			if err != nil {
-				status.CPU.AllocatedTime = cpuCount * 1_000_000_000
-			}
-		} else {
-			status.CPU.AllocatedTime = qemudefault.CPUCores * 1_000_000_000
-		}
-
-		// Populate host_name for network devices.
-		for k, m := range d.ExpandedDevices() {
-			// We only care about nics.
-			if m["type"] != "nic" {
-				continue
-			}
-
-			// Get hwaddr from static or volatile config.
-			hwaddr := m["hwaddr"]
-			if hwaddr == "" {
-				hwaddr = d.localConfig[fmt.Sprintf("volatile.%s.hwaddr", k)]
-			}
-
-			// We have to match on hwaddr as device name can be different from the configured device
-			// name when reported from the agent inside the VM (due to the guest OS choosing name).
-			for netName, netStatus := range status.Network {
-				if netStatus.Hwaddr == hwaddr {
-					if netStatus.HostName == "" {
-						netStatus.HostName = d.localConfig[fmt.Sprintf("volatile.%s.host_name", k)]
-						status.Network[netName] = netStatus
-					}
-				}
-			}
-		}
-
-		status.Pid = int64(pid)
-		status.StartedAt, err = d.processStartedAt(d.InitPID())
+	// If possible, get the metrics from the agent.
+	if d.agentMetricsEnabled() {
+		agentStatus, err := d.agentGetState()
 		if err != nil {
-			return status, err
+			if !errors.Is(err, errQemuAgentOffline) {
+				d.logger.Warn("Could not get VM state from agent", logger.Ctx{"err": err})
+			}
+		} else {
+			status = agentStatus
 		}
 	}
 
+	// Override VM state back to QEMU state.
 	status.Status = statusCode.String()
 	status.StatusCode = statusCode
-	status.Disk, err = d.diskState()
+
+	// Add the network details if missing.
+	if len(status.Network) == 0 {
+		networkState, err := d.getNetworkState()
+		if err != nil {
+			return nil, err
+		}
+
+		status.Network = networkState
+	}
+
+	// Add the memory details if missing.
+	if status.Memory.Usage <= 0 {
+		monitor, err := d.qmpConnect()
+		if err != nil {
+			d.logger.Warn("Error getting QEMU monitor", logger.Ctx{"err": err})
+		}
+
+		memoryMetrics, err := d.getQemuMemoryMetrics(monitor)
+		if err != nil {
+			d.logger.Warn("Error getting memory metrics", logger.Ctx{"err": err})
+		}
+
+		status.Memory.Total = int64(memoryMetrics.MemTotalBytes)
+		status.Memory.Usage = int64(memoryMetrics.MemTotalBytes - memoryMetrics.MemAvailableBytes)
+	}
+
+	// Populate the disk information.
+	diskState, err := d.diskState()
 	if err != nil && !errors.Is(err, storageDrivers.ErrNotSupported) {
 		d.logger.Warn("Error getting disk usage", logger.Ctx{"err": err})
+	}
+
+	status.Disk = diskState
+
+	// Populate the CPU time allocation.
+	limitsCPU, ok := d.expandedConfig["limits.cpu"]
+	if ok {
+		cpuCount, err := strconv.ParseInt(limitsCPU, 10, 64)
+		if err != nil {
+			status.CPU.AllocatedTime = cpuCount * 1_000_000_000
+		}
+	} else {
+		status.CPU.AllocatedTime = qemudefault.CPUCores * 1_000_000_000
+	}
+
+	// Populate host_name for network devices.
+	for k, m := range d.ExpandedDevices() {
+		// We only care about nics.
+		if m["type"] != "nic" {
+			continue
+		}
+
+		// Get hwaddr from static or volatile config.
+		hwaddr := m["hwaddr"]
+		if hwaddr == "" {
+			hwaddr = d.localConfig[fmt.Sprintf("volatile.%s.hwaddr", k)]
+		}
+
+		// We have to match on hwaddr as device name can be different from the configured device
+		// name when reported from the agent inside the VM (due to the guest OS choosing name).
+		for netName, netStatus := range status.Network {
+			if netStatus.Hwaddr == hwaddr {
+				if netStatus.HostName == "" {
+					netStatus.HostName = d.localConfig[fmt.Sprintf("volatile.%s.host_name", k)]
+					status.Network[netName] = netStatus
+				}
+			}
+		}
+	}
+
+	// Populate the process information.
+	pid, _ := d.pid()
+	status.Pid = int64(pid)
+	status.StartedAt, err = d.processStartedAt(d.InitPID())
+	if err != nil {
+		return status, err
 	}
 
 	return status, nil
@@ -8943,29 +9114,6 @@ func (d *qemu) DeviceEventHandler(runConf *deviceConfig.RunConfig) error {
 	// Handle disk reconfiguration.
 	for _, mount := range runConf.Mounts {
 		if mount.Limits == nil && mount.Size == 0 {
-			// This special case allows handling live attach/detach logic.
-			config, ok := d.expandedDevices[mount.DevName]
-			if !ok {
-				return fmt.Errorf("Couldn't find device %q", mount.DevName)
-			}
-
-			dev, err := d.deviceLoad(d, mount.DevName, config)
-			if err != nil {
-				return err
-			}
-
-			if mount.Attached {
-				_, err = d.deviceStart(dev, true)
-				if err != nil {
-					return err
-				}
-			} else {
-				err = d.deviceStop(dev, true, "")
-				if err != nil {
-					return err
-				}
-			}
-
 			continue
 		}
 
@@ -9227,7 +9375,7 @@ func (d *qemu) FillNetworkDevice(name string, m deviceConfig.Device) (deviceConf
 		volatileHwaddr := d.localConfig[configKey]
 		if volatileHwaddr == "" {
 			// Generate a new MAC address.
-			volatileHwaddr, err = instance.DeviceNextInterfaceHWAddr()
+			volatileHwaddr, err = instance.DeviceNextInterfaceHWAddr(d.MACPattern())
 			if err != nil || volatileHwaddr == "" {
 				return nil, fmt.Errorf("Failed generating %q: %w", configKey, err)
 			}
@@ -9657,7 +9805,7 @@ func (d *qemu) checkFeatures(hostArch int, qemuPath string) (map[string]any, err
 		"aio":       "io_uring",
 	}
 
-	err = monitor.AddBlockDevice(blockDev, nil, true, false)
+	err = monitor.AddBlockDevice(blockDev, nil, false)
 	if err != nil {
 		logger.Debug("Failed adding block device during VM feature check", logger.Ctx{"err": err})
 	} else {
@@ -10317,4 +10465,261 @@ func (d *qemu) DumpGuestMemory(w *os.File, format string) error {
 // CanLiveMigrate returns whether the VM is live-migratable.
 func (d *qemu) CanLiveMigrate() bool {
 	return util.IsTrue(d.expandedConfig["migration.stateful"])
+}
+
+// GuestOS returns the guest OS. In this driver, we consider anything unknown to be Linux.
+func (d *qemu) GuestOS() string {
+	imageOS := strings.ToLower(d.expandedConfig["image.os"])
+	if strings.Contains(imageOS, "windows") {
+		return "windows"
+	} else if strings.Contains(imageOS, "darwin") || strings.Contains(imageOS, "macos") || strings.Contains(imageOS, "mac os") {
+		return "macos"
+	}
+
+	return "unknown"
+}
+
+// CreateQcow2Snapshot creates a qcow2 snapshot for a running instance.
+func (d *qemu) CreateQcow2Snapshot(snapshotName string, backingFilename string) error {
+	monitor, err := d.qmpConnect()
+	if err != nil {
+		return err
+	}
+
+	snap, err := instance.LoadByProjectAndName(d.state, d.project.Name, fmt.Sprintf("%s/%s", d.name, snapshotName))
+	if err != nil {
+		return fmt.Errorf("Load by project and name: %w", err)
+	}
+
+	pool, err := storagePools.LoadByInstance(d.state, snap)
+	if err != nil {
+		return fmt.Errorf("Load by instance: %w", err)
+	}
+
+	mountInfoRoot, err := pool.MountInstance(d, d.op)
+	if err != nil {
+		return fmt.Errorf("Mount instance: %w", err)
+	}
+
+	defer func() { _ = pool.UnmountInstance(d, d.op) }()
+
+	f, err := os.OpenFile(mountInfoRoot.DiskPath, unix.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("Failed opening file descriptor for disk device %s: %w", mountInfoRoot.DiskPath, err)
+	}
+
+	defer func() { _ = f.Close() }()
+
+	// Fetch information about block devices.
+	blockdevNames, err := monitor.QueryNamedBlockNodes()
+	if err != nil {
+		return fmt.Errorf("Failed fetching block nodes names: %w", err)
+	}
+
+	rootDevName, _, err := internalInstance.GetRootDiskDevice(d.expandedDevices.CloneNative())
+	if err != nil {
+		return fmt.Errorf("Failed getting instance root disk: %w", err)
+	}
+
+	escapedDeviceName := linux.PathNameEncode(rootDevName)
+	rootNodeName := d.blockNodeName(escapedDeviceName)
+
+	// Fetch the current maximum overlay index.
+	overlayNodeIndex := currentQcow2OverlayIndex(blockdevNames, rootNodeName)
+	nextOverlayName := fmt.Sprintf("%s_overlay%d", rootNodeName, overlayNodeIndex+1)
+
+	currentOverlayName := rootNodeName
+	if overlayNodeIndex >= 0 {
+		currentOverlayName = fmt.Sprintf("%s_overlay%d", rootNodeName, overlayNodeIndex)
+	}
+
+	info, err := monitor.SendFileWithFDSet(nextOverlayName, f, false)
+	if err != nil {
+		return fmt.Errorf("Failed sending file descriptor of %q for disk device: %w", f.Name(), err)
+	}
+
+	blockDev := map[string]any{
+		"driver":    "qcow2",
+		"discard":   "unmap", // Forward as an unmap request. This is the same as `discard=on` in the qemu config file.
+		"node-name": nextOverlayName,
+		"read-only": false,
+		"file": map[string]any{
+			"driver":   "host_device",
+			"filename": fmt.Sprintf("/dev/fdset/%d", info.ID),
+		},
+	}
+
+	// Add overlay block dev.
+	err = monitor.AddBlockDevice(blockDev, nil, false)
+	if err != nil {
+		return fmt.Errorf("Fail to add block device: %w", err)
+	}
+
+	// Take a snapshot of the root disk and redirect writes to the snapshot disk.
+	err = monitor.BlockDevSnapshot(currentOverlayName, nextOverlayName)
+	if err != nil {
+		return fmt.Errorf("Failed taking storage snapshot: %w", err)
+	}
+
+	// Update metadata of the backing file.
+	err = monitor.ChangeBackingFile(nextOverlayName, nextOverlayName, backingFilename)
+	if err != nil {
+		return fmt.Errorf("Failed changing backing file: %w", err)
+	}
+
+	return nil
+}
+
+// fetchQcow2Blockdevs selects block devices related to a qcow2 backing chain.
+func (d *qemu) fetchQcow2Blockdevs(m *qmp.Monitor) ([]string, error) {
+	// Fetch information about block devices.
+	blockdevNames, err := m.QueryNamedBlockNodes()
+	if err != nil {
+		return nil, fmt.Errorf("Failed fetching block nodes names: %w", err)
+	}
+
+	rootDevName, _, err := internalInstance.GetRootDiskDevice(d.expandedDevices.CloneNative())
+	if err != nil {
+		return nil, fmt.Errorf("Failed getting instance root disk: %w", err)
+	}
+
+	escapedDeviceName := linux.PathNameEncode(rootDevName)
+	rootNodeName := d.blockNodeName(escapedDeviceName)
+
+	return filterAndSortQcow2Blockdevs(blockdevNames, rootNodeName), nil
+}
+
+// DeleteQcow2Snapshot deletes a qcow2 snapshot for a running instance.
+func (d *qemu) DeleteQcow2Snapshot(snapshotIndex int, backingFilename string) error {
+	monitor, err := d.qmpConnect()
+	if err != nil {
+		return err
+	}
+
+	// Select all block devices related to a qcow2 backing chain.
+	blockDevs, err := d.fetchQcow2Blockdevs(monitor)
+	if err != nil {
+		return err
+	}
+
+	d.logger.Debug("QCOW2 blockdev chain:", logger.Ctx{"blockdev": blockDevs, "snapshotIndex": snapshotIndex})
+
+	if snapshotIndex < 0 || (snapshotIndex+1) >= len(blockDevs) {
+		return fmt.Errorf("Incorrect snapshot index: %d", snapshotIndex)
+	}
+
+	rootDevName := blockDevs[len(blockDevs)-1]
+	snapChildDevName := blockDevs[snapshotIndex+1]
+	snapDevName := blockDevs[snapshotIndex]
+
+	err = monitor.BlockCommit(rootDevName, snapChildDevName, snapDevName)
+	if err != nil {
+		return err
+	}
+
+	err = monitor.RemoveBlockDevice(snapChildDevName)
+	if err != nil {
+		d.logger.Error("Remove block deevice error", logger.Ctx{"err": err})
+		return err
+	}
+
+	err = monitor.RemoveFDFromFDSet(snapChildDevName)
+	if err != nil {
+		d.logger.Error("Remove fd from fd set", logger.Ctx{"err": err})
+		return err
+	}
+
+	if backingFilename == "" {
+		return nil
+	}
+
+	if snapshotIndex+2 >= len(blockDevs) {
+		return fmt.Errorf("Incorrect snapshot index for backing file update: %d", snapshotIndex)
+	}
+
+	// Update metadata of the backing file.
+	err = monitor.ChangeBackingFile(rootDevName, blockDevs[snapshotIndex+2], backingFilename)
+	if err != nil {
+		return fmt.Errorf("Failed changing backing file: %w", err)
+	}
+
+	return nil
+}
+
+func (d *qemu) isQCOW2(devPath string) (bool, error) {
+	imgInfo, err := storageDrivers.Qcow2Info(devPath)
+	if err != nil {
+		return false, err
+	}
+
+	return imgInfo.Format == storageDrivers.BlockVolumeTypeQcow2, nil
+}
+
+func (d *qemu) qcow2BlockDev(m *qmp.Monitor, nodeName string, aioMode string, directCache bool, noFlushCache bool, permissions int, readonly bool, backingPaths []string, iter int) (string, error) {
+	devName := backingPaths[0]
+	backingNodeName := fmt.Sprintf("%s_backing%d", nodeName, iter)
+
+	f, err := os.OpenFile(devName, permissions, 0)
+	if err != nil {
+		return "", fmt.Errorf("Failed opening file descriptor for disk device %q: %w", devName, err)
+	}
+
+	defer func() { _ = f.Close() }()
+
+	info, err := m.SendFileWithFDSet(backingNodeName, f, readonly)
+	if err != nil {
+		return "", fmt.Errorf("Failed sending file descriptor of %q for disk device %q: %w", f.Name(), devName, err)
+	}
+
+	blockDev := map[string]any{
+		"driver":    "qcow2",
+		"discard":   "unmap", // Forward as an unmap request. This is the same as `discard=on` in the qemu config file.
+		"node-name": backingNodeName,
+		"read-only": false,
+		"file": map[string]any{
+			"driver":   "host_device",
+			"filename": fmt.Sprintf("/dev/fdset/%d", info.ID),
+			"aio":      aioMode,
+			"cache": map[string]any{
+				"direct":   directCache,
+				"no-flush": noFlushCache,
+			},
+		},
+	}
+
+	// If there are any children, load block information about them.
+	if len(backingPaths) > 1 {
+		parentNodeName, err := d.qcow2BlockDev(m, nodeName, aioMode, directCache, noFlushCache, permissions, readonly, backingPaths[1:], iter+1)
+		if err != nil {
+			return "", err
+		}
+
+		blockDev["backing"] = parentNodeName
+	}
+
+	err = m.AddBlockDevice(blockDev, nil, false)
+	if err != nil {
+		return "", err
+	}
+
+	return backingNodeName, nil
+}
+
+// currentQcow2OverlayIndex returns the current maximum overlay index.
+func currentQcow2OverlayIndex(names []string, prefix string) int {
+	re := regexp.MustCompile(fmt.Sprintf(`^%s_overlay(\d+)$`, prefix))
+
+	maxIndex := -1
+
+	for _, name := range names {
+		m := re.FindStringSubmatch(name)
+		if len(m) == 2 {
+			n, err := strconv.Atoi(m[1])
+			if err == nil && n > maxIndex {
+				maxIndex = n
+			}
+		}
+	}
+
+	return maxIndex
 }

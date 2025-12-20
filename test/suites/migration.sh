@@ -1,4 +1,7 @@
 test_migration() {
+    # shellcheck disable=2153
+    [ "${INCUS_BACKEND}" = "linstor" ] && echo "==> SKIP: Linstor can't currently handle copies with snapshots" && return
+
     # setup a second Incus
     # shellcheck disable=2039,3043
     local INCUS2_DIR INCUS2_ADDR incus_backend
@@ -54,11 +57,6 @@ test_migration() {
         for fs in "ext4" "btrfs" "xfs"; do
             if ! command -v "mkfs.${fs}" > /dev/null 2>&1; then
                 echo "==> SKIP: Skipping block mode test on ${fs} due to missing tools."
-                continue
-            fi
-
-            if [ "${fs}" = "xfs" ] && grep -q noble /etc/os-release; then
-                echo "==> SKIP: Skipping block mode test on ${fs} due to broken OS tools."
                 continue
             fi
 

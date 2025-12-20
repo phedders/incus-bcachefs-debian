@@ -499,6 +499,19 @@ var APIExtensions = []string{
 	"backup_override_config",
 	"network_ovn_tunnels",
 	"init_preseed_cluster_groups",
+	"usb_attached",
+	"backup_iso",
+	"instance_systemd_credentials",
+	"cluster_group_usedby",
+	"bpf_token_delegation",
+	"file_storage_volume",
+	"network_hwaddr_pattern",
+	"storage_volume_full",
+	"storage_bucket_full",
+	"device_pci_firmware",
+	"resources_serial",
+	"ovn_nic_limits",
+	"storage_lvmcluster_qcow2",
 }
 
 // APIExtensionsCount returns the number of available API extensions.

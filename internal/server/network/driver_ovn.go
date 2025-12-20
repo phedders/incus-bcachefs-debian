@@ -20,8 +20,8 @@ import (
 
 	"github.com/flosch/pongo2/v6"
 	"github.com/mdlayher/netx/eui64"
-	ovsClient "github.com/ovn-org/libovsdb/client"
-	ovsdbModel "github.com/ovn-org/libovsdb/model"
+	ovsClient "github.com/ovn-kubernetes/libovsdb/client"
+	ovsdbModel "github.com/ovn-kubernetes/libovsdb/model"
 
 	incus "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/internal/iprange"
@@ -37,6 +37,7 @@ import (
 	"github.com/lxc/incus/v6/internal/server/network/acl"
 	addressset "github.com/lxc/incus/v6/internal/server/network/address-set"
 	networkOVN "github.com/lxc/incus/v6/internal/server/network/ovn"
+	ovnNB "github.com/lxc/incus/v6/internal/server/network/ovn/schema/ovn-nb"
 	ovnSB "github.com/lxc/incus/v6/internal/server/network/ovn/schema/ovn-sb"
 	"github.com/lxc/incus/v6/internal/server/network/ovs"
 	"github.com/lxc/incus/v6/internal/server/project"
@@ -46,6 +47,7 @@ import (
 	"github.com/lxc/incus/v6/shared/api"
 	"github.com/lxc/incus/v6/shared/logger"
 	"github.com/lxc/incus/v6/shared/revert"
+	"github.com/lxc/incus/v6/shared/units"
 	"github.com/lxc/incus/v6/shared/util"
 	"github.com/lxc/incus/v6/shared/validate"
 )
@@ -590,6 +592,15 @@ func (n *ovn) Validate(config map[string]string, clientType request.ClientType) 
 		//  shortdesc: Domain to advertise to DHCP clients and use for DNS resolution
 		"dns.domain": validate.IsAny,
 
+		// gendoc:generate(entity=network_ovn, group=common, key=dns.mode)
+		//
+		// ---
+		//  type: string
+		//  condition: -
+		//  default: `managed`
+		//  shortdesc: DNS registration mode: none for no DNS record, managed for OVN managed records
+		"dns.mode": validate.Optional(validate.IsOneOf("managed", "none")),
+
 		// gendoc:generate(entity=network_ovn, group=common, key=dns.search)
 		//
 		// ---
@@ -829,7 +840,7 @@ func (n *ovn) Validate(config map[string]string, clientType request.ClientType) 
 	var uplink *api.Network
 	projectRestrictedSubnets := []*net.IPNet{}
 
-	if n.config["network"] != "none" && clientType != request.ClientTypeNotifier {
+	if config["network"] != "none" && clientType != request.ClientTypeNotifier {
 		uplinkNetworkName, err := n.validateUplinkNetwork(p, config["network"])
 		if err != nil {
 			return err
@@ -1235,7 +1246,7 @@ func (n *ovn) getRouterMAC() (net.HardwareAddr, error) {
 			return nil, fmt.Errorf("Failed generating stable random router MAC: %w", err)
 		}
 
-		hwAddr = randomHwaddr(r)
+		hwAddr = n.randomHwaddr(r)
 		n.logger.Debug("Stable MAC generated", logger.Ctx{"seed": seed, "hwAddr": hwAddr})
 	}
 
@@ -4763,15 +4774,17 @@ func (n *ovn) InstanceDevicePortStart(opts *OVNInstanceNICSetupOpts, securityACL
 		}
 	}
 
-	dnsName := fmt.Sprintf("%s.%s", opts.DNSName, n.getDomainName())
-	dnsUUID, err := n.ovnnb.UpdateLogicalSwitchPortDNS(context.TODO(), n.getIntSwitchName(), instancePortName, dnsName, dnsIPs)
-	if err != nil {
-		return "", nil, fmt.Errorf("Failed setting DNS for %q: %w", dnsName, err)
-	}
+	if n.config["dns.mode"] == "managed" || n.config["dns.mode"] == "" {
+		dnsName := fmt.Sprintf("%s.%s", opts.DNSName, n.getDomainName())
+		dnsUUID, err := n.ovnnb.UpdateLogicalSwitchPortDNS(context.TODO(), n.getIntSwitchName(), instancePortName, dnsName, dnsIPs)
+		if err != nil {
+			return "", nil, fmt.Errorf("Failed setting DNS for %q: %w", dnsName, err)
+		}
 
-	reverter.Add(func() {
-		_ = n.ovnnb.DeleteLogicalSwitchPortDNS(context.TODO(), n.getIntSwitchName(), dnsUUID, false)
-	})
+		reverter.Add(func() {
+			_ = n.ovnnb.DeleteLogicalSwitchPortDNS(context.TODO(), n.getIntSwitchName(), dnsUUID, false)
+		})
+	}
 
 	// If NIC has static IPv4 address then ensure a DHCPv4 reservation exists.
 	// Do this at start time as well as add time in case an instance was copied (causing a duplicate address
@@ -5112,6 +5125,73 @@ func (n *ovn) InstanceDevicePortStart(opts *OVNInstanceNICSetupOpts, securityACL
 		n.logger.Debug("Cleared NIC default rule", logger.Ctx{"port": instancePortName})
 	}
 
+	var qosPriority uint64
+	if opts.DeviceConfig["limits.priority"] != "" {
+		qosPriority, err = strconv.ParseUint(opts.DeviceConfig["limits.priority"], 10, 32)
+		if err != nil {
+			return "", nil, fmt.Errorf("Failed to parse limits.priority %q: %w", opts.DeviceConfig["limits.priority"], err)
+		}
+	} else {
+		qosPriority = 100
+	}
+
+	egressRate, err := units.ParseBitSizeString(opts.DeviceConfig["limits.egress"])
+	if err != nil {
+		return "", nil, fmt.Errorf("Failed converting limits.egress to int: %w", err)
+	}
+
+	ingressRate, err := units.ParseBitSizeString(opts.DeviceConfig["limits.ingress"])
+	if err != nil {
+		return "", nil, fmt.Errorf("Failed converting limits.ingress to int: %w", err)
+	}
+
+	if opts.DeviceConfig["limits.max"] != "" {
+		maxRate, err := units.ParseBitSizeString(opts.DeviceConfig["limits.max"])
+		if err != nil {
+			return "", nil, fmt.Errorf("Failed converting limits.max to int: %w", err)
+		}
+
+		// Overwrite the egress and ingress rate limits if the max rate limit is set.
+		ingressRate = maxRate
+		egressRate = maxRate
+	}
+
+	var rules []networkOVN.OVNQoSRule
+	if opts.DeviceConfig["limits.egress"] != "" || opts.DeviceConfig["limits.max"] != "" {
+		egressRate /= 1000
+		egressRule := networkOVN.OVNQoSRule{
+			Direction: ovnNB.QoSDirectionFromLport,
+			Action:    map[string]int{},
+			Bandwidth: map[string]int{
+				"rate": int(egressRate),
+			},
+			Match:    fmt.Sprintf("inport == \"%s\"", instancePortName),
+			Priority: int(qosPriority),
+		}
+
+		rules = append(rules, egressRule)
+	}
+
+	if opts.DeviceConfig["limits.ingress"] != "" || opts.DeviceConfig["limits.max"] != "" {
+		ingressRate /= 1000
+		ingressRule := networkOVN.OVNQoSRule{
+			Direction: ovnNB.QoSDirectionToLport,
+			Action:    map[string]int{},
+			Bandwidth: map[string]int{
+				"rate": int(ingressRate),
+			},
+			Match:    fmt.Sprintf("outport == \"%s\"", instancePortName),
+			Priority: int(qosPriority),
+		}
+
+		rules = append(rules, ingressRule)
+	}
+
+	err = n.ovnnb.AddLogicalSwitchQoSRules(context.TODO(), n.getIntSwitchName(), instancePortName, rules...)
+	if err != nil {
+		return "", nil, err
+	}
+
 	reverter.Success()
 	return instancePortName, dnsIPs, nil
 }
@@ -5186,14 +5266,16 @@ func (n *ovn) InstanceDevicePortStop(ovsExternalOVNPort networkOVN.OVNSwitchPort
 
 	var uplink *api.Network
 
-	err = n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
-		// Load uplink network config.
-		_, uplink, _, err = tx.GetNetworkInAnyState(ctx, api.ProjectDefaultName, n.config["network"])
+	if n.config["network"] != "none" {
+		err = n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+			// Load uplink network config.
+			_, uplink, _, err = tx.GetNetworkInAnyState(ctx, api.ProjectDefaultName, n.config["network"])
 
-		return err
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to load uplink network %q: %w", n.config["network"], err)
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("Failed to load uplink network %q: %w", n.config["network"], err)
+		}
 	}
 
 	// Get DNS records.
@@ -5234,7 +5316,7 @@ func (n *ovn) InstanceDevicePortStop(ovsExternalOVNPort networkOVN.OVNSwitchPort
 		removeRoutes = append(removeRoutes, *externalRoute)
 
 		// Remove the DNAT rules when using l2proxy ingress mode on uplink.
-		if slices.Contains([]string{"l2proxy", ""}, uplink.Config["ovn.ingress_mode"]) {
+		if uplink != nil && slices.Contains([]string{"l2proxy", ""}, uplink.Config["ovn.ingress_mode"]) {
 			err = SubnetIterate(externalRoute, func(ip net.IP) error {
 				removeNATIPs = append(removeNATIPs, ip)
 
@@ -5308,51 +5390,50 @@ func (n *ovn) InstanceDevicePortStop(ovsExternalOVNPort networkOVN.OVNSwitchPort
 // InstanceDevicePortRemove unregisters the NIC device in the OVN database by removing the DNS entry that should
 // have been created during InstanceDevicePortAdd(). If the DNS record exists at remove time then this indicates
 // the NIC device was successfully added and this function also clears any DHCP reservations for the NIC's IPs.
-func (n *ovn) InstanceDevicePortRemove(instanceUUID string, deviceName string, deviceConfig deviceConfig.Device) error {
-	instancePortName := n.getInstanceDevicePortName(instanceUUID, deviceName)
+func (n *ovn) InstanceDevicePortRemove(instanceUUID string, devName string, devConfig deviceConfig.Device, hasDuplicate bool) error {
+	instancePortName := n.getInstanceDevicePortName(instanceUUID, devName)
 
 	reverter := revert.New()
 	defer reverter.Fail()
 
-	// Get DNS records.
+	// If NIC has static IPv4 address then remove the DHCPv4 reservation.
+	if devConfig["ipv4.address"] != "" && !hasDuplicate {
+		ipv4 := net.ParseIP(devConfig["ipv4.address"])
+		if ipv4 != nil {
+			dhcpReservations, err := n.ovnnb.GetLogicalSwitchDHCPv4Revervations(context.TODO(), n.getIntSwitchName())
+			if err != nil {
+				return fmt.Errorf("Failed getting DHCPv4 reservations: %w", err)
+			}
+
+			dhcpReservations = append(dhcpReservations, iprange.Range{Start: ipv4})
+			dhcpReservationsNew := make([]iprange.Range, 0, len(dhcpReservations))
+
+			found := false
+			for _, dhcpReservation := range dhcpReservations {
+				if dhcpReservation.Start.Equal(ipv4) && dhcpReservation.End == nil {
+					found = true
+					continue
+				}
+
+				dhcpReservationsNew = append(dhcpReservationsNew, dhcpReservation)
+			}
+
+			if found {
+				err = n.ovnnb.UpdateLogicalSwitchDHCPv4Revervations(context.TODO(), n.getIntSwitchName(), dhcpReservationsNew)
+				if err != nil {
+					return fmt.Errorf("Failed removing DHCPv4 reservation for %q: %w", ipv4.String(), err)
+				}
+			}
+		}
+	}
+
+	// Remove DNS record if exists.
 	dnsUUID, _, _, err := n.ovnnb.GetLogicalSwitchPortDNS(context.TODO(), instancePortName)
 	if err != nil {
 		return err
 	}
 
-	// Remove DNS record if exists.
 	if dnsUUID != "" {
-		// If NIC has static IPv4 address then remove the DHCPv4 reservation.
-		if deviceConfig["ipv4.address"] != "" {
-			ip := net.ParseIP(deviceConfig["ipv4.address"])
-			if ip != nil {
-				dhcpReservations, err := n.ovnnb.GetLogicalSwitchDHCPv4Revervations(context.TODO(), n.getIntSwitchName())
-				if err != nil {
-					return fmt.Errorf("Failed getting DHCPv4 reservations: %w", err)
-				}
-
-				dhcpReservations = append(dhcpReservations, iprange.Range{Start: ip})
-				dhcpReservationsNew := make([]iprange.Range, 0, len(dhcpReservations))
-
-				found := false
-				for _, dhcpReservation := range dhcpReservations {
-					if dhcpReservation.Start.Equal(ip) && dhcpReservation.End == nil {
-						found = true
-						continue
-					}
-
-					dhcpReservationsNew = append(dhcpReservationsNew, dhcpReservation)
-				}
-
-				if found {
-					err = n.ovnnb.UpdateLogicalSwitchDHCPv4Revervations(context.TODO(), n.getIntSwitchName(), dhcpReservationsNew)
-					if err != nil {
-						return fmt.Errorf("Failed removing DHCPv4 reservation for %q: %w", ip.String(), err)
-					}
-				}
-			}
-		}
-
 		err = n.ovnnb.DeleteLogicalSwitchPortDNS(context.TODO(), n.getIntSwitchName(), dnsUUID, true)
 		if err != nil {
 			return fmt.Errorf("Failed deleting DNS record: %w", err)

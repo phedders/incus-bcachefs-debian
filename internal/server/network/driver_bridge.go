@@ -1037,7 +1037,7 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 			return fmt.Errorf("Failed generating stable random bridge MAC: %w", err)
 		}
 
-		randomHwaddr := randomHwaddr(r)
+		randomHwaddr := n.randomHwaddr(r)
 		bridge.Address, err = net.ParseMAC(randomHwaddr)
 		if err != nil {
 			return fmt.Errorf("Failed parsing MAC address %q: %w", randomHwaddr, err)
@@ -1612,6 +1612,12 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 			}
 		} else {
 			dnsmasqCmd = append(dnsmasqCmd, fmt.Sprintf("--dhcp-option-force=option6:dns-server,[%s]", ipAddress.String()))
+		}
+
+		// Disable receiving router advertisements from guests.
+		err = localUtil.SysctlSet(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", n.name), "0")
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
 		}
 
 		// Allow forwarding.

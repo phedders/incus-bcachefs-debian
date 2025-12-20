@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -309,6 +310,16 @@ func (d *common) DeferTemplateApply(trigger instance.TemplateTrigger) error {
 	}
 
 	return nil
+}
+
+// MACPattern computes the most specific MAC address pattern for this instance.
+func (d *common) MACPattern() string {
+	macPattern, ok := d.project.Config["network.hwaddr_pattern"]
+	if !ok {
+		return d.state.GlobalConfig.NetworkHWAddrPattern()
+	}
+
+	return macPattern
 }
 
 // SetOperation sets the current operation.
@@ -857,8 +868,7 @@ func (d *common) updateProgress(progress string) {
 	}
 
 	if meta["container_progress"] != progress {
-		meta["container_progress"] = progress
-		_ = d.op.UpdateMetadata(meta)
+		_ = d.op.ExtendMetadata(map[string]any{"container_progress": progress})
 	}
 }
 
@@ -1716,4 +1726,49 @@ func (d *common) setOOMPriority(pid int) error {
 	}
 
 	return nil
+}
+
+// selinuxContext returns the SELinux context for the instance.
+func (d *common) selinuxContext(baseContext string) (string, error) {
+	// Get all local instances.
+	instances, err := instance.LoadNodeAll(d.state, instancetype.Any)
+	if err != nil {
+		return "", fmt.Errorf("Failed loading local instances: %w", err)
+	}
+
+	// Get all current values.
+	seContexts := make([]string, 0, len(instances))
+	for _, inst := range instances {
+		if !inst.IsRunning() {
+			continue
+		}
+
+		val, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(inst.InitPID()), "attr", "current"))
+		if err != nil {
+			return "", err
+		}
+
+		seContexts = append(seContexts, strings.TrimSuffix(string(val), "\x00"))
+	}
+
+	// Generate a random set of categories.
+	for {
+		c1 := rand.IntN(1023)
+		c2 := rand.IntN(1023)
+
+		if c1 == c2 {
+			continue
+		}
+
+		if c1 > c2 {
+			c1, c2 = c2, c1
+		}
+
+		seContext := baseContext + ":c" + strconv.Itoa(c1) + ",c" + strconv.Itoa(c2)
+		if slices.Contains(seContexts, seContext) {
+			continue
+		}
+
+		return seContext, nil
+	}
 }

@@ -99,10 +99,12 @@ type Driver interface {
 	CacheVolumeSnapshots(vol Volume) error
 
 	CreateVolumeSnapshot(snapVol Volume, op *operations.Operation) error
+	GetQcow2BackingFilePath(vol Volume) (string, error)
 	DeleteVolumeSnapshot(snapVol Volume, op *operations.Operation) error
 	RenameVolumeSnapshot(snapVol Volume, newSnapshotName string, op *operations.Operation) error
 	VolumeSnapshots(vol Volume, op *operations.Operation) ([]string, error)
 	RestoreVolume(vol Volume, snapshotName string, op *operations.Operation) error
+	Qcow2DeletionCleanup(vol Volume, childName string) error
 
 	// Migration.
 	MigrationTypes(contentType ContentType, refresh bool, copySnapshots bool, clusterMove bool, storageMove bool) []migration.Type
@@ -110,6 +112,6 @@ type Driver interface {
 	CreateVolumeFromMigration(vol Volume, conn io.ReadWriteCloser, volTargetArgs migration.VolumeTargetArgs, preFiller *VolumeFiller, op *operations.Operation) error
 
 	// Backup.
-	BackupVolume(vol Volume, tarWriter *instancewriter.InstanceTarWriter, optimized bool, snapshots []string, op *operations.Operation) error
+	BackupVolume(vol Volume, writer instancewriter.InstanceWriter, optimized bool, snapshots []string, op *operations.Operation) error
 	CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcData io.ReadSeeker, op *operations.Operation) (VolumePostHook, revert.Hook, error)
 }

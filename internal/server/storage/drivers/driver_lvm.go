@@ -37,8 +37,9 @@ var (
 )
 
 var (
-	lvmLoaded  bool
-	lvmVersion string
+	lvmLoaded        bool
+	lvmClusterLoaded bool
+	lvmVersion       string
 )
 
 type lvm struct {
@@ -58,7 +59,11 @@ func (d *lvm) load() error {
 	}
 
 	// Done if previously loaded.
-	if lvmLoaded {
+	if !d.clustered && lvmLoaded {
+		return nil
+	}
+
+	if d.clustered && lvmClusterLoaded {
 		return nil
 	}
 
@@ -77,7 +82,7 @@ func (d *lvm) load() error {
 	// Validate the required binaries.
 	tools := []string{"lvm"}
 	if d.clustered {
-		tools = append(tools, []string{"lvmlockctl", "sanlock"}...)
+		tools = append(tools, []string{"lvmlockctl", "sanlock", "btrfs"}...)
 	}
 
 	for _, tool := range tools {
@@ -113,7 +118,12 @@ func (d *lvm) load() error {
 		}
 	}
 
-	lvmLoaded = true
+	if d.clustered {
+		lvmClusterLoaded = true
+	} else {
+		lvmLoaded = true
+	}
+
 	return nil
 }
 
@@ -141,8 +151,10 @@ func (d *lvm) isRemote() bool {
 // Info returns info about the driver and its environment.
 func (d *lvm) Info() Info {
 	name := "lvm"
+	targetFormat := BlockVolumeTypeRaw
 	if d.clustered {
 		name = "lvmcluster"
+		targetFormat = BlockVolumeTypeQcow2
 	}
 
 	return Info{
@@ -163,6 +175,7 @@ func (d *lvm) Info() Info {
 		Buckets:                      !d.isRemote(),
 		Deactivate:                   d.isRemote(),
 		ZeroUnpack:                   !d.usesThinpool(),
+		TargetFormat:                 targetFormat,
 	}
 }
 
@@ -597,16 +610,86 @@ func (d *lvm) Delete(op *operations.Operation) error {
 }
 
 func (d *lvm) Validate(config map[string]string) error {
+	// gendoc:generate(entity=storage_lvm, group=common, key=source)
+	//
+	// ---
+	//  type: string
+	//  scope: local
+	//  default: -
+	//  shortdesc: Path to an existing block device, loop file or LVM volume group.
+
+	// gendoc:generate(entity=storage_lvm, group=common, key=source.wipe)
+	//
+	// ---
+	//  type: bool
+	//  scope: local
+	//  default: `false`
+	//  shortdesc: Wipe the block device specified in `source` prior to creating the storage pool.
+
 	rules := map[string]func(value string) error{
-		"lvm.vg_name":       validate.IsAny,
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.vg_name)
+		//
+		// ---
+		//  type: string
+		//  scope: local
+		//  default: name of the pool
+		//  shortdesc: Name of the volume group to create.
+		"lvm.vg_name": validate.IsAny,
+
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.metadata_size)
+		//
+		// ---
+		//  type: string
+		//  scope: global
+		//  default: `0` (auto)
+		//  shortdesc: The size of the metadata space for the physical volume.
 		"lvm.metadata_size": validate.Optional(validate.IsSize),
 	}
 
 	if !d.clustered {
+		// gendoc:generate(entity=storage_lvm, group=common, key=size)
+		//
+		// ---
+		//  type: string
+		//  scope: local
+		//  default: auto (20% of free disk space, >= 5 GiB and <= 30 GiB)
+		//  shortdesc: Size of the storage pool when creating loop-based pools (in bytes, suffixes supported, can be increased to grow storage pool). Not usable with `lvmcluster`.
 		rules["size"] = validate.Optional(validate.IsSize)
+
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.thinpool_name)
+		//
+		// ---
+		//  type: string
+		//  scope: local
+		//  default: `IncusThinPool`
+		//  shortdesc: Thin pool where volumes are created. Not usable with `lvmcluster`.
 		rules["lvm.thinpool_name"] = validate.IsAny
+
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.thinpool_metadata_size)
+		//
+		// ---
+		//  type: string
+		//  scope: global
+		//  default: `0` (auto)
+		//  shortdesc: The size of the thin pool metadata volume (the default is to let LVM calculate an appropriate size). Not usable with `lvmcluster`.
 		rules["lvm.thinpool_metadata_size"] = validate.Optional(validate.IsSize)
+
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.use_thinpool)
+		//
+		// ---
+		//  type: bool
+		//  scope: global
+		//  default: `true`
+		//  shortdesc: Whether the storage pool uses a thin pool for logical volumes. Not usable with `lvmcluster`.
 		rules["lvm.use_thinpool"] = validate.Optional(validate.IsBool)
+
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.vg.force_reuse)
+		//
+		// ---
+		//  type: bool
+		//  scope: local
+		//  default: `false`
+		//  shortdesc: Force using an existing non-empty volume group. Not usable with `lvmcluster`.
 		rules["lvm.vg.force_reuse"] = validate.Optional(validate.IsBool)
 	}
 
@@ -653,6 +736,11 @@ func (d *lvm) Update(changedConfig map[string]string) error {
 	_, changed = changedConfig["volume.lvm.stripes.size"]
 	if changed && d.usesThinpool() {
 		return errors.New("volume.lvm.stripes.size cannot be changed when using thin pool")
+	}
+
+	_, changed = changedConfig["volume.block.type"]
+	if changed {
+		return errors.New("volume.block.type cannot be changed after creation")
 	}
 
 	if changedConfig["lvm.vg_name"] != "" {

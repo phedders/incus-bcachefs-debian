@@ -10,13 +10,14 @@ import (
 	"strings"
 	"time"
 
-	ovsClient "github.com/ovn-org/libovsdb/client"
-	ovsModel "github.com/ovn-org/libovsdb/model"
-	"github.com/ovn-org/libovsdb/ovsdb"
+	ovsClient "github.com/ovn-kubernetes/libovsdb/client"
+	ovsModel "github.com/ovn-kubernetes/libovsdb/model"
+	"github.com/ovn-kubernetes/libovsdb/ovsdb"
 
 	"github.com/lxc/incus/v6/internal/iprange"
 	ovnNB "github.com/lxc/incus/v6/internal/server/network/ovn/schema/ovn-nb"
 	ovnSB "github.com/lxc/incus/v6/internal/server/network/ovn/schema/ovn-sb"
+	localUtil "github.com/lxc/incus/v6/internal/server/util"
 	"github.com/lxc/incus/v6/shared/util"
 )
 
@@ -145,6 +146,15 @@ type OVNACLRule struct {
 	Priority  int    // Priority (between 0 and 32767, inclusive). Higher values take precedence.
 	Log       bool   // Whether or not to log matched packets.
 	LogName   string // Log label name (requires Log be true).
+}
+
+// OVNQoSRule represents a QoS rule that can be added to a logical switch.
+type OVNQoSRule struct {
+	Direction string
+	Action    map[string]int // Not settable, but ovn includes it in the db model
+	Bandwidth map[string]int
+	Match     string
+	Priority  int
 }
 
 // OVNLoadBalancerTarget represents an OVN load balancer Virtual IP target.
@@ -1655,6 +1665,25 @@ func (o *NB) UpdateLogicalSwitchACLRules(ctx context.Context, switchName OVNSwit
 	return nil
 }
 
+// logicalSwitchPortQoSRules returns the QoS rule UUIDs belonging to a logical switch port.
+func (o *NB) logicalSwitchPortQoSRules(ctx context.Context, portName OVNSwitchPort) ([]string, error) {
+	var qosRules []ovnNB.QoS
+
+	err := o.client.WhereCache(func(qosRule *ovnNB.QoS) bool {
+		return qosRule.ExternalIDs != nil && qosRule.ExternalIDs[ovnExtIDIncusSwitchPort] == string(portName)
+	}).List(ctx, &qosRules)
+	if err != nil {
+		return nil, err
+	}
+
+	var ruleUUIDs []string
+	for _, qosRule := range qosRules {
+		ruleUUIDs = append(ruleUUIDs, qosRule.UUID)
+	}
+
+	return ruleUUIDs, nil
+}
+
 // logicalSwitchPortACLRules returns the ACL rule UUIDs belonging to a logical switch port.
 func (o *NB) logicalSwitchPortACLRules(ctx context.Context, portName OVNSwitchPort) ([]string, error) {
 	acls := []ovnNB.ACL{}
@@ -2112,6 +2141,7 @@ func (o *NB) UpdateLogicalSwitchPortDNS(ctx context.Context, switchName OVNSwitc
 			}
 
 			dnsIPsStr.WriteString(dnsIP.String())
+			dnsRecord.Records[strings.TrimSuffix(localUtil.ReverseDNS(dnsIP), ".")] = strings.ToLower(dnsName)
 		}
 
 		dnsRecord.Records[strings.ToLower(dnsName)] = dnsIPsStr.String()
@@ -2369,6 +2399,18 @@ func (o *NB) CleanupLogicalSwitchPort(ctx context.Context, portName OVNSwitchPor
 
 	operations = append(operations, deleteOps...)
 
+	removeQoSRuleUUIDs, err := o.logicalSwitchPortQoSRules(ctx, portName)
+	if err != nil {
+		return err
+	}
+
+	deleteOps, err = o.qosRuleDeleteOperations(ctx, "logical_switch", string(switchName), removeQoSRuleUUIDs)
+	if err != nil {
+		return err
+	}
+
+	operations = append(operations, deleteOps...)
+
 	// Remove logical switch port.
 	deleteOps, err = o.logicalSwitchPortDeleteOperations(ctx, switchName, portName)
 	if err != nil {
@@ -2379,7 +2421,7 @@ func (o *NB) CleanupLogicalSwitchPort(ctx context.Context, portName OVNSwitchPor
 
 	// Remove DNS records.
 	if dnsUUID != "" {
-		deleteOps, err := o.logicalSwitchPortDeleteDNSOperations(ctx, switchName, dnsUUID, false)
+		deleteOps, err := o.logicalSwitchPortDeleteDNSOperations(ctx, switchName, dnsUUID, true)
 		if err != nil {
 			return err
 		}
@@ -2924,6 +2966,135 @@ func (o *NB) UpdatePortGroupACLRules(ctx context.Context, portGroupName OVNPortG
 	}
 
 	return nil
+}
+
+// AddLogicalSwitchQoSRules applies a set of rules to the specified logical switch port.
+func (o *NB) AddLogicalSwitchQoSRules(ctx context.Context, switchName OVNSwitch, switchPortName OVNSwitchPort, qosRules ...OVNQoSRule) error {
+	var operations []ovsdb.Operation
+
+	// Add new rules.
+	externalIDs := map[string]string{
+		ovnExtIDIncusSwitch:     string(switchName),
+		ovnExtIDIncusSwitchPort: string(switchPortName),
+	}
+
+	createOps, err := o.qosRuleAddOperations(ctx, "logical_switch", string(switchName), externalIDs, nil, qosRules...)
+	if err != nil {
+		return err
+	}
+
+	operations = append(operations, createOps...)
+
+	resp, err := o.client.Transact(ctx, operations...)
+	if err != nil {
+		return err
+	}
+
+	_, err = ovsdb.CheckOperationResults(resp, operations)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (o *NB) qosRuleAddOperations(ctx context.Context, entityTable string, entityName string, externalIDs map[string]string, matchReplace map[string]string, qosRules ...OVNQoSRule) ([]ovsdb.Operation, error) {
+	operations := []ovsdb.Operation{}
+
+	for i, rule := range qosRules {
+		// Perform any replacements requested on the Match string.
+		for find, replace := range matchReplace {
+			rule.Match = strings.ReplaceAll(rule.Match, find, replace)
+		}
+
+		// Add new QoS.
+		qos := ovnNB.QoS{
+			UUID:        fmt.Sprintf("qos%d", i),
+			Action:      rule.Action,
+			Direction:   rule.Direction,
+			Bandwidth:   rule.Bandwidth,
+			Priority:    rule.Priority,
+			Match:       rule.Match,
+			ExternalIDs: map[string]string{},
+		}
+
+		maps.Copy(qos.ExternalIDs, externalIDs)
+
+		createOps, err := o.client.Create(&qos)
+		if err != nil {
+			return nil, err
+		}
+
+		operations = append(operations, createOps...)
+
+		if entityTable != "logical_switch" {
+			return nil, fmt.Errorf("Unsupported entity table %q", entityTable)
+		}
+
+		ls := ovnNB.LogicalSwitch{
+			Name: entityName,
+		}
+
+		// Add QOS rule to entity.
+		updateOps, err := o.client.Where(&ls).Mutate(&ls, ovsModel.Mutation{
+			Field:   &ls.QOSRules,
+			Mutator: ovsdb.MutateOperationInsert,
+			Value:   []string{qos.UUID},
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		operations = append(operations, updateOps...)
+	}
+
+	return operations, nil
+}
+
+func (o *NB) qosRuleDeleteOperations(ctx context.Context, entityTable string, entityName string, qosRuleUUIDs []string) ([]ovsdb.Operation, error) {
+	var operations []ovsdb.Operation
+
+	for _, qosRuleUUID := range qosRuleUUIDs {
+		// Get the QOS.
+		qos := ovnNB.QoS{
+			UUID: qosRuleUUID,
+		}
+
+		err := o.get(ctx, &qos)
+		if err != nil {
+			return nil, err
+		}
+
+		// Delete the QOS.
+		deleteOps, err := o.client.Where(&qos).Delete()
+		if err != nil {
+			return nil, err
+		}
+
+		operations = append(operations, deleteOps...)
+
+		if entityTable != "logical_switch" {
+			return nil, fmt.Errorf("Unsupported entity table %q", entityTable)
+		}
+
+		ls := ovnNB.LogicalSwitch{
+			Name: entityName,
+		}
+
+		// Remove QOS rule from entity.
+		updateOps, err := o.client.Where(&ls).Mutate(&ls, ovsModel.Mutation{
+			Field:   &ls.QOSRules,
+			Mutator: ovsdb.MutateOperationDelete,
+			Value:   []string{qos.UUID},
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		operations = append(operations, updateOps...)
+	}
+
+	return operations, nil
 }
 
 // aclRuleAddOperations returns the operations to add the provided ACL rules to the specified OVN entity.

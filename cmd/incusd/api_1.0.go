@@ -130,6 +130,7 @@ var api10 = []APIEndpoint{
 	storagePoolVolumesTypeCmd,
 	storagePoolVolumeTypeCmd,
 	storagePoolVolumeTypeSFTPCmd,
+	storagePoolVolumeTypeFileCmd,
 	storagePoolVolumeTypeCustomBackupsCmd,
 	storagePoolVolumeTypeCustomBackupCmd,
 	storagePoolVolumeTypeCustomBackupExportCmd,
@@ -673,7 +674,12 @@ func doApi10Update(d *Daemon, r *http.Request, req api.ServerPut, patch bool) re
 				return fmt.Errorf("Failed to load node config: %w", err)
 			}
 
-			_, err = newNodeConfig.Replace(nodeValues)
+			if patch {
+				_, err = newNodeConfig.Patch(nodeValues)
+			} else {
+				_, err = newNodeConfig.Replace(nodeValues)
+			}
+
 			if err != nil {
 				return fmt.Errorf("Failed updating node config: %w", err)
 			}
@@ -734,7 +740,12 @@ func doApi10Update(d *Daemon, r *http.Request, req api.ServerPut, patch bool) re
 				return fmt.Errorf("Failed to load cluster config: %w", err)
 			}
 
-			_, err = newClusterConfig.Replace(req.Config)
+			if patch {
+				_, err = newClusterConfig.Patch(req.Config)
+			} else {
+				_, err = newClusterConfig.Replace(req.Config)
+			}
+
 			if err != nil {
 				return fmt.Errorf("Failed updating cluster config: %w", err)
 			}
@@ -838,7 +849,7 @@ func doApi10UpdateTriggers(d *Daemon, nodeChanged, clusterChanged map[string]str
 		case "network.ovn.northbound_connection", "network.ovn.ca_cert", "network.ovn.client_cert", "network.ovn.client_key":
 			ovnChanged = true
 
-		case "oidc.issuer", "oidc.client.id", "oidc.audience", "oidc.claim":
+		case "oidc.issuer", "oidc.client.id", "oidc.audience", "oidc.claim", "oidc.scopes":
 			oidcChanged = true
 
 		case "openfga.api.url", "openfga.api.token", "openfga.store.id":

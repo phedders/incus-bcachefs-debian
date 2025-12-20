@@ -3,18 +3,22 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strings"
+	"time"
 
+	"github.com/shirou/gopsutil/v4/disk"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
+	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/debug"
+	"golang.org/x/sys/windows/svc/eventlog"
 
 	"github.com/lxc/incus/v6/internal/server/metrics"
 	"github.com/lxc/incus/v6/internal/version"
@@ -23,11 +27,89 @@ import (
 )
 
 var (
-	osShutdownSignal       = os.Interrupt
+	// https://dev.to/cosmic_predator/writing-a-windows-service-in-go-1d1m
 	osBaseWorkingDirectory = "C:\\"
-	osMetricsSupported     = false
-	osGuestAPISupport      = false
+	osAgentConfigPath      = "C:\\Program Files\\Incus-Agent\\incus-agent.yml"
 )
+
+// Start of Windows service code block
+// Inspired of https://github.com/golang/sys/blob/master/windows/svc/example/service.go
+var elog debug.Log
+
+type incusAgentService struct {
+	agentCmd *cmdAgent
+}
+
+func (m *incusAgentService) Execute(args []string, r <-chan svc.ChangeRequest, changes chan<- svc.Status) (ssec bool, errno uint32) {
+	const cmdsAccepted = svc.AcceptStop | svc.AcceptShutdown
+
+	tick := time.Tick(2 * time.Second)
+
+	changes <- svc.Status{State: svc.StartPending}
+
+	d := newDaemon(m.agentCmd.global.flagLogDebug, m.agentCmd.global.flagLogVerbose, m.agentCmd.global.flagSecretsLocation)
+
+	// Start the server.
+	err := startHTTPServer(d, m.agentCmd.global.flagLogDebug)
+	if err != nil {
+		changes <- svc.Status{State: svc.StopPending}
+		elog.Error(1, fmt.Sprintf("Failed to start HTTP server: %s", err))
+		return
+	}
+
+	changes <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
+loop:
+	for {
+		select {
+		case <-tick:
+		case c := <-r:
+			switch c.Cmd {
+			case svc.Interrogate:
+				changes <- c.CurrentStatus
+			case svc.Stop, svc.Shutdown:
+				break loop
+			default:
+				elog.Error(1, fmt.Sprintf("Unexpected control request #%d", c))
+			}
+		}
+	}
+
+	changes <- svc.Status{State: svc.StopPending}
+
+	return
+}
+
+func runService(name string, agentCmd *cmdAgent) error {
+	var err error
+
+	if agentCmd.global.flagLogDebug {
+		elog = debug.New(name)
+	} else {
+		elog, err = eventlog.Open(name)
+		if err != nil {
+			return err
+		}
+	}
+
+	defer elog.Close()
+
+	elog.Info(1, fmt.Sprintf("Starting %s service", name))
+	run := svc.Run
+	if agentCmd.global.flagLogDebug {
+		run = debug.Run
+	}
+
+	err = run(name, &incusAgentService{agentCmd: agentCmd})
+	if err != nil {
+		elog.Error(1, fmt.Sprintf("%s service failed: %v", name, err))
+		return err
+	}
+
+	elog.Info(1, fmt.Sprintf("%s service stopped", name))
+	return nil
+}
+
+// End of Windows service code block
 
 func osGetEnvironment() (*api.ServerEnvironment, error) {
 	serverName, err := os.Hostname()
@@ -47,57 +129,42 @@ func osGetEnvironment() (*api.ServerEnvironment, error) {
 	return env, nil
 }
 
-func osLoadModules() error {
-	// No OS drivers to load on Windows.
-	return nil
-}
-
 func osMountShared(src string, dst string, fstype string, opts []string) error {
 	return errors.New("Dynamic mounts aren't supported on Windows")
 }
 
-func osUmount(src string) error {
+func osUmount(src string, dst string, fstype string) error {
 	return errors.New("Dynamic mounts aren't supported on Windows")
 }
 
-func osGetCPUMetrics(d *Daemon) ([]metrics.CPUMetrics, error) {
-	return []metrics.CPUMetrics{}, errors.New("Metrics aren't supported on Windows")
-}
-
-func osGetDiskMetrics(d *Daemon) ([]metrics.DiskMetrics, error) {
-	return []metrics.DiskMetrics{}, errors.New("Metrics aren't supported on Windows")
-}
-
 func osGetFilesystemMetrics(d *Daemon) ([]metrics.FilesystemMetrics, error) {
-	return []metrics.FilesystemMetrics{}, errors.New("Metrics aren't supported on Windows")
-}
-
-func osGetMemoryMetrics(d *Daemon) (metrics.MemoryMetrics, error) {
-	return metrics.MemoryMetrics{}, errors.New("Metrics aren't supported on Windows")
-}
-
-func osGetCPUState() api.InstanceStateCPU {
-	return api.InstanceStateCPU{}
-}
-
-func osGetMemoryState() api.InstanceStateMemory {
-	return api.InstanceStateMemory{}
-}
-
-func osGetNetworkState() map[string]api.InstanceStateNetwork {
-	return map[string]api.InstanceStateNetwork{}
-}
-
-func osGetProcessesState() int64 {
-	pids := make([]uint32, 65536)
-	pidBytes := uint32(0)
-
-	err := windows.EnumProcesses(pids, &pidBytes)
+	partitions, err := disk.Partitions(true)
 	if err != nil {
-		return -1
+		return nil, err
 	}
 
-	return int64(pidBytes / 4)
+	sort.Slice(partitions, func(i, j int) bool {
+		return partitions[i].Mountpoint < partitions[j].Mountpoint
+	})
+
+	fsMetrics := make([]metrics.FilesystemMetrics, 0, len(partitions))
+	for _, partition := range partitions {
+		usage, err := disk.Usage(partition.Mountpoint)
+		if err != nil {
+			continue
+		}
+
+		fsMetrics = append(fsMetrics, metrics.FilesystemMetrics{
+			Device:         partition.Device,
+			Mountpoint:     partition.Mountpoint,
+			FSType:         partition.Fstype,
+			AvailableBytes: usage.Free,
+			FreeBytes:      usage.Free,
+			SizeBytes:      usage.Total,
+		})
+	}
+
+	return fsMetrics, nil
 }
 
 func osGetOSState() *api.InstanceStateOSInfo {
@@ -151,11 +218,6 @@ func osGetOSState() *api.InstanceStateOSInfo {
 	return osInfo
 }
 
-func osReconfigureNetworkInterfaces() {
-	// Agent assisted network reconfiguration isn't currently supported.
-	return
-}
-
 func osGetInteractiveConsole(s *execWs) (io.ReadWriteCloser, io.ReadWriteCloser, error) {
 	return nil, nil, errors.New("Only non-interactive exec sessions are currently supported on Windows")
 }
@@ -177,21 +239,17 @@ func osExitStatus(err error) (int, error) {
 	return 0, err
 }
 
-func osExecWrapper(ctx context.Context, pty io.ReadWriteCloser) io.ReadWriteCloser {
-	return pty
-}
-
-func osGetListener(port int64) (net.Listener, error) {
-	l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return nil, fmt.Errorf("Failed to listen on TCP: %w", err)
-	}
-
-	logger.Info("Started TCP listener")
-
-	return l, nil
-}
-
 func osSetEnv(post *api.InstanceExecPost, env map[string]string) {
-	env["PATH"] = "C:\\WINDOWS\\system32;C:\\WINDOWS"
+	// SystemRoot is already set by default
+	env["SystemDrive"] = "C:"
+	env["WINDIR"] = fmt.Sprintf("%s\\WINDOWS", env["SystemDrive"])
+	system32 := fmt.Sprintf("%s\\System32", env["WINDIR"])
+	env["TMP"] = fmt.Sprintf("%s\\Temp", env["WINDIR"])
+	env["TEMP"] = env["TMP"]
+	env["PATH"] = fmt.Sprintf("%s;%s;%s\\WindowsPowerShell\\v1.0", system32, env["WINDIR"], system32)
+
+	// Set the default working directory.
+	if post.Cwd == "" {
+		post.Cwd = system32
+	}
 }

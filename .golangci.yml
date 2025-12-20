@@ -59,8 +59,22 @@ linters:
           - revive
         source: '^//generate-database:mapper '
       - linters:
+          - revive
+        text: "avoid package names that conflict with Go standard library package names"
+        path: "^internal/io/"
+      - linters:
+          - revive
+          - godot
+        path: "^test/mini-oidc/storage/"
+      - linters:
           - staticcheck
         text: "ST1005:"
+      - linters:
+          - godot
+        text: "Comment should end in a period"
+        source: '^// Example:'
+      - path: internal/util/
+        text: "avoid meaningless package names"
     paths:
       - third_party$
       - builtin$

@@ -151,6 +151,11 @@ func (d *zone) Etag() []any {
 
 // validateName checks name is valid.
 func (d *zone) validateName(name string) error {
+	// Allow root records.
+	if name == "@" {
+		return nil
+	}
+
 	return validate.IsAPIName(name, false)
 }
 
@@ -430,8 +435,8 @@ func (d *zone) Content() (*strings.Builder, error) {
 			includeV6 := includeNAT || util.IsFalseOrEmpty(netConfig["ipv6.nat"])
 
 			// Check if dealing with a reverse zone.
-			isReverse4 := strings.HasSuffix(d.info.Name, ip4Arpa)
-			isReverse6 := strings.HasSuffix(d.info.Name, ip6Arpa)
+			isReverse4 := strings.HasSuffix(d.info.Name, localUtil.IPv4Arpa)
+			isReverse6 := strings.HasSuffix(d.info.Name, localUtil.IPv6Arpa)
 			isReverse := isReverse4 || isReverse6
 
 			genRecord := func(name string, ip net.IP) map[string]string {
@@ -468,7 +473,7 @@ func (d *zone) Content() (*strings.Builder, error) {
 					}
 
 					// Get the ARPA record.
-					reverseAddr := reverse(ip)
+					reverseAddr := localUtil.ReverseDNS(ip)
 					if reverseAddr == "" {
 						return nil
 					}
@@ -558,7 +563,7 @@ func (d *zone) Content() (*strings.Builder, error) {
 	// Get the nameservers.
 	nameservers := []string{}
 	for _, entry := range strings.Split(d.info.Config["dns.nameservers"], ",") {
-		entry = strings.TrimSpace(entry)
+		entry = strings.TrimSuffix(strings.TrimSpace(entry), ".")
 		if entry == "" {
 			continue
 		}

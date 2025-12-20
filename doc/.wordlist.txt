@@ -9,6 +9,7 @@ allocator
 AMD
 Ansible
 Ansible's
+API
 APIs
 AppArmor
 ARMv
@@ -261,6 +262,7 @@ scalable
 scriptlet
 SDN
 Seccomp
+SELinux
 SEV
 SFTP
 SHA
@@ -306,6 +308,7 @@ syscall
 syscalls
 sysfs
 syslog
+systemd
 Tbit
 TCP
 Telegraf
