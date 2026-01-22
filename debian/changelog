@@ -1,4 +1,4 @@
-incus (6.0.5-8) UNRELEASED; urgency=high
+incus (6.0.5-8) unstable; urgency=high
 
   * Cherry-pick fixes for the following security issues:
     - CVE-2026-23953 / GHSA-x6jc-phwx-hp32
@@ -7,7 +7,7 @@ incus (6.0.5-8) UNRELEASED; urgency=high
     - Update Standards-Version to 4.7.3, drop Priority field
   * Update years in d/copyright
 
- -- Mathias Gibbens <gibmat@debian.org>  Thu, 22 Jan 2026 04:00:14 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Thu, 22 Jan 2026 04:04:24 +0000
 
 incus (6.0.5-7) unstable; urgency=medium
 
