@@ -1,3 +1,12 @@
+incus (6.21.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Includes fixes for CVE-2026-23953 and CVE-2026-23954
+    - Update IncusOS network struct and cli patch
+  * Update Build-Depends and Depends in d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 23 Jan 2026 14:16:05 +0000
+
 incus (6.0.5-8) unstable; urgency=high
 
   * Cherry-pick fixes for the following security issues:
