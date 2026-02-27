@@ -15,7 +15,7 @@ index ade6c66b3..5cb235446 100644
  
  	internalIO "github.com/lxc/incus/v6/internal/io"
 diff --git a/cmd/incusd/instance_console.go b/cmd/incusd/instance_console.go
-index 4e4f51860..72a39eb6f 100644
+index 5c1b291ce..1d134c905 100644
 --- a/cmd/incusd/instance_console.go
 +++ b/cmd/incusd/instance_console.go
 @@ -17,7 +17,7 @@ import (
@@ -54,12 +54,12 @@ index eb143e3b5..a37fe6d1a 100644
  )
  
 diff --git a/cmd/incusd/main_forkstart.go b/cmd/incusd/main_forkstart.go
-index aad7fcb73..5b1c4612d 100644
+index f6f3fb2d0..2c6973fa0 100644
 --- a/cmd/incusd/main_forkstart.go
 +++ b/cmd/incusd/main_forkstart.go
-@@ -5,7 +5,7 @@ import (
- 	"fmt"
+@@ -6,7 +6,7 @@ import (
  	"os"
+ 	"path/filepath"
  
 -	liblxc "github.com/lxc/go-lxc"
 +	liblxc "gopkg.in/lxc/go-lxc.v2"
@@ -67,7 +67,7 @@ index aad7fcb73..5b1c4612d 100644
  	"golang.org/x/sys/unix"
  
 diff --git a/cmd/incusd/storage_volumes_snapshot.go b/cmd/incusd/storage_volumes_snapshot.go
-index f2f9a23db..ad3811e29 100644
+index d16b81f28..647a6bcca 100644
 --- a/cmd/incusd/storage_volumes_snapshot.go
 +++ b/cmd/incusd/storage_volumes_snapshot.go
 @@ -13,7 +13,7 @@ import (
@@ -132,7 +132,7 @@ index eb8293bf6..13661598e 100644
  	"github.com/lxc/incus/v6/internal/linux"
  	"github.com/lxc/incus/v6/internal/server/apparmor"
 diff --git a/internal/server/instance/drivers/driver_lxc.go b/internal/server/instance/drivers/driver_lxc.go
-index 767aa4211..e2e71b1f6 100644
+index 4a280e4bb..0219b76e9 100644
 --- a/internal/server/instance/drivers/driver_lxc.go
 +++ b/internal/server/instance/drivers/driver_lxc.go
 @@ -28,11 +28,11 @@ import (
@@ -150,10 +150,10 @@ index 767aa4211..e2e71b1f6 100644
  	"github.com/pkg/sftp"
  	"golang.org/x/sync/errgroup"
 diff --git a/internal/server/instance/drivers/driver_qemu.go b/internal/server/instance/drivers/driver_qemu.go
-index 02d004ee0..17ae380f5 100644
+index 0e5262786..4d55d8d87 100644
 --- a/internal/server/instance/drivers/driver_qemu.go
 +++ b/internal/server/instance/drivers/driver_qemu.go
-@@ -32,7 +32,7 @@ import (
+@@ -31,7 +31,7 @@ import (
  	"time"
  	"unsafe"
  
@@ -163,7 +163,7 @@ index 02d004ee0..17ae380f5 100644
  	"github.com/gorilla/websocket"
  	"github.com/kballard/go-shellquote"
 diff --git a/internal/server/instance/instance_interface.go b/internal/server/instance/instance_interface.go
-index e313814a6..74f4654bc 100644
+index 4716d3868..9362b6e67 100644
 --- a/internal/server/instance/instance_interface.go
 +++ b/internal/server/instance/instance_interface.go
 @@ -8,7 +8,7 @@ import (
@@ -189,7 +189,7 @@ index 15b2a9af1..7c441a060 100644
  
  	incus "github.com/lxc/incus/v6/client"
 diff --git a/internal/server/network/driver_ovn.go b/internal/server/network/driver_ovn.go
-index dc9c18378..09056efb6 100644
+index 4bc0deea2..91f89a1ad 100644
 --- a/internal/server/network/driver_ovn.go
 +++ b/internal/server/network/driver_ovn.go
 @@ -18,7 +18,7 @@ import (

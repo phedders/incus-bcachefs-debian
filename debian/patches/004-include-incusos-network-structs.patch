@@ -16,7 +16,7 @@ index 36a6e73d2..4ad31af10 100644
  // IncusOS management command.
 diff --git a/incus-osd/api/system_network.go b/incus-osd/api/system_network.go
 new file mode 100644
-index 000000000..6643738d6
+index 000000000..0faea0cf2
 --- /dev/null
 +++ b/incus-osd/api/system_network.go
 @@ -0,0 +1,296 @@
@@ -134,7 +134,7 @@ index 000000000..6643738d6
 +	Name              string                       `json:"name"                          yaml:"name"`
 +	Peers             []SystemNetworkWireguardPeer `json:"peers,omitempty"               yaml:"peers,omitempty"`
 +	Port              int                          `json:"port,omitempty"                yaml:"port,omitempty"`
-+	PrivateKey        string                       `json:"private_key,omitempty"         yaml:"private_key,omitempty"`
++	PrivateKey        string                       `json:"private_key,omitempty"         yaml:"private_key,omitempty"` //nolint:gosec
 +	RequiredForOnline string                       `json:"required_for_online,omitempty" yaml:"required_for_online,omitempty"`
 +	Roles             []string                     `json:"roles,omitempty"               yaml:"roles,omitempty"`
 +	Routes            []SystemNetworkRoute         `json:"routes,omitempty"              yaml:"routes,omitempty"`
@@ -179,7 +179,7 @@ index 000000000..6643738d6
 +type SystemNetworkProxyServer struct {
 +	Auth     string `json:"auth"               yaml:"auth"`
 +	Host     string `json:"host"               yaml:"host"`
-+	Password string `json:"password,omitempty" yaml:"password,omitempty"`
++	Password string `json:"password,omitempty" yaml:"password,omitempty"` //nolint:gosec
 +	Realm    string `json:"realm,omitempty"    yaml:"realm,omitempty"`
 +	Username string `json:"username,omitempty" yaml:"username,omitempty"`
 +	UseTLS   bool   `json:"use_tls"            yaml:"use_tls"`
@@ -318,10 +318,10 @@ index 000000000..6643738d6
 +}
 diff --git a/incus-osd/cli/cli_applications.go b/incus-osd/cli/cli_applications.go
 new file mode 100644
-index 000000000..ab4a21c7b
+index 000000000..4bdde6a86
 --- /dev/null
 +++ b/incus-osd/cli/cli_applications.go
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,103 @@
 +package cli
 +
 +import (
@@ -362,6 +362,18 @@ index 000000000..ab4a21c7b
 +		hasFileOutput: true,
 +	}
 +	cmd.AddCommand(backupCmd.command())
++
++	// Debug.
++	debugCmd := cmdGenericRun{
++		os:          c.os,
++		action:      "debug",
++		description: "Debug the application",
++		endpoint:    "applications",
++		entity:      "application",
++		hasData:     true,
++		defaultData: "{}",
++	}
++	cmd.AddCommand(debugCmd.command())
 +
 +	// Factory reset.
 +	factoryResetCmd := cmdGenericRun{
@@ -415,10 +427,10 @@ index 000000000..ab4a21c7b
 +}
 diff --git a/incus-osd/cli/cli_debug.go b/incus-osd/cli/cli_debug.go
 new file mode 100644
-index 000000000..df0810d3e
+index 000000000..30ea2eb98
 --- /dev/null
 +++ b/incus-osd/cli/cli_debug.go
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,248 @@
 +package cli
 +
 +import (
@@ -445,6 +457,14 @@ index 000000000..df0810d3e
 +	// Log.
 +	logCmd := cmdAdminOSDebugLog{os: c.os}
 +	cmd.AddCommand(logCmd.command())
++
++	// Processes.
++	processesCmd := cmdAdminOSDebugProcesses{os: c.os}
++	cmd.AddCommand(processesCmd.command())
++
++	// Secure boot.
++	secureBootCmd := cmdAdminOSDebugSecureBoot{os: c.os}
++	cmd.AddCommand(secureBootCmd.command())
 +
 +	// Workaround for subcommand usage errors. See: https://github.com/spf13/cobra/issues/706.
 +	cmd.Args = cobra.NoArgs
@@ -563,6 +583,102 @@ index 000000000..df0810d3e
 +
 +	return nil
 +}
++
++// Processes.
++type cmdAdminOSDebugProcesses struct {
++	os *cmdAdminOS
++}
++
++func (c *cmdAdminOSDebugProcesses) command() *cobra.Command {
++	cmd := &cobra.Command{}
++	cmd.Use = cli.Usage("processes")
++	cmd.Short = "Get the system processes"
++
++	cmd.Long = cli.FormatSection("Description", "Get the system processes")
++	if c.os.args.SupportsTarget {
++		cmd.Flags().StringVar(&c.os.flagTarget, "target", "", "Cluster member name``")
++	}
++
++	cmd.RunE = c.run
++
++	return cmd
++}
++
++func (c *cmdAdminOSDebugProcesses) run(cmd *cobra.Command, args []string) error {
++	// Quick checks.
++	exit, err := cli.CheckArgs(cmd, args, 0, 1)
++	if exit {
++		return err
++	}
++
++	// Parse remote.
++	remote := ""
++	if len(args) > 0 {
++		remote, _ = parseRemote(args[0])
++	}
++
++	// Prepare the URL.
++	u, err := url.Parse("/os/1.0/debug/processes")
++	if err != nil {
++		return err
++	}
++
++	// Get the log.
++	resp, _, err := doQuery(c.os.args.DoHTTP, remote, "GET", u.String(), nil, nil, "")
++	if err != nil {
++		return err
++	}
++
++	var data string
++
++	err = resp.MetadataAsStruct(&data)
++	if err != nil {
++		return err
++	}
++
++	_, err = fmt.Print(data) //nolint:forbidigo
++	if err != nil {
++		return err
++	}
++
++	return nil
++}
++
++// IncusOS debug secureboot command.
++type cmdAdminOSDebugSecureBoot struct {
++	os *cmdAdminOS
++}
++
++func (c *cmdAdminOSDebugSecureBoot) command() *cobra.Command {
++	cmd := &cobra.Command{}
++	cmd.Use = cli.Usage("secureboot")
++	cmd.Short = "Debug IncusOS secureboot"
++	cmd.Long = cli.FormatSection("Description", "Debug IncusOS secureboot")
++
++	// Event log.
++	eventLogCmd := cmdGenericShow{
++		os:          c.os,
++		endpoint:    "debug/secureboot/event-log",
++		name:        "event-log",
++		description: "Show the TPM event log",
++	}
++	cmd.AddCommand(eventLogCmd.command())
++
++	// Update.
++	updateCmd := cmdGenericRun{
++		os:          c.os,
++		action:      "update",
++		description: "Update the secureboot keys",
++		endpoint:    "debug/secureboot",
++	}
++	cmd.AddCommand(updateCmd.command())
++
++	// Workaround for subcommand usage errors. See: https://github.com/spf13/cobra/issues/706.
++	cmd.Args = cobra.NoArgs
++	cmd.Run = func(cmd *cobra.Command, _ []string) { _ = cmd.Usage() }
++
++	return cmd
++}
 diff --git a/incus-osd/cli/cli_root.go b/incus-osd/cli/cli_root.go
 new file mode 100644
 index 000000000..2fdd471a7
@@ -678,10 +794,10 @@ index 000000000..05cc5dade
 +}
 diff --git a/incus-osd/cli/cli_system.go b/incus-osd/cli/cli_system.go
 new file mode 100644
-index 000000000..daea1cf79
+index 000000000..37a529255
 --- /dev/null
 +++ b/incus-osd/cli/cli_system.go
-@@ -0,0 +1,250 @@
+@@ -0,0 +1,279 @@
 +package cli
 +
 +import (
@@ -761,6 +877,16 @@ index 000000000..daea1cf79
 +		},
 +	}
 +	cmd.AddCommand(restoreCmd.command())
++
++	// Suspend.
++	suspendCmd := cmdGenericRun{
++		os:          c.os,
++		action:      "suspend",
++		description: "Suspend the system",
++		endpoint:    "system",
++		confirm:     "suspend the system",
++	}
++	cmd.AddCommand(suspendCmd.command())
 +
 +	// Add sub-commands.
 +	type subCommand struct {
@@ -849,6 +975,25 @@ index 000000000..daea1cf79
 +					confirm:     "delete the storage volume",
 +				}
 +
++				// Encrypt drive.
++				encryptDriveCmd := cmdGenericRun{
++					os:          c.os,
++					action:      "encrypt-drive",
++					description: "Encrypt the drive",
++					endpoint:    "system/storage",
++					hasData:     true,
++					confirm:     "wipe and encrypt the drive",
++				}
++
++				// Import encrypted drive.
++				importEncryptedDriveCmd := cmdGenericRun{
++					os:          c.os,
++					action:      "import-encrypted-drive",
++					description: "Import an existing encrypted drive",
++					endpoint:    "system/storage",
++					hasData:     true,
++				}
++
 +				// Import storage pool.
 +				importPoolCmd := cmdGenericRun{
 +					os:          c.os,
@@ -878,7 +1023,7 @@ index 000000000..daea1cf79
 +					hasData:     true,
 +				}
 +
-+				return []*cobra.Command{createVolumeCmd.command(), deletePoolCmd.command(), deleteVolumeCmd.command(), importPoolCmd.command(), wipeDriveCmd.command(), scrubPoolCmd.command()}
++				return []*cobra.Command{createVolumeCmd.command(), deletePoolCmd.command(), deleteVolumeCmd.command(), encryptDriveCmd.command(), importEncryptedDriveCmd.command(), importPoolCmd.command(), wipeDriveCmd.command(), scrubPoolCmd.command()}
 +			},
 +		},
 +		{
@@ -942,19 +1087,21 @@ index 000000000..611ab0017
 +package cli
 diff --git a/incus-osd/cli/generic.go b/incus-osd/cli/generic.go
 new file mode 100644
-index 000000000..87219718c
+index 000000000..cacf5246e
 --- /dev/null
 +++ b/incus-osd/cli/generic.go
-@@ -0,0 +1,536 @@
+@@ -0,0 +1,571 @@
 +package cli
 +
 +import (
 +	"bufio"
++	"encoding/json"
 +	"errors"
 +	"fmt"
 +	"io"
 +	"net/url"
 +	"os"
++	"slices"
 +	"sort"
 +	"strings"
 +
@@ -1383,13 +1530,18 @@ index 000000000..87219718c
 +type cmdGenericShow struct {
 +	os *cmdAdminOS
 +
++	name        string
++	description string
 +	endpoint    string
 +	entity      string
 +	entityShort string
++
++	flagFormat string
 +}
 +
 +func (c *cmdGenericShow) command() *cobra.Command {
-+	name := "Show details"
++	description := "Show details"
++	name := "show"
 +
 +	usage := ""
 +	if c.os.args.SupportsRemote {
@@ -1397,14 +1549,23 @@ index 000000000..87219718c
 +	}
 +
 +	if c.entity != "" {
-+		name = "Show " + c.entity + " details"
++		description = "Show " + c.entity + " details"
 +		usage += "<" + c.entityShort + ">"
 +	}
 +
++	if c.description != "" {
++		description = c.description
++	}
++
++	if c.name != "" {
++		name = c.name
++	}
++
 +	cmd := &cobra.Command{}
-+	cmd.Use = cli.Usage("show", usage)
-+	cmd.Short = name
-+	cmd.Long = cli.FormatSection("Description", name)
++	cmd.Use = cli.Usage(name, usage)
++	cmd.Short = description
++	cmd.Long = cli.FormatSection("Description", description)
++	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", "yaml", "Format (json|yaml)")
 +
 +	if c.os.args.SupportsTarget {
 +		cmd.Flags().StringVar(&c.os.flagTarget, "target", "", "Cluster member name``")
@@ -1432,6 +1593,10 @@ index 000000000..87219718c
 +	exit, err := cli.CheckArgs(cmd, args, minArgs, maxArgs)
 +	if exit {
 +		return err
++	}
++
++	if !slices.Contains([]string{"json", "yaml"}, c.flagFormat) {
++		return errors.New("unsupported format: " + c.flagFormat)
 +	}
 +
 +	// Parse remote.
@@ -1473,9 +1638,24 @@ index 000000000..87219718c
 +		return err
 +	}
 +
-+	data, err := yaml.Marshal(rawData)
-+	if err != nil {
-+		return err
++	var data []byte
++
++	switch c.flagFormat {
++	case "json":
++		data, err = json.MarshalIndent(rawData, "", "    ")
++		if err != nil {
++			return err
++		}
++
++		data = append(data, '\n')
++
++	case "yaml":
++		data, err = yaml.Marshal(rawData)
++		if err != nil {
++			return err
++		}
++
++	default:
 +	}
 +
 +	_, _ = fmt.Printf("%s", data) //nolint:forbidigo
@@ -1514,10 +1694,10 @@ index 000000000..e12b0e7a2
 +}
 diff --git a/incus-osd/cli/utils.go b/incus-osd/cli/utils.go
 new file mode 100644
-index 000000000..16495f567
+index 000000000..6a075b05c
 --- /dev/null
 +++ b/incus-osd/cli/utils.go
-@@ -0,0 +1,166 @@
+@@ -0,0 +1,167 @@
 +package cli
 +
 +import (
@@ -1680,6 +1860,7 @@ index 000000000..16495f567
 +		for i, v := range x {
 +			x[i] = makeJsonable(v)
 +		}
++	default:
 +	}
 +
 +	return data
