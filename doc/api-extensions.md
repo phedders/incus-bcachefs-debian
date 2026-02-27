@@ -2981,3 +2981,51 @@ This introduces two new properties for NICs:
 
 * `attached`, behaving like the `attached` key for disk and USB devices;
 * `connected`, setting the up/down link state for the NIC (when supported).
+
+## `nic_sriov_security_trusted`
+
+This introduces a new property for SR-IOV NICs:
+
+* `security.trusted` allows setting the `trusted` flag for the virtual function if the parent NIC supports it.
+
+## `direct_backup`
+
+This allows to perform backups of instances, custom storage volumes and storage buckets without disk buffering when the `Accept` header is set to `application/octet-stream` in the respective POST API endpoints. Doing so, said POST endpoints return the data stream instead of creating a backup entry in the database.
+
+## `instance_snapshot_disk_only_restore`
+
+This adds support for only restoring the disk of a snapshotted instance.
+
+## `unix_hotplug_pci`
+
+Adds a `pci` configuration key on the `unix-hotplug` device to allow filtering based on the USB controller PCI address.
+
+## `cluster_evacuating_restoring`
+
+Introduces new `Evacuating` and `Restoring` cluster member states.
+
+## `projects_restricted_image_servers`
+
+Introduces a new `restricted.images.servers` project configuration option.
+This allows specifying a comma separate list of image server domains from which the user may download images.
+
+## `storage_lvmcluster_size`
+
+Adds support for specifying the `size` parameter when updating `lvmcluster` storage pool.
+
+## `authorization_scriptlet_cert`
+
+This adds two fields, `Chain` and `Certificate`, to the `details`
+argument of the authorization scriptlet, to give more information about
+the client to authorize.
+
+## `lvmcluster_remove_snapshots`
+
+It is a Boolean that defaults to `false`. When set to `true`, it instructs Incus
+to remove any required snapshots when attempting to restore another snapshot.
+
+This is necessary because `lvmcluster` only allows restoring the latest snapshot.
+
+## `daemon_storage_logs`
+
+This adds `storage.logs_volume` alongside the existing `storage.backups_volume` and `storage.images_volume`.
