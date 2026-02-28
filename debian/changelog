@@ -1,4 +1,4 @@
-incus (6.22.0-1~exp1) UNRELEASED; urgency=medium
+incus (6.22.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release:
     - Build MacOS version of incus-agent
@@ -6,7 +6,7 @@ incus (6.22.0-1~exp1) UNRELEASED; urgency=medium
     - Update IncusOS network struct and cli patch
   * Update Build-Depends and Depends in d/control
 
- -- Mathias Gibbens <gibmat@debian.org>  Fri, 27 Feb 2026 16:57:53 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 28 Feb 2026 15:26:15 +0000
 
 incus (6.21.0-1~exp1) experimental; urgency=medium
 
