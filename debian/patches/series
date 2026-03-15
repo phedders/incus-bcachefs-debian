@@ -3,10 +3,3 @@
 003-Compile-against-go-criu-v7.patch
 004-include-incusos-network-structs.patch
 005-revert-4e828ca.patch
-006-update-libovsdb-import-path.patch
-007-cherry-pick-fix-nested-docker.patch
-106a-GHSA-56mx-8g9f-5crf.patch
-106b-GHSA-56mx-8g9f-5crf.patch
-106c-GHSA-56mx-8g9f-5crf.patch
-107-CVE-2026-23953.patch
-108-CVE-2026-23954.patch

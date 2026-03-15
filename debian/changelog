@@ -1,3 +1,12 @@
+incus (6.0.6-1) unstable; urgency=medium
+
+  * New upstream release:
+    - Update Build-Depends and Depends
+    - Rebase patches as needed
+    - Drop patches applied upstream
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 15 Mar 2026 16:06:22 +0000
+
 incus (6.0.5-8) unstable; urgency=high
 
   * Cherry-pick fixes for the following security issues:
