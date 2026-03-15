@@ -152,6 +152,11 @@ func (d *btrfs) Create() error {
 
 	loopPath := loopFilePath(d.name)
 	if d.config["source"] == "" || d.config["source"] == loopPath {
+		// Check for IncusOS.
+		if d.state.OS.IncusOS != nil {
+			return errors.New("Loop backed pools aren't supported on IncusOS")
+		}
+
 		// Create a loop based pool.
 		d.config["source"] = loopPath
 
@@ -268,7 +273,7 @@ func (d *btrfs) Delete(op *operations.Operation) error {
 
 	// Delete potential intermediate btrfs subvolumes.
 	for _, volType := range d.Info().VolumeTypes {
-		for _, dir := range BaseDirectories[volType] {
+		for _, dir := range BaseDirectories[volType].Paths {
 			path := filepath.Join(GetPoolMountPath(d.name), dir)
 			if !util.PathExists(path) {
 				continue
@@ -324,8 +329,39 @@ func (d *btrfs) Delete(op *operations.Operation) error {
 
 // Validate checks that all provide keys are supported and that no conflicting or missing configuration is present.
 func (d *btrfs) Validate(config map[string]string) error {
+	// gendoc:generate(entity=storage_btrfs, group=common, key=source)
+	//
+	// ---
+	//  type: string
+	//  scope: local
+	//  default: -
+	//  shortdesc: Path to an existing block device, loop file or Btrfs subvolume
+
+	// gendoc:generate(entity=storage_btrfs, group=common, key=source.wipe)
+	//
+	// ---
+	//  type: bool
+	//  scope: local
+	//  default: `false`
+	//  shortdesc: Wipe the block device specified in `source` prior to creating the storage pool
+
 	rules := map[string]func(value string) error{
-		"size":                validate.Optional(validate.IsSize),
+		// gendoc:generate(entity=storage_btrfs, group=common, key=size)
+		//
+		// ---
+		//  type: string
+		//  scope: local
+		//  default: auto (20% of free disk space, >= 5 GiB and <= 30 GiB)
+		//  shortdesc: Size of the storage pool when creating loop-based pools (in bytes, suffixes supported, can be increased to grow storage pool)
+		"size": validate.Optional(validate.IsSize),
+
+		// gendoc:generate(entity=storage_btrfs, group=common, key=btrfs.mount_options)
+		//
+		// ---
+		//  type: string
+		//  scope: global
+		//  default: `user_subvol_rm_allowed`
+		//  shortdesc: Mount options for block devices
 		"btrfs.mount_options": validate.IsAny,
 	}
 

@@ -102,10 +102,10 @@ The list of supported clouds and instance types can be found at [`https://github
 ### Launch a VM that boots from an ISO
 
 ```{note}
-When creating a Windows virtual machine, make sure to set the `image.os` property to something starting with `Windows`.
-Doing so will tell Incus to expect Windows to be running inside of the virtual machine and to tweak behavior accordingly.
+When creating a Windows or a macOS virtual machine, make sure to set the `image.os` property to something starting with `Windows` or `macOS` respectively.
+Doing so will tell Incus to expect the correct OS to be running inside of the virtual machine and to tweak behavior accordingly.
 
-This notably will cause:
+This notably will cause on Windows:
  - Some unsupported virtual devices to be disabled
  - The {abbr}`RTC (Real Time Clock)` clock to be based on system local time rather than UTC
  - IOMMU handling to switch to an Intel IOMMU controller
@@ -150,6 +150,11 @@ Now the VM can be rebooted, and it will boot from disk.
 
 ### Install the Incus Agent into virtual machine instances
 
+```{warning}
+The Incus agent relies on TLS certificates for communication between the host and guest.
+For this to work correctly, the guest clock needs to be reasonably in sync with the host.
+```
+
 In order for features like direct command execution (`incus exec`), file transfers (`incus file`) and detailed usage metrics (`incus info`)
 to work properly with virtual machines, an agent software is provided by Incus.
 
@@ -158,13 +163,19 @@ The virtual machine images from the [images](https://images.linuxcontainers.org)
 For other virtual machines, you may want to manually install the agent.
 
 ```{note}
-The Incus Agent is currently available only on Linux and Windows virtual machines.
+The Incus Agent is currently available only on Linux, Windows and macOS virtual machines.
 ```
 
 Incus provides the agent primarily through a remote `9p` file system with mount name `config`.
 Alternatively, it is possible to get the agent files through a virtual CD-ROM drive by adding a `disk` device to the instance and using `agent:config` as the `source` property.
 
     incus config device add INSTANCE-NAME agent disk source=agent:config
+
+```{note}
+The agent CD-ROM drive must remain attached to the VM as it is accessed on every boot to refresh the agent and to get the needed credentials to interact with Incus.
+```
+
+#### On Linux
 
 To install the agent on a Linux system with `9p`, you'll need to get access to the virtual machine and run the following commands:
 
@@ -186,10 +197,65 @@ The first line will mount the remote file system on the mount point `/mnt`.
 The subsequent commands will run the installation script `install.sh` to install and run the Incus Agent.
 ```
 
+#### On Windows
+
 For Windows systems, the virtual CD-ROM drive must be used.
-The agent can manually be started by opening a terminal and running (assuming `d:\` is the CD-ROM):
+The agent can be installed as a service by running the `install.ps1` file from the CD-ROM drive (by either executing the file from the explorer or terminal).
+To automatically let the agent update itself, leave the CD-ROM available to the virtual machine
+
+```{note}
+To install: The agent as a service, local administrator privileges are required.
+
+To update: When rebooting the virtual machine, the CD-ROM will be mounted again with the newest version and the service will automatically update itself using the files in the CD-ROM drive.
+```
+
+Otherwise, the agent can manually be started by opening a terminal and running (assuming `d:\` is the CD-ROM):
 
     d:\
     .\incus-agent.exe
 
-To have it persist and run automatically, a system service can be manually defined to start it up.
+#### On macOS
+
+For macOS systems, the agent can manually be installed using a `9p` mount by opening a terminal **as root** and running the following commands:
+
+    mount_9p config
+    cd /Volumes/config
+    ./install.sh
+
+```{warning}
+Apple's Transparency, Consent, Control daemon requires you to allow full disk access to `sh` for the agent to be automatically started.
+This reduces the overall security of the system, by relaxing some of Apple's additional security restrictions.
+This does not in any way bypass UNIX permissions, however, if you are not comfortable with that, you will need to manually run `incus-agent` each time.
+```
+
+### Configure the Incus Agent
+By default the Incus Agent will have all features enabled.
+
+In some environments, VM owners may want to turn off specific features.
+
+This can be done through a `incus-agent.yml` file which is located at:
+
+- `/etc/incus-agent.yml` on Linux
+- `/usr/local/etc/incus-agent.yml` on MacOS
+- `C:\Program Files\Incus Agent\incus-agent.yml` on Windows
+
+If the file is missing or is empty, all features will be enabled.
+If the file contains a `features` map, then all features will be disabled unless specifically enabled.
+
+The supported features are:
+
+- `guestapi` controls whether the agent exposes the `/dev/incus` API within the guest
+- `exec` controls whether commands can be executed through the agent
+- `files` controls whether the files transfer API is available
+- `mounts` controls whether to setup the file system mounts for shared disk devices
+- `metrics` controls access to detailed OpenMetrics data
+- `state` controls access to basic OS state information (OS version, network interface details, ...)
+
+An example YAML file would be:
+
+```
+features:
+  guestapi: true
+  metrics: true
+  state: true
+```

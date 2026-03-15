@@ -827,6 +827,7 @@ type qemuPCIPhysicalOpts struct {
 	dev         qemuDevOpts
 	devName     string
 	pciSlotName string
+	firmware    bool
 }
 
 func qemuPCIPhysical(opts *qemuPCIPhysicalOpts) []cfg.Section {
@@ -838,6 +839,10 @@ func qemuPCIPhysical(opts *qemuPCIPhysicalOpts) []cfg.Section {
 
 	entries := qemuDeviceEntries(&deviceOpts)
 	entries["host"] = opts.pciSlotName
+
+	if !opts.firmware {
+		entries["rombar"] = "0"
+	}
 
 	return []cfg.Section{{
 		Name:    fmt.Sprintf(`device "%s%s"`, qemuDeviceIDPrefix, opts.devName),
@@ -926,6 +931,25 @@ func qemuUSB(opts *qemuUSBOpts) []cfg.Section {
 	}
 
 	return sections
+}
+
+func qemuAudio(opts *qemuDevOpts) []cfg.Section {
+	entries := qemuDeviceEntries(&qemuDevEntriesOpts{
+		dev:     *opts,
+		pciName: "virtio-sound-pci",
+	})
+
+	entries["audiodev"] = "qemu_spice-audiodev"
+	return []cfg.Section{{
+		Name:    `audiodev "qemu_spice-audiodev"`,
+		Comment: "Sound device",
+		Entries: map[string]string{
+			"driver": "spice",
+		},
+	}, {
+		Name:    `device "qemu_spice-audio"`,
+		Entries: entries,
+	}}
 }
 
 type qemuTPMOpts struct {

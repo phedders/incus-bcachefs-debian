@@ -215,7 +215,7 @@ func (c *Config) GetImageServer(name string) (incus.ImageServer, error) {
 
 			err = subprocess.RunCommandWithFds(
 				context.TODO(),
-				strings.NewReader(fmt.Sprintf("%s://%s", u.Scheme, u.Host)),
+				strings.NewReader(u.Host),
 				&stdout,
 				remote.CredHelper,
 				"get")
@@ -282,6 +282,10 @@ func (c *Config) getConnectionArgs(name string) (*incus.ConnectionArgs, error) {
 	}
 
 	if args.AuthType == api.AuthenticationMethodOIDC {
+		// Lock to prevent concurrent access/changes to oidcTokens.
+		c.mu.Lock()
+		defer c.mu.Unlock()
+
 		if c.oidcTokens == nil {
 			c.oidcTokens = map[string]*oidc.Tokens[*oidc.IDTokenClaims]{}
 		}

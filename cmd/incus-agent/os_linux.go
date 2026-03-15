@@ -50,7 +50,13 @@ var (
 	osBaseWorkingDirectory = "/"
 	osMetricsSupported     = true
 	osGuestAPISupport      = true
+	osAgentConfigPath      = "/etc/incus-agent.yml"
+	osVioSerialPath        = "/dev/virtio-ports/org.linuxcontainers.incus"
 )
+
+func runService(name string, agentCmd *cmdAgent) error {
+	return errors.New("Not implemented.")
+}
 
 func osGetEnvironment() (*api.ServerEnvironment, error) {
 	uname, err := linux.Uname()
@@ -132,7 +138,7 @@ func osMountShared(src string, dst string, fstype string, opts []string) error {
 	return nil
 }
 
-func osUmount(src string) error {
+func osUmount(src string, dst string, fstype string) error {
 	_, err := subprocess.RunCommand("umount", src)
 	return err
 }

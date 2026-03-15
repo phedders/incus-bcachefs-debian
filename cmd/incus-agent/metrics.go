@@ -1,7 +1,11 @@
 package main
 
 import (
+	"errors"
 	"net/http"
+	"time"
+
+	"github.com/shirou/gopsutil/v4/host"
 
 	"github.com/lxc/incus/v6/internal/server/metrics"
 	"github.com/lxc/incus/v6/internal/server/response"
@@ -15,6 +19,10 @@ var metricsCmd = APIEndpoint{
 }
 
 func metricsGet(d *Daemon, r *http.Request) response.Response {
+	if d.Features != nil && !d.Features["metrics"] {
+		return response.Forbidden(errors.New("Guest metrics are disabled by configuration"))
+	}
+
 	if !osMetricsSupported {
 		return response.NotFound(nil)
 	}
@@ -50,6 +58,8 @@ func metricsGet(d *Daemon, r *http.Request) response.Response {
 	}
 
 	out.ProcessesTotal = uint64(osGetProcessesState())
+	out.BootTimeSeconds = uint64(osGetBootTime())
+	out.TimeSeconds = uint64(time.Now().Unix())
 
 	cpuStats, err := osGetCPUMetrics(d)
 	if err != nil {
@@ -82,4 +92,13 @@ func getNetworkMetrics(d *Daemon) ([]metrics.NetworkMetrics, error) {
 	}
 
 	return out, nil
+}
+
+func osGetBootTime() int64 {
+	bootTime, err := host.BootTime()
+	if err != nil {
+		return -1
+	}
+
+	return int64(bootTime)
 }

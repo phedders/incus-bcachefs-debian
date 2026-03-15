@@ -2,6 +2,7 @@ package incus
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -522,7 +523,7 @@ func (r *ProtocolIncus) CreateInstanceFromBackup(args InstanceBackupArgs) (Opera
 		return nil, err
 	}
 
-	if args.PoolName == "" && args.Name == "" {
+	if args.PoolName == "" && args.Name == "" && args.Config == nil && args.Devices == nil {
 		// Send the request
 		op, _, err := r.queryOperation("POST", path, args.BackupFile, "")
 		if err != nil {
@@ -538,6 +539,10 @@ func (r *ProtocolIncus) CreateInstanceFromBackup(args InstanceBackupArgs) (Opera
 
 	if args.Name != "" && !r.HasExtension("backup_override_name") {
 		return nil, errors.New(`The server is missing the required "backup_override_name" API extension`)
+	}
+
+	if (args.Config != nil || args.Devices != nil) && !r.HasExtension("backup_override_config") {
+		return nil, errors.New(`The server is missing the required "backup_override_config" API extension`)
 	}
 
 	// Prepare the HTTP request
@@ -559,6 +564,16 @@ func (r *ProtocolIncus) CreateInstanceFromBackup(args InstanceBackupArgs) (Opera
 
 	if args.Name != "" {
 		req.Header.Set("X-Incus-name", args.Name)
+	}
+
+	if args.Config != nil {
+		configOverride := strings.Join(args.Config, " ")
+		req.Header.Set("X-Incus-config", configOverride)
+	}
+
+	if args.Devices != nil {
+		devicesOverride := strings.Join(args.Devices, " ")
+		req.Header.Set("X-Incus-devices", devicesOverride)
 	}
 
 	// Send the request
@@ -981,6 +996,13 @@ func (r *ProtocolIncus) UpdateInstance(name string, instance api.InstancePut, ET
 	path, _, err := r.instanceTypeToPath(api.InstanceTypeAny)
 	if err != nil {
 		return nil, err
+	}
+
+	if instance.DiskOnly {
+		err = r.CheckExtension("instance_snapshot_disk_only_restore")
+		if err != nil {
+			return nil, errors.New("The server is missing the required \"instance_snapshot_disk_only_restore\" API extension")
+		}
 	}
 
 	// Send the request
@@ -2982,6 +3004,75 @@ func (r *ProtocolIncus) GetInstanceBackupFile(instanceName string, name string, 
 	resp.Size = size
 
 	return &resp, nil
+}
+
+// CreateInstanceBackupStream requests that Incus creates and returns new direct backup for the
+// instance.
+func (r *ProtocolIncus) CreateInstanceBackupStream(instanceName string, backup api.InstanceBackupsPost, req *BackupFileRequest) error {
+	if !r.HasExtension("direct_backup") {
+		return errors.New("The server is missing the required \"direct_backup\" API extension")
+	}
+
+	path, _, err := r.instanceTypeToPath(api.InstanceTypeAny)
+	if err != nil {
+		return err
+	}
+
+	// Build the URL
+	uri := fmt.Sprintf("%s/1.0%s/%s/backups", r.httpBaseURL.String(), path, url.PathEscape(instanceName))
+	if r.project != "" {
+		uri += fmt.Sprintf("?project=%s", url.QueryEscape(r.project))
+	}
+
+	// Encode the backup data
+	buf := bytes.Buffer{}
+	err = json.NewEncoder(&buf).Encode(backup)
+	if err != nil {
+		return err
+	}
+
+	// Prepare the download request
+	request, err := http.NewRequest("POST", uri, bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		return err
+	}
+
+	request.Header.Set("Accept", "application/octet-stream")
+	if r.httpUserAgent != "" {
+		request.Header.Set("User-Agent", r.httpUserAgent)
+	}
+
+	// Start the request
+	response, doneCh, err := cancel.CancelableDownload(req.Canceler, r.DoHTTP, request)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = response.Body.Close() }()
+	defer close(doneCh)
+
+	if response.StatusCode != http.StatusOK {
+		_, _, err = incusParseResponse(response)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Handle the data
+	body := response.Body
+	if req.ProgressHandler != nil {
+		body = &ioprogress.ProgressReader{
+			ReadCloser: response.Body,
+			Tracker: &ioprogress.ProgressTracker{
+				Handler: func(received int64, speed int64) {
+					req.ProgressHandler(ioprogress.ProgressData{Text: fmt.Sprintf("%s (%s/s)", units.GetByteSizeString(received, 2), units.GetByteSizeString(speed, 2))})
+				},
+			},
+		}
+	}
+
+	_, err = io.Copy(req.BackupFile, body)
+	return err
 }
 
 func (r *ProtocolIncus) proxyMigration(targetOp *operation, targetSecrets map[string]string, source InstanceServer, sourceOp *operation, sourceSecrets map[string]string) error {

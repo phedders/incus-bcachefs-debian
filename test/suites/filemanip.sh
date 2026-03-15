@@ -147,6 +147,9 @@ test_filemanip() {
         unset -f incus
         command -v incus
     )
+
+    ! incus file mount doesnotexist || false
+
     $cmd file mount filemanip --listen=127.0.0.1:2022 --no-auth &
     mountPID=$!
     sleep 1
@@ -156,7 +159,7 @@ test_filemanip() {
     incus delete filemanip -f
     [ "$output" = "foo" ]
 
-    rm "${TEST_DIR}"/source/baz
+    rm -rf "${TEST_DIR}"/source
     rm -rf "${TEST_DIR}/dest"
     incus project switch default
     incus project delete test

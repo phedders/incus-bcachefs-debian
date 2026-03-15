@@ -94,15 +94,14 @@ ifneq "$(INCUS_OFFLINE)" ""
 	exit 1
 endif
 	$(GO) get -t -v -u ./...
-	$(GO) get github.com/go-jose/go-jose/v4@v4.0.5
-	$(GO) mod tidy --go=1.23.7
+	$(GO) mod tidy --go=1.25.0
 	$(GO) get toolchain@none
 
 	@echo "Dependencies updated"
 
 .PHONY: update-ovsdb
 update-ovsdb:
-	go install github.com/ovn-org/libovsdb/cmd/modelgen@main
+	go install github.com/ovn-kubernetes/libovsdb/cmd/modelgen@main
 
 	rm -Rf internal/server/network/ovs/schema
 	mkdir internal/server/network/ovs/schema
@@ -137,7 +136,7 @@ update-schema:
 .PHONY: update-api
 update-api:
 ifeq "$(INCUS_OFFLINE)" ""
-	(cd / ; $(GO) install -v -x github.com/go-swagger/go-swagger/cmd/swagger@latest)
+	(cd / ; $(GO) install -v -x github.com/go-swagger/go-swagger/cmd/swagger@master)
 endif
 	swagger generate spec -o doc/rest-api.yaml -w ./cmd/incusd -m
 
@@ -288,6 +287,7 @@ ifeq "$(INCUS_OFFLINE)" ""
 	(cd / ; $(GO) install -v -x github.com/snapcore/snapd/i18n/xgettext-go@2.57.1)
 endif
 	xgettext-go -o po/$(DOMAIN).pot --add-comments-tag=TRANSLATORS: --sort-output --package-name=$(DOMAIN) --msgid-bugs-address=lxc-devel@lists.linuxcontainers.org --keyword=i18n.G --keyword-plural=i18n.NG cmd/incus/*.go shared/cliconfig/*.go
+	sed -i s/CHARSET/UTF-8/ po/$(DOMAIN).pot
 
 .PHONY: build-mo
 build-mo: $(MOFILES)
@@ -313,6 +313,10 @@ ifeq ($(shell command -v flake8),)
 endif
 ifeq ($(shell command -v codespell),)
 	echo "Please install codespell"
+	exit 1
+endif
+ifeq ($(shell command -v run-parts),)
+	echo "Please install run-parts"
 	exit 1
 endif
 	flake8 test/deps/import-busybox

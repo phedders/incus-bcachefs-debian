@@ -37,8 +37,9 @@ var (
 )
 
 var (
-	lvmLoaded  bool
-	lvmVersion string
+	lvmLoaded        bool
+	lvmClusterLoaded bool
+	lvmVersion       string
 )
 
 type lvm struct {
@@ -58,20 +59,31 @@ func (d *lvm) load() error {
 	}
 
 	// Done if previously loaded.
-	if lvmLoaded {
+	if !d.clustered && lvmLoaded {
+		return nil
+	}
+
+	if d.clustered && lvmClusterLoaded {
 		return nil
 	}
 
 	// Validate the required binaries.
 	tools := []string{"lvm"}
 	if d.clustered {
-		tools = append(tools, []string{"lvmlockctl", "sanlock"}...)
+		tools = append(tools, []string{"lvmlockctl", "sanlock", "btrfs"}...)
 	}
 
 	for _, tool := range tools {
 		_, err := exec.LookPath(tool)
 		if err != nil {
 			return fmt.Errorf("Required tool %q is missing", tool)
+		}
+	}
+
+	if d.clustered {
+		err := linux.LoadModule("nbd")
+		if err != nil {
+			return fmt.Errorf("Error loading nbd module: %w", err)
 		}
 	}
 
@@ -101,17 +113,22 @@ func (d *lvm) load() error {
 		}
 	}
 
-	lvmLoaded = true
+	if d.clustered {
+		lvmClusterLoaded = true
+	} else {
+		lvmLoaded = true
+	}
+
 	return nil
 }
 
 func (d *lvm) init(s *state.State, name string, config map[string]string, log logger.Logger, volIDFunc func(volType VolumeType, volName string) (int64, error), commonRules *Validators) {
 	d.common.init(s, name, config, log, volIDFunc, commonRules)
 
-	if d.clustered && d.config != nil {
+	if d.config != nil {
 		_, exists := d.config["lvm.vg_name"]
 		if !exists {
-			sourceType := d.getSourceType()
+			sourceType := d.getSourceType(d.config["source"])
 			if sourceType == lvmSourceTypeDefault || sourceType == lvmSourceTypePhysicalDevice {
 				d.config["lvm.vg_name"] = d.name
 			} else if sourceType == lvmSourceTypeVolumeGroup {
@@ -129,8 +146,10 @@ func (d *lvm) isRemote() bool {
 // Info returns info about the driver and its environment.
 func (d *lvm) Info() Info {
 	name := "lvm"
+	targetFormat := BlockVolumeTypeRaw
 	if d.clustered {
 		name = "lvmcluster"
+		targetFormat = BlockVolumeTypeQcow2
 	}
 
 	return Info{
@@ -144,12 +163,14 @@ func (d *lvm) Info() Info {
 		VolumeMultiNode:              d.isRemote(),
 		BlockBacking:                 true,
 		RunningCopyFreeze:            true,
+		SameSource:                   d.isRemote(),
 		DirectIO:                     true,
 		IOUring:                      true,
 		MountedRoot:                  false,
 		Buckets:                      !d.isRemote(),
 		Deactivate:                   d.isRemote(),
 		ZeroUnpack:                   !d.usesThinpool(),
+		TargetFormat:                 targetFormat,
 	}
 }
 
@@ -182,9 +203,30 @@ func (d *lvm) Create() error {
 
 	var usingLoopFile bool
 
-	sourceType := d.getSourceType()
+	sourceType := d.getSourceType(d.config["source"])
+
+	// Require the LVM service when on IncusOS.
+	if d.state.OS.IncusOS != nil {
+		ok, err := d.state.OS.IncusOS.IsServiceEnabled("lvm")
+		if err != nil {
+			return err
+		}
+
+		if !ok {
+			return errors.New("IncusOS service \"lvm\" isn't currently enabled")
+		}
+	}
 
 	if sourceType == lvmSourceTypeDefault {
+		if d.clustered {
+			return errors.New("lvmcluster requires a shared physical device or a pre-existing shared VG to be used as source")
+		}
+
+		// Check for IncusOS.
+		if d.state.OS.IncusOS != nil {
+			return errors.New("Loop backed pools aren't supported on IncusOS")
+		}
+
 		usingLoopFile = true
 		defaultSource := loopFilePath(d.name)
 
@@ -373,19 +415,21 @@ func (d *lvm) Create() error {
 			}
 		}
 	} else {
+		// Calculate the metadata size (if provided).
+		metadataSizeBytes, err := d.roundedSizeBytesString(d.config["lvm.metadata_size"])
+		if err != nil {
+			return fmt.Errorf("Invalid lvm.metadata_size: %w", err)
+		}
+
 		// Create physical volume if doesn't exist.
-		if !pvExists {
+		// This is done to provide better errors and revert when possible.
+		if !pvExists && !d.clustered {
 			// This is an internal error condition which should never be hit.
 			if pvName == "" {
 				return errors.New("No name for physical volume detected")
 			}
 
 			args := []string{}
-
-			metadataSizeBytes, err := d.roundedSizeBytesString(d.config["lvm.metadata_size"])
-			if err != nil {
-				return fmt.Errorf("Invalid lvm.metadata_size: %w", err)
-			}
 
 			if metadataSizeBytes > 0 {
 				args = append(args, "--metadatasize", fmt.Sprintf("%db", metadataSizeBytes))
@@ -406,15 +450,29 @@ func (d *lvm) Create() error {
 
 		if d.clustered {
 			args = append(args, "--shared")
+
+			if metadataSizeBytes > 0 {
+				args = append(args, "--metadatasize", fmt.Sprintf("%db", metadataSizeBytes))
+			}
 		}
 
-		_, err := subprocess.TryRunCommand("vgcreate", args...)
+		_, err = subprocess.TryRunCommand("vgcreate", args...)
 		if err != nil {
 			return err
 		}
 
 		d.logger.Debug("Volume group created", logger.Ctx{"pv_name": pvName, "vg_name": d.config["lvm.vg_name"]})
 		reverter.Add(func() { _, _ = subprocess.TryRunCommand("vgremove", d.config["lvm.vg_name"]) })
+	}
+
+	if d.clustered {
+		currentSize, err := d.volumeGroupSize(d.config["lvm.vg_name"])
+		if err != nil {
+			return err
+		}
+
+		// Record initial size of volume group.
+		d.config["size"] = fmt.Sprintf("%d", currentSize)
 	}
 
 	// Create thin pool if needed.
@@ -578,16 +636,92 @@ func (d *lvm) Delete(op *operations.Operation) error {
 }
 
 func (d *lvm) Validate(config map[string]string) error {
+	// gendoc:generate(entity=storage_lvm, group=common, key=source)
+	//
+	// ---
+	//  type: string
+	//  scope: local
+	//  default: -
+	//  shortdesc: Path to an existing block device, loop file or LVM volume group.
+
+	// gendoc:generate(entity=storage_lvm, group=common, key=source.wipe)
+	//
+	// ---
+	//  type: bool
+	//  scope: local
+	//  default: `false`
+	//  shortdesc: Wipe the block device specified in `source` prior to creating the storage pool.
+
 	rules := map[string]func(value string) error{
-		"lvm.vg_name":       validate.IsAny,
+		// gendoc:generate(entity=storage_lvm, group=common, key=size)
+		//
+		// ---
+		//  type: string
+		//  scope: local
+		//  default: auto (20% of free disk space, >= 5 GiB and <= 30 GiB) for `lvm`.
+		//  shortdesc: Storage pool size (in bytes, suffixes supported, can be increased to grow storage pool). `lvmcluster` pools: cannot set at creation, but can be updated.
+		"size": validate.Optional(func(value string) error {
+			if d.clustered && value == MaxValue {
+				return nil
+			}
+
+			return validate.IsSize(value)
+		}),
+
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.vg_name)
+		//
+		// ---
+		//  type: string
+		//  scope: local
+		//  default: name of the pool
+		//  shortdesc: Name of the volume group to create.
+		"lvm.vg_name": validate.IsAny,
+
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.metadata_size)
+		//
+		// ---
+		//  type: string
+		//  scope: global
+		//  default: `0` (auto)
+		//  shortdesc: The size of the metadata space for the physical volume.
 		"lvm.metadata_size": validate.Optional(validate.IsSize),
 	}
 
 	if !d.clustered {
-		rules["size"] = validate.Optional(validate.IsSize)
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.thinpool_name)
+		//
+		// ---
+		//  type: string
+		//  scope: local
+		//  default: `IncusThinPool`
+		//  shortdesc: Thin pool where volumes are created. Not usable with `lvmcluster`.
 		rules["lvm.thinpool_name"] = validate.IsAny
+
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.thinpool_metadata_size)
+		//
+		// ---
+		//  type: string
+		//  scope: global
+		//  default: `0` (auto)
+		//  shortdesc: The size of the thin pool metadata volume (the default is to let LVM calculate an appropriate size). Not usable with `lvmcluster`.
 		rules["lvm.thinpool_metadata_size"] = validate.Optional(validate.IsSize)
+
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.use_thinpool)
+		//
+		// ---
+		//  type: bool
+		//  scope: global
+		//  default: `true`
+		//  shortdesc: Whether the storage pool uses a thin pool for logical volumes. Not usable with `lvmcluster`.
 		rules["lvm.use_thinpool"] = validate.Optional(validate.IsBool)
+
+		// gendoc:generate(entity=storage_lvm, group=common, key=lvm.vg.force_reuse)
+		//
+		// ---
+		//  type: bool
+		//  scope: local
+		//  default: `false`
+		//  shortdesc: Force using an existing non-empty volume group. Not usable with `lvmcluster`.
 		rules["lvm.vg.force_reuse"] = validate.Optional(validate.IsBool)
 	}
 
@@ -636,6 +770,11 @@ func (d *lvm) Update(changedConfig map[string]string) error {
 		return errors.New("volume.lvm.stripes.size cannot be changed when using thin pool")
 	}
 
+	_, changed = changedConfig["volume.block.type"]
+	if changed {
+		return errors.New("volume.block.type cannot be changed after creation")
+	}
+
 	if changedConfig["lvm.vg_name"] != "" {
 		_, err := subprocess.TryRunCommand("vgrename", d.config["lvm.vg_name"], changedConfig["lvm.vg_name"])
 		if err != nil {
@@ -655,7 +794,80 @@ func (d *lvm) Update(changedConfig map[string]string) error {
 	}
 
 	size, ok := changedConfig["size"]
-	if ok {
+	if ok && size != "" {
+		if d.clustered {
+			oldSize, err := d.volumeGroupSize(d.config["lvm.vg_name"])
+			if err != nil {
+				return err
+			}
+
+			devices, err := d.getPhysicalDevices(d.config["lvm.vg_name"])
+			if err != nil {
+				return err
+			}
+
+			sourceType := d.getSourceType(d.config["volatile.initial_source"])
+
+			switch sourceType {
+			case lvmSourceTypePhysicalDevice:
+				var sizeBytes int64
+				if size != MaxValue {
+					sizeBytes, _ = units.ParseByteSizeString(size)
+
+					if oldSize >= sizeBytes {
+						return fmt.Errorf("The new size must be larger than the current size")
+					}
+				}
+
+				if len(devices) != 1 {
+					return fmt.Errorf("Physical device source type should have only one device. Current number: %d", len(devices))
+				}
+
+				blockdevSize, err := BlockDiskSizeBytes(devices[0])
+				if err != nil {
+					return err
+				}
+
+				if sizeBytes > 0 && sizeBytes > blockdevSize {
+					return fmt.Errorf("Specified size is larger than the physical device size")
+				}
+
+				err = d.resizePhysicalVolume(devices[0], sizeBytes)
+				if err != nil {
+					return err
+				}
+
+			case lvmSourceTypeVolumeGroup:
+				if size != MaxValue {
+					return fmt.Errorf("Volume group source type supports only the 'max' size value")
+				}
+
+				for _, dev := range devices {
+					err = d.resizePhysicalVolume(dev, 0)
+					if err != nil {
+						return err
+					}
+				}
+
+			default:
+				return fmt.Errorf("Resize is only supported when the source is a physical device or a volume group")
+			}
+
+			currentSize, err := d.volumeGroupSize(d.config["lvm.vg_name"])
+			if err != nil {
+				return err
+			}
+
+			if oldSize == currentSize {
+				return fmt.Errorf("The volume group is already at the maximum size")
+			}
+
+			// Record the new size.
+			d.config["size"] = fmt.Sprintf("%d", currentSize)
+
+			return nil
+		}
+
 		// Figure out loop path
 		loopPath := loopFilePath(d.name)
 
@@ -859,5 +1071,5 @@ func (d *lvm) roundVolumeBlockSizeBytes(vol Volume, sizeBytes int64) (int64, err
 		return -1, err
 	}
 
-	return roundAbove(vgExtentSize, sizeBytes), nil
+	return RoundAbove(vgExtentSize, sizeBytes), nil
 }

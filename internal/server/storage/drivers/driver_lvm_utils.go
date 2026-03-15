@@ -137,6 +137,29 @@ func (d *lvm) volumeGroupExists(vgName string) (bool, []string, error) {
 	return true, tags, nil
 }
 
+// getPhysicalDevices lists PVs backing a volume group.
+func (d *lvm) getPhysicalDevices(vgName string) ([]string, error) {
+	args := []string{
+		"--noheadings",
+		"-o",
+		"pv_name",
+		"-S",
+		fmt.Sprintf("vg_name=%s", vgName),
+	}
+
+	devices, err := subprocess.RunCommand("pvs", args...)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []string{}
+	for _, line := range strings.Split(strings.TrimSpace(devices), "\n") {
+		result = append(result, strings.TrimSpace(line))
+	}
+
+	return result, nil
+}
+
 // volumeGroupExtentSize gets the volume group's physical extent size in bytes.
 func (d *lvm) volumeGroupExtentSize(vgName string) (int64, error) {
 	// Look for cached value.
@@ -167,6 +190,45 @@ func (d *lvm) volumeGroupExtentSize(vgName string) (int64, error) {
 	lvmExtentSize[d.name] = val
 
 	return val, nil
+}
+
+// volumeGroupSize gets the volume group's physical size in bytes.
+func (d *lvm) volumeGroupSize(vgName string) (int64, error) {
+	output, err := subprocess.TryRunCommand("vgs", "--noheadings", "--nosuffix", "--units", "b", "-o", "vg_size", vgName)
+	if err != nil {
+		if d.isLVMNotFoundExitError(err) {
+			return -1, api.StatusErrorf(http.StatusNotFound, "LVM volume group not found")
+		}
+
+		return -1, err
+	}
+
+	output = strings.TrimSpace(output)
+	val, err := strconv.ParseInt(output, 10, 64)
+	if err != nil {
+		return -1, err
+	}
+
+	return val, nil
+}
+
+// resizePhysicalVolume resizes the given PV.
+func (d *lvm) resizePhysicalVolume(devPath string, size int64) error {
+	args := []string{
+		"-y",
+		devPath,
+	}
+
+	if size > 0 {
+		args = append(args, "--setphysicalvolumesize", fmt.Sprintf("%dB", size))
+	}
+
+	_, err := subprocess.RunCommand("pvresize", args...)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // countLogicalVolumes gets the count of volumes (both normal and thin) in a volume group.
@@ -355,6 +417,7 @@ func (d *lvm) createLogicalVolume(vgName, thinPoolName string, vol Volume, makeT
 	}
 
 	lvFullName := d.lvmFullVolumeName(vol.volType, vol.contentType, vol.name)
+	logCtx := logger.Ctx{"vg_name": vgName, "lv_name": lvFullName, "size": fmt.Sprintf("%db", lvSizeBytes)}
 
 	args := []string{
 		"--name", lvFullName,
@@ -408,6 +471,8 @@ func (d *lvm) createLogicalVolume(vgName, thinPoolName string, vol Volume, makeT
 		if err != nil {
 			return fmt.Errorf("Error making filesystem on LVM logical volume: %w", err)
 		}
+
+		logCtx["fs"] = vol.ConfigBlockFilesystem()
 	} else if !d.usesThinpool() {
 		// Make sure we get an empty LV.
 		err := linux.ClearBlock(volDevPath, 0)
@@ -430,7 +495,7 @@ func (d *lvm) createLogicalVolume(vgName, thinPoolName string, vol Volume, makeT
 		}
 	}
 
-	d.logger.Debug("Logical volume created", logger.Ctx{"vg_name": vgName, "lv_name": lvFullName, "size": fmt.Sprintf("%db", lvSizeBytes), "fs": vol.ConfigBlockFilesystem()})
+	d.logger.Debug("Logical volume created", logCtx)
 	return nil
 }
 
@@ -502,25 +567,20 @@ func (d *lvm) acquireExclusive(vol Volume) (func(), error) {
 		return func() {}, nil
 	}
 
-	volDevPath, err := d.lvmDevPath(d.lvmPath(d.config["lvm.vg_name"], vol.volType, vol.contentType, vol.name))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return func() {}, nil
-		}
-
-		return nil, err
-	}
+	volDevPath := d.lvmPath(d.config["lvm.vg_name"], vol.volType, vol.contentType, vol.name)
 
 	lvmActivation.Lock()
 	defer lvmActivation.Unlock()
 
-	_, err = subprocess.TryRunCommand("lvchange", "--activate", "ey", "--ignoreactivationskip", volDevPath)
+	_, err := subprocess.TryRunCommand("lvchange", "--activate", "ey", "--ignoreactivationskip", volDevPath)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to acquire exclusive lock on LVM logical volume %q: %w", volDevPath, err)
 	}
 
 	return func() {
-		_, _ = subprocess.TryRunCommand("lvchange", "--activate", "sy", "--ignoreactivationskip", volDevPath)
+		if vol.ContentType() == ContentTypeBlock && vol.ExpandedConfig("block.type") == BlockVolumeTypeQcow2 {
+			_, _ = subprocess.TryRunCommand("lvchange", "--activate", "sy", "--ignoreactivationskip", volDevPath)
+		}
 	}, nil
 }
 
@@ -878,7 +938,7 @@ func (d *lvm) parseLogicalVolumeSnapshot(parent Volume, lvmVolName string) strin
 func (d *lvm) activateVolume(vol Volume) (bool, error) {
 	var volPath string
 
-	if d.usesThinpool() {
+	if d.usesThinpool() || IsQcow2Block(vol) {
 		volPath = d.lvmPath(d.config["lvm.vg_name"], vol.volType, vol.contentType, vol.name)
 	} else {
 		// Use parent for non-thinpool vols as activating the parent volume also activates its snapshots.
@@ -902,9 +962,16 @@ func (d *lvm) activateVolume(vol Volume) (bool, error) {
 	defer lvmActivation.Unlock()
 
 	if d.clustered {
-		_, err := subprocess.RunCommand("lvchange", "--activate", "sy", "--ignoreactivationskip", volPath)
-		if err != nil {
-			return false, fmt.Errorf("Failed to activate LVM logical volume %q: %w", volPath, err)
+		if vol.Type() == VolumeTypeVM || vol.ContentType() == ContentTypeBlock {
+			_, err := subprocess.RunCommand("lvchange", "--activate", "sy", "--ignoreactivationskip", volPath)
+			if err != nil {
+				return false, fmt.Errorf("Failed to activate LVM logical volume %q: %w", volPath, err)
+			}
+		} else {
+			_, err := subprocess.RunCommand("lvchange", "--activate", "ey", "--ignoreactivationskip", volPath)
+			if err != nil {
+				return false, fmt.Errorf("Failed to activate LVM logical volume %q: %w", volPath, err)
+			}
 		}
 	} else {
 		_, err := subprocess.RunCommand("lvchange", "--activate", "y", "--ignoreactivationskip", volPath)
@@ -922,7 +989,7 @@ func (d *lvm) activateVolume(vol Volume) (bool, error) {
 func (d *lvm) deactivateVolume(vol Volume) (bool, error) {
 	var volPath string
 
-	if d.usesThinpool() {
+	if d.usesThinpool() || IsQcow2Block(vol) {
 		volPath = d.lvmPath(d.config["lvm.vg_name"], vol.volType, vol.contentType, vol.name)
 	} else {
 		// Use parent for non-thinpool vols as deactivating the parent volume also activates its snapshots.
@@ -963,15 +1030,15 @@ func (d *lvm) deactivateVolume(vol Volume) (bool, error) {
 	return true, nil
 }
 
-// getSourceType determines the source type based on the config["source"] value.
-func (d *lvm) getSourceType() lvmSourceType {
+// getSourceType determines the source type based on the source value.
+func (d *lvm) getSourceType(source string) lvmSourceType {
 	defaultSource := loopFilePath(d.name)
 
-	if d.config["source"] == "" || d.config["source"] == defaultSource {
+	if source == "" || source == defaultSource {
 		return lvmSourceTypeDefault
-	} else if filepath.IsAbs(d.config["source"]) {
+	} else if filepath.IsAbs(source) {
 		return lvmSourceTypePhysicalDevice
-	} else if d.config["source"] != "" {
+	} else if source != "" {
 		return lvmSourceTypeVolumeGroup
 	}
 

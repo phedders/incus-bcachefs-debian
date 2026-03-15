@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/lxc/incus/v6/internal/server/response"
 	"github.com/lxc/incus/v6/internal/server/state"
 	storagePools "github.com/lxc/incus/v6/internal/server/storage"
+	localUtil "github.com/lxc/incus/v6/internal/server/util"
 	internalUtil "github.com/lxc/incus/v6/internal/util"
 	"github.com/lxc/incus/v6/internal/version"
 	"github.com/lxc/incus/v6/shared/api"
@@ -162,48 +164,74 @@ func storagePoolBucketBackupsGet(d *Daemon, r *http.Request) response.Response {
 		return resp
 	}
 
-	bucketProjectName, err := project.StorageBucketProject(r.Context(), s.DB.Cluster, request.ProjectParam(r))
+	projectName, err := project.StorageBucketProject(r.Context(), s.DB.Cluster, request.ProjectParam(r))
 	if err != nil {
 		return response.SmartError(err)
 	}
 
-	poolName, err := url.PathUnescape(mux.Vars(r)["poolName"])
-	if err != nil {
-		return response.SmartError(err)
-	}
-
-	pool, err := storagePools.LoadByName(s, poolName)
-	if err != nil {
-		return response.SmartError(fmt.Errorf("Failed loading storage pool: %w", err))
-	}
-
-	if !pool.Driver().Info().Buckets {
-		return response.BadRequest(errors.New("Storage pool does not support buckets"))
-	}
-
+	// Get the name of the storage bucket.
 	bucketName, err := url.PathUnescape(mux.Vars(r)["bucketName"])
 	if err != nil {
 		return response.SmartError(err)
 	}
 
-	targetMember := request.QueryParam(r, "target")
-	memberSpecific := targetMember != ""
+	// Get the name of the storage pool the bucket is supposed to be attached to.
+	poolName, err := url.PathUnescape(mux.Vars(r)["poolName"])
+	if err != nil {
+		return response.SmartError(err)
+	}
 
-	var bucket *db.StorageBucket
+	// Get the storage pool itself.
+	var poolID int64
+
 	err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
-		bucket, err = tx.GetStoragePoolBucket(ctx, pool.ID(), bucketProjectName, memberSpecific, bucketName)
+		var err error
+
+		poolID, _, _, err = tx.GetStoragePool(ctx, poolName)
+
 		return err
 	})
 	if err != nil {
 		return response.SmartError(err)
 	}
 
-	u := pool.GetBucketURL(bucket.Name)
-	if u != nil {
-		bucket.S3URL = u.String()
+	// Handle the request.
+	recursion := localUtil.IsRecursionRequest(r)
+
+	var bucketBackups []db.StoragePoolBucketBackup
+
+	err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
+		bucketBackups, err = tx.GetStoragePoolBucketBackups(ctx, projectName, bucketName, poolID)
+		return err
+	})
+	if err != nil {
+		return response.SmartError(err)
 	}
 
-	return response.SyncResponseETag(true, bucket, bucket.Etag())
+	backups := make([]*backup.BucketBackup, len(bucketBackups))
+
+	for i, b := range bucketBackups {
+		_, backupName, _ := api.GetParentAndSnapshotName(b.Name)
+		backups[i] = backup.NewBucketBackup(s, projectName, poolName, bucketName, b.ID, backupName, b.CreationDate, b.ExpiryDate)
+	}
+
+	resultString := []string{}
+	resultMap := []*api.StorageBucketBackup{}
+
+	for _, entry := range backups {
+		if !recursion {
+			resultString = append(resultString, api.NewURL().Path(version.APIVersion, "storage-pools", poolName, "buckets", bucketName, "backups", strings.Split(entry.Name(), "/")[1]).String())
+		} else {
+			render := entry.Render()
+			resultMap = append(resultMap, render)
+		}
+	}
+
+	if !recursion {
+		return response.SyncResponse(true, resultString)
+	}
+
+	return response.SyncResponse(true, resultMap)
 }
 
 // swagger:operation POST /1.0/storage-pools/{poolName}/buckets/{bucketName}/backups storage storage_pool_buckets_backups_post
@@ -212,11 +240,15 @@ func storagePoolBucketBackupsGet(d *Daemon, r *http.Request) response.Response {
 //
 //	Creates a new storage bucket backup.
 //
+//	If the `Accept` header is set to `application/octet-stream`, this directly streams the backup
+//	tarball to the client without any intermediate operation.
+//
 //	---
 //	consumes:
 //	  - application/json
 //	produces:
 //	  - application/json
+//	  - application/octet-stream
 //	parameters:
 //	  - in: query
 //	    name: project
@@ -325,61 +357,83 @@ func storagePoolBucketBackupsPost(d *Daemon, r *http.Request) response.Response 
 		return response.BadRequest(err)
 	}
 
-	if req.Name == "" {
-		var backups []string
+	direct := r.Header.Get("Accept") == "application/octet-stream"
 
-		// come up with a name.
-		err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
-			backups, err = tx.GetStoragePoolBucketBackupsName(ctx, projectName, bucketName)
-			return err
-		})
-		if err != nil {
-			return response.BadRequest(err)
+	var reader *io.PipeReader
+	var writer *io.PipeWriter
+	var fullName string
+
+	if direct {
+		if req.Name != "" {
+			return response.BadRequest(errors.New("No backup name can be set when requesting a direct backup with Accept: application/octet-stream"))
 		}
 
-		base := bucketName + internalInstance.SnapshotDelimiter + "backup"
-		length := len(base)
-		max := 0
+		reader, writer = io.Pipe()
+	} else {
+		if req.Name == "" {
+			var backups []string
 
-		for _, entry := range backups {
-			// Ignore backups not containing base.
-			if !strings.HasPrefix(entry, base) {
-				continue
+			// come up with a name.
+			err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
+				backups, err = tx.GetStoragePoolBucketBackupsName(ctx, projectName, bucketName)
+				return err
+			})
+			if err != nil {
+				return response.BadRequest(err)
 			}
 
-			substr := entry[length:]
-			var num int
-			count, err := fmt.Sscanf(substr, "%d", &num)
-			if err != nil || count != 1 {
-				continue
+			base := bucketName + internalInstance.SnapshotDelimiter + "backup"
+			length := len(base)
+			backupID := 0
+
+			for _, entry := range backups {
+				// Ignore backups not containing base.
+				if !strings.HasPrefix(entry, base) {
+					continue
+				}
+
+				substr := entry[length:]
+				var num int
+				count, err := fmt.Sscanf(substr, "%d", &num)
+				if err != nil || count != 1 {
+					continue
+				}
+
+				if num >= backupID {
+					backupID = num + 1
+				}
 			}
 
-			if num >= max {
-				max = num + 1
-			}
+			req.Name = fmt.Sprintf("backup%d", backupID)
 		}
 
-		req.Name = fmt.Sprintf("backup%d", max)
-	}
+		// Validate the name.
+		if strings.Contains(req.Name, "/") {
+			return response.BadRequest(errors.New("Backup names may not contain slashes"))
+		}
 
-	// Validate the name.
-	if strings.Contains(req.Name, "/") {
-		return response.BadRequest(errors.New("Backup names may not contain slashes"))
+		fullName = bucketName + internalInstance.SnapshotDelimiter + req.Name
 	}
-
-	fullName := bucketName + internalInstance.SnapshotDelimiter + req.Name
 
 	do := func(op *operations.Operation) error {
 		args := db.StoragePoolBucketBackup{
 			Name:         fullName,
 			BucketID:     bucket.ID,
 			CreationDate: time.Now(),
-			ExpiryDate:   req.ExpiresAt,
 		}
 
-		err := bucketBackupCreate(s, args, projectName, poolName, bucketName)
+		if !direct {
+			args.ExpiryDate = req.ExpiresAt
+		}
+
+		// Create the backup.
+		err := bucketBackupCreate(s, args, projectName, poolName, bucketName, writer)
 		if err != nil {
-			return fmt.Errorf("Create bucket backup: %w", err)
+			// In order to actually fail piped exports, we use a dirty trick where we close the reader.
+			// This doesn't provide a clean error message in the case of direct backups, but it is a
+			// convenient tradeoff ensuring that the client reports an error.
+			_ = reader.Close()
+			return err
 		}
 
 		s.Events.SendLifecycle(projectName, lifecycle.StorageBucketBackupCreated.Event(poolName, args.Name, projectName, op.Requestor(), nil))
@@ -389,11 +443,22 @@ func storagePoolBucketBackupsPost(d *Daemon, r *http.Request) response.Response 
 
 	resources := map[string][]api.URL{}
 	resources["storage_buckets"] = []api.URL{*api.NewURL().Path(version.APIVersion, "storage-pools", poolName, "buckets", bucketName)}
-	resources["backups"] = []api.URL{*api.NewURL().Path(version.APIVersion, "storage-pools", poolName, "buckets", bucketName, "backups", req.Name)}
+	if !direct {
+		resources["backups"] = []api.URL{*api.NewURL().Path(version.APIVersion, "storage-pools", poolName, "buckets", bucketName, "backups", req.Name)}
+	}
 
 	op, err := operations.OperationCreate(s, request.ProjectParam(r), operations.OperationClassTask, operationtype.BucketBackupCreate, resources, nil, do, nil, nil, r)
 	if err != nil {
 		return response.InternalError(err)
+	}
+
+	if direct {
+		err = op.Start()
+		if err != nil {
+			return response.InternalError(err)
+		}
+
+		return response.PipeResponse(r, reader)
 	}
 
 	return operations.OperationResponse(op)
@@ -807,8 +872,8 @@ func storagePoolBucketBackupLoadByName(ctx context.Context, s *state.State, proj
 		return nil, err
 	}
 
-	bucketName := strings.Split(backupName, "/")[0]
-	entry := backup.NewBucketBackup(s, projectName, poolName, bucketName, b.ID, b.Name, b.CreationDate, b.ExpiryDate)
+	bucketName, snapName, _ := api.GetParentAndSnapshotName(b.Name)
+	entry := backup.NewBucketBackup(s, projectName, poolName, bucketName, b.ID, snapName, b.CreationDate, b.ExpiryDate)
 
 	return entry, nil
 }

@@ -24,7 +24,7 @@ func GetResources() (*api.Resources, error) {
 	defer muResources.Unlock()
 
 	// Check if we ran less than 10s ago.
-	if lastResources != nil && lastRun.Add(10*time.Second).Before(time.Now()) {
+	if lastResources != nil && lastRun.Add(10*time.Second).After(time.Now()) {
 		return lastResources, nil
 	}
 
@@ -81,6 +81,11 @@ func GetResources() (*api.Resources, error) {
 		return nil, fmt.Errorf("Failed to retrieve load information: %w", err)
 	}
 
+	serial, err := GetSerial()
+	if err != nil {
+		return nil, fmt.Errorf("Failed to retrieve serial information: %w", err)
+	}
+
 	// Build the final struct
 	resources := api.Resources{
 		CPU:     *cpu,
@@ -92,6 +97,7 @@ func GetResources() (*api.Resources, error) {
 		PCI:     *pci,
 		System:  *system,
 		Load:    *load,
+		Serial:  *serial,
 	}
 
 	// Update the cache.

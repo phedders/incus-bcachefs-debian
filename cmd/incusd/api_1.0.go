@@ -72,6 +72,7 @@ var api10 = []APIEndpoint{
 	instanceStateCmd,
 	instanceAccessCmd,
 	instanceDebugMemoryCmd,
+	instanceDebugRepairCmd,
 	eventsCmd,
 	imageAliasCmd,
 	imageAliasesCmd,
@@ -128,6 +129,7 @@ var api10 = []APIEndpoint{
 	storagePoolVolumesTypeCmd,
 	storagePoolVolumeTypeCmd,
 	storagePoolVolumeTypeSFTPCmd,
+	storagePoolVolumeTypeFileCmd,
 	storagePoolVolumeTypeCustomBackupsCmd,
 	storagePoolVolumeTypeCustomBackupCmd,
 	storagePoolVolumeTypeCustomBackupExportCmd,
@@ -621,16 +623,23 @@ func doApi10Update(d *Daemon, r *http.Request, req api.ServerPut, patch bool) re
 
 		// Validate the storage volumes
 		if nodeValues["storage.backups_volume"] != "" && nodeValues["storage.backups_volume"] != newNodeConfig.StorageBackupsVolume() {
-			err := daemonStorageValidate(s, nodeValues["storage.backups_volume"])
+			err := daemonStorageValidate(s, "backups", nodeValues["storage.backups_volume"])
 			if err != nil {
 				return fmt.Errorf("Failed validation of %q: %w", "storage.backups_volume", err)
 			}
 		}
 
 		if nodeValues["storage.images_volume"] != "" && nodeValues["storage.images_volume"] != newNodeConfig.StorageImagesVolume() {
-			err := daemonStorageValidate(s, nodeValues["storage.images_volume"])
+			err := daemonStorageValidate(s, "images", nodeValues["storage.images_volume"])
 			if err != nil {
 				return fmt.Errorf("Failed validation of %q: %w", "storage.images_volume", err)
+			}
+		}
+
+		if nodeValues["storage.logs_volume"] != "" && nodeValues["storage.logs_volume"] != newNodeConfig.StorageLogsVolume() {
+			err := daemonStorageValidate(s, "logs", nodeValues["storage.logs_volume"])
+			if err != nil {
+				return fmt.Errorf("Failed validation of %q: %w", "storage.logs_volume", err)
 			}
 		}
 
@@ -671,7 +680,12 @@ func doApi10Update(d *Daemon, r *http.Request, req api.ServerPut, patch bool) re
 				return fmt.Errorf("Failed to load node config: %w", err)
 			}
 
-			_, err = newNodeConfig.Replace(nodeValues)
+			if patch {
+				_, err = newNodeConfig.Patch(nodeValues)
+			} else {
+				_, err = newNodeConfig.Replace(nodeValues)
+			}
+
 			if err != nil {
 				return fmt.Errorf("Failed updating node config: %w", err)
 			}
@@ -732,7 +746,12 @@ func doApi10Update(d *Daemon, r *http.Request, req api.ServerPut, patch bool) re
 				return fmt.Errorf("Failed to load cluster config: %w", err)
 			}
 
-			_, err = newClusterConfig.Replace(req.Config)
+			if patch {
+				_, err = newClusterConfig.Patch(req.Config)
+			} else {
+				_, err = newClusterConfig.Replace(req.Config)
+			}
+
 			if err != nil {
 				return fmt.Errorf("Failed updating cluster config: %w", err)
 			}
@@ -835,7 +854,7 @@ func doApi10UpdateTriggers(d *Daemon, nodeChanged, clusterChanged map[string]str
 		case "network.ovn.northbound_connection", "network.ovn.ca_cert", "network.ovn.client_cert", "network.ovn.client_key":
 			ovnChanged = true
 
-		case "oidc.issuer", "oidc.client.id", "oidc.audience", "oidc.claim":
+		case "oidc.issuer", "oidc.client.id", "oidc.audience", "oidc.claim", "oidc.scopes":
 			oidcChanged = true
 
 		case "openfga.api.url", "openfga.api.token", "openfga.store.id":
@@ -865,6 +884,10 @@ func doApi10UpdateTriggers(d *Daemon, nodeChanged, clusterChanged map[string]str
 	// cluster.https_address).
 	value, ok := nodeChanged["core.https_address"]
 	if ok {
+		if value == "" && s.OS.IncusOS != nil {
+			return errors.New("Cannot unset HTTPS address on an IncusOS system")
+		}
+
 		err := s.Endpoints.NetworkUpdateAddress(value)
 		if err != nil {
 			return err
@@ -918,6 +941,14 @@ func doApi10UpdateTriggers(d *Daemon, nodeChanged, clusterChanged map[string]str
 	value, ok = nodeChanged["storage.images_volume"]
 	if ok {
 		err := daemonStorageMove(s, "images", value)
+		if err != nil {
+			return err
+		}
+	}
+
+	value, ok = nodeChanged["storage.logs_volume"]
+	if ok {
+		err := daemonStorageMove(s, "logs", value)
 		if err != nil {
 			return err
 		}

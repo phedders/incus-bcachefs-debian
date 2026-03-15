@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lxc/incus/v6/internal/incusos"
 	"github.com/lxc/incus/v6/internal/linux"
 	"github.com/lxc/incus/v6/internal/server/cgroup"
 	"github.com/lxc/incus/v6/internal/server/db/cluster"
@@ -73,6 +74,11 @@ type OS struct {
 	AppArmorStacked   bool
 	AppArmorStacking  bool
 
+	// SELinux features
+	SELinuxAvailable          bool
+	SELinuxContextDaemon      string
+	SELinuxContextInstanceLXC string
+
 	// Cgroup features
 	CGInfo cgroup.Info
 
@@ -101,7 +107,7 @@ type OS struct {
 	KernelVersion version.DottedVersion
 	Uname         *linux.Utsname
 	BootTime      time.Time
-	IncusOS       bool
+	IncusOS       *incusos.Client
 }
 
 // DefaultOS returns a fresh uninitialized OS instance with default values.
@@ -121,7 +127,7 @@ func DefaultOS() *OS {
 
 // Init our internal data structures.
 func (s *OS) Init() ([]cluster.Warning, error) {
-	var dbWarnings []cluster.Warning
+	dbWarnings := []cluster.Warning{}
 
 	err := s.initDirs()
 	if err != nil {
@@ -181,7 +187,8 @@ func (s *OS) Init() ([]cluster.Warning, error) {
 		return nil, err
 	}
 
-	dbWarnings = s.initAppArmor()
+	dbWarnings = append(dbWarnings, s.initAppArmor()...)
+	dbWarnings = append(dbWarnings, s.initSELinux()...)
 	cgroup.Init()
 	s.CGInfo = cgroup.GetInfo()
 
@@ -205,7 +212,14 @@ func (s *OS) Init() ([]cluster.Warning, error) {
 		s.KernelVersion = *kernelVersion
 	}
 
-	s.IncusOS = util.PathExists("/var/lib/incus-os/")
+	if util.PathExists("/var/lib/incus-os/") {
+		c, err := incusos.NewClient()
+		if err != nil {
+			return nil, err
+		}
+
+		s.IncusOS = c
+	}
 
 	// Fill in the boot time.
 	out, err := os.ReadFile("/proc/stat")

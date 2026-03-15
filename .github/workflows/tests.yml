@@ -26,7 +26,7 @@ jobs:
           - tip
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           # Differential ShellCheck requires full git history
           fetch-depth: 0
@@ -45,20 +45,20 @@ jobs:
         if: github.event_name == 'pull_request' && matrix.go == 'stable'
 
       - name: Upload artifact with ShellCheck defects in SARIF format
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Differential ShellCheck SARIF
           path: ${{ steps.ShellCheck.outputs.sarif }}
         if: github.event_name == 'pull_request' && matrix.go == 'stable'
 
       - name: Install Go (${{ matrix.go }})
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
         if: matrix.go != 'tip'
 
       - name: Install Go (stable)
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: stable
         if: matrix.go == 'tip'
@@ -130,61 +130,64 @@ jobs:
       fail-fast: false
       matrix:
         go:
+          - oldstable
           - stable
+          - tip
         suite:
           - cluster
-          - standalone
+          - standalone_core
+          - standalone_container
+          - standalone_network
+          - standalone_storage
         backend:
           - dir
-          - btrfs
-          - lvm
-          - zfs
-          - ceph
-          - random
         os:
           - ubuntu-24.04
+          - ubuntu-24.04-arm
         include:
-          - go: oldstable
-            suite: cluster
-            backend: dir
-            os: ubuntu-24.04
-          - go: oldstable
-            suite: standalone
-            backend: dir
-            os: ubuntu-24.04
-          - go: tip
-            suite: cluster
-            backend: dir
-            os: ubuntu-24.04
-          - go: tip
-            suite: standalone
-            backend: dir
-            os: ubuntu-24.04
+          # Run standalone storage tests on all storage drivers but only on Ubuntu 24.04 with stable Go
+          - os: ubuntu-24.04
+            backend: btrfs
+            go: stable
+            suite: standalone_storage
+          - os: ubuntu-24.04
+            backend: ceph
+            go: stable
+            suite: standalone_storage
+          - os: ubuntu-24.04
+            backend: lvm
+            go: stable
+            suite: standalone_storage
+          - os: ubuntu-24.04
+            backend: random
+            go: stable
+            suite: standalone_storage
+          - os: ubuntu-24.04
+            backend: zfs
+            go: stable
+            suite: standalone_storage
 
-          - go: oldstable
+          # Run cluster tests on all storage drivers but only on Ubuntu 24.04 with stable Go
+          - os: ubuntu-24.04
+            backend: btrfs
+            go: stable
             suite: cluster
-            backend: dir
-            os: ubuntu-24.04-arm
-          - go: oldstable
-            suite: standalone
-            backend: dir
-            os: ubuntu-24.04-arm
-          - go: stable
+          - os: ubuntu-24.04
+            backend: ceph
+            go: stable
             suite: cluster
-            backend: dir
-            os: ubuntu-24.04-arm
-          - go: stable
-            suite: standalone
-            backend: dir
-            os: ubuntu-24.04-arm
-          - go: tip
+          - os: ubuntu-24.04
+            backend: lvm
+            go: stable
             suite: cluster
-            backend: dir
-            os: ubuntu-24.04-arm
-          - go: tip
-            suite: standalone
-            backend: dir
-            os: ubuntu-24.04-arm
+          - os: ubuntu-24.04
+            backend: random
+            go: stable
+            suite: cluster
+          - os: ubuntu-24.04
+            backend: zfs
+            go: stable
+            suite: cluster
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -228,16 +231,16 @@ jobs:
           sudo nft flush ruleset
 
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Install Go (${{ matrix.go }})
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
         if: matrix.go != 'tip'
 
       - name: Install Go (stable)
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: stable
         if: matrix.go == 'tip'
@@ -270,6 +273,7 @@ jobs:
             libcap-dev \
             libdbus-1-dev \
             libcowsql-dev \
+            libelf-dev \
             liblxc-dev \
             libseccomp-dev \
             libselinux-dev \
@@ -277,6 +281,7 @@ jobs:
             libtool \
             libudev-dev \
             linux-modules-extra-$(uname -r) \
+            llvm \
             make \
             pkg-config\
             acl \
@@ -339,20 +344,27 @@ jobs:
         run: |
           make
 
+      - name: Setup scratch space
+        if: "matrix.backend == 'ceph'"
+        run: |
+          set -eux
+
+          if mountpoint -q /mnt; then
+              [ -e /mnt/swapfile ] && sudo swapoff /mnt/swapfile
+              block_path="$(findmnt --noheadings --output SOURCE --target /mnt | sed 's/[0-9]\+$//')"
+              sudo umount /mnt
+              sudo wipefs -a "${block_path}"
+              sudo ln -s "${block_path}" "/dev/scratch"
+          else
+              sudo truncate -s 20G /scratch.img
+              block_path="$(sudo losetup --show -f /scratch.img)"
+              sudo ln -s "${block_path}" "/dev/scratch"
+          fi
+
       - name: Setup MicroCeph
-        if: ${{ matrix.backend == 'ceph' }}
+        if: matrix.backend == 'ceph'
         run: |
           set -x
-
-          # If the rootfs and the ephemeral part are on the same physical disk, giving the whole
-          # disk to microceph would wipe our rootfs. Since it is pretty rare for GitHub Action
-          # runners to have a single disk, we immediately bail rather than trying to gracefully
-          # handle it. Once snapd releases with https://github.com/snapcore/snapd/pull/13150,
-          # we will be able to stop worrying about that special case.
-          if [ "$(stat -c '%d' /)" = "$(stat -c '%d' /mnt)" ]; then
-            echo "FAIL: rootfs and ephemeral part on the same disk, aborting"
-            exit 1
-          fi
 
           sudo apt-get install --no-install-recommends -y snapd
           sudo snap install microceph --channel=quincy/stable
@@ -366,11 +378,9 @@ jobs:
           for flag in nosnaptrim noscrub nobackfill norebalance norecover noscrub nodeep-scrub; do
               sudo microceph.ceph osd set $flag
           done
+
           # Repurpose the ephemeral disk for ceph OSD.
-          sudo swapoff /mnt/swapfile
-          ephemeral_disk="$(findmnt --noheadings --output SOURCE --target /mnt | sed 's/[0-9]\+$//')"
-          sudo umount /mnt
-          sudo microceph disk add --wipe "${ephemeral_disk}"
+          sudo microceph disk add --wipe "$(readlink -f /dev/scratch)"
           sudo rm -rf /etc/ceph
           sudo ln -s /var/snap/microceph/current/conf/ /etc/ceph
           sudo microceph enable rgw
@@ -380,6 +390,7 @@ jobs:
           sudo microceph.ceph fs ls
           sleep 30
           sudo microceph.ceph status
+
           # Wait until there are no more "unkowns" pgs
           for _ in $(seq 60); do
             if sudo microceph.ceph pg stat | grep -wF unknown; then
@@ -431,10 +442,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
 
@@ -457,7 +468,6 @@ jobs:
           go build -o bin/incus.aarch64 ./cmd/incus
 
       - name: Build static incus-agent (x86_64)
-        if: runner.os == 'Linux' || runner.os == 'Windows'
         env:
           CGO_ENABLED: 0
           GOARCH: amd64
@@ -465,7 +475,6 @@ jobs:
           go build -o bin/incus-agent.x86_64 ./cmd/incus-agent
 
       - name: Build static incus-agent (aarch64)
-        if: runner.os == 'Linux' || runner.os == 'Windows'
         env:
           CGO_ENABLED: 0
           GOARCH: arm64
@@ -505,7 +514,7 @@ jobs:
 
       - name: Upload incus client artifacts
         if: matrix.go == 'stable'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         continue-on-error: true
         with:
           name: ${{ runner.os }}
@@ -516,10 +525,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: stable
 
@@ -554,7 +563,7 @@ jobs:
 
       - name: Upload documentation artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: documentation
           path: doc/html

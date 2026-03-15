@@ -9,7 +9,6 @@ import (
 	"github.com/lxc/incus/v6/internal/server/certificate"
 	internalUtil "github.com/lxc/incus/v6/internal/util"
 	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
 	"github.com/lxc/incus/v6/shared/util"
 )
 
@@ -41,7 +40,6 @@ func (t *TLS) CheckPermission(ctx context.Context, r *http.Request, object Objec
 
 	authenticationProtocol := details.authenticationProtocol()
 	if authenticationProtocol != api.AuthenticationMethodTLS {
-		t.logger.Warn("Authentication protocol is not compatible with authorization driver", logger.Ctx{"protocol": authenticationProtocol})
 		// Return nil. If the server has been configured with an authentication method but no associated authorization driver,
 		// the default is to give these authenticated users admin privileges.
 		return nil
@@ -115,7 +113,6 @@ func (t *TLS) GetPermissionChecker(ctx context.Context, r *http.Request, entitle
 
 	authenticationProtocol := details.authenticationProtocol()
 	if authenticationProtocol != api.AuthenticationMethodTLS {
-		t.logger.Warn("Authentication protocol is not compatible with authorization driver", logger.Ctx{"protocol": authenticationProtocol})
 		// Allow all. If the server has been configured with an authentication method but no associated authorization driver,
 		// the default is to give these authenticated users admin privileges.
 		return allowFunc(true), nil
@@ -144,18 +141,18 @@ func (t *TLS) GetPermissionChecker(ctx context.Context, r *http.Request, entitle
 			return allowFunc(true), nil
 		}
 
-		return nil, api.StatusErrorf(http.StatusForbidden, "Certificate is restricted")
+		return allowFunc(false), nil
 	case ObjectTypeStoragePool, ObjectTypeCertificate:
 		if entitlement == EntitlementCanView {
 			return allowFunc(true), nil
 		}
 
-		return nil, api.StatusErrorf(http.StatusForbidden, "Certificate is restricted")
+		return allowFunc(false), nil
 	}
 
 	// Error if user does not have access to the project (unless we're getting projects, where we want to filter the results).
 	if !details.IsAllProjectsRequest && !slices.Contains(projectNames, details.ProjectName) && objectType != ObjectTypeProject {
-		return nil, api.StatusErrorf(http.StatusForbidden, "User does not have permissions for project %q", details.ProjectName)
+		return allowFunc(false), nil
 	}
 
 	// Filter objects by project.

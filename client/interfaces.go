@@ -151,6 +151,7 @@ type InstanceServer interface {
 	RenameInstanceBackup(instanceName string, name string, backup api.InstanceBackupPost) (op Operation, err error)
 	DeleteInstanceBackup(instanceName string, name string) (op Operation, err error)
 	GetInstanceBackupFile(instanceName string, name string, req *BackupFileRequest) (resp *BackupFileResponse, err error)
+	CreateInstanceBackupStream(instanceName string, backup api.InstanceBackupsPost, req *BackupFileRequest) (err error)
 	CreateInstanceFromBackup(args InstanceBackupArgs) (op Operation, err error)
 
 	GetInstanceState(name string) (state *api.InstanceState, ETag string, err error)
@@ -174,7 +175,9 @@ type InstanceServer interface {
 
 	// Event handling functions
 	GetEvents() (listener *EventListener, err error)
+	GetEventsByType(eventTypes []string) (listener *EventListener, err error)
 	GetEventsAllProjects() (listener *EventListener, err error)
+	GetEventsAllProjectsByType(eventTypes []string) (listener *EventListener, err error)
 	SendEvent(event api.Event) error
 
 	// Image functions
@@ -332,7 +335,12 @@ type InstanceServer interface {
 	GetStoragePoolBucketsWithFilterAllProjects(poolName string, filters []string) (bucket []api.StorageBucket, err error)
 	GetStoragePoolBuckets(poolName string) ([]api.StorageBucket, error)
 	GetStoragePoolBucketsWithFilter(poolName string, filters []string) (bucket []api.StorageBucket, err error)
+	GetStoragePoolBucketsFullAllProjects(poolName string) ([]api.StorageBucketFull, error)
+	GetStoragePoolBucketsFullWithFilterAllProjects(poolName string, filters []string) (bucket []api.StorageBucketFull, err error)
+	GetStoragePoolBucketsFull(poolName string) ([]api.StorageBucketFull, error)
+	GetStoragePoolBucketsFullWithFilter(poolName string, filters []string) (bucket []api.StorageBucketFull, err error)
 	GetStoragePoolBucket(poolName string, bucketName string) (bucket *api.StorageBucket, ETag string, err error)
+	GetStoragePoolBucketFull(poolName string, bucketName string) (bucket *api.StorageBucketFull, ETag string, err error)
 	CreateStoragePoolBucket(poolName string, bucket api.StorageBucketsPost) (*api.StorageBucketKey, error)
 	UpdateStoragePoolBucket(poolName string, bucketName string, bucket api.StorageBucketPut, ETag string) (err error)
 	DeleteStoragePoolBucket(poolName string, bucketName string) (err error)
@@ -347,6 +355,7 @@ type InstanceServer interface {
 	CreateStoragePoolBucketBackup(poolName string, bucketName string, backup api.StorageBucketBackupsPost) (op Operation, err error)
 	DeleteStoragePoolBucketBackup(pool string, bucketName string, name string) (op Operation, err error)
 	GetStoragePoolBucketBackupFile(pool string, bucketName string, name string, req *BackupFileRequest) (resp *BackupFileResponse, err error)
+	CreateStoragePoolBucketBackupStream(pool string, bucketName string, backup api.StorageBucketBackupsPost, req *BackupFileRequest) (err error)
 	CreateStoragePoolBucketFromBackup(pool string, args StoragePoolBucketBackupArgs) (op Operation, err error)
 
 	// Storage volume functions ("storage" API extension)
@@ -356,7 +365,12 @@ type InstanceServer interface {
 	GetStoragePoolVolumesAllProjects(pool string) (volumes []api.StorageVolume, err error)
 	GetStoragePoolVolumesWithFilter(pool string, filters []string) (volumes []api.StorageVolume, err error)
 	GetStoragePoolVolumesWithFilterAllProjects(pool string, filters []string) (volumes []api.StorageVolume, err error)
+	GetStoragePoolVolumesFull(pool string) (volumes []api.StorageVolumeFull, err error)
+	GetStoragePoolVolumesFullAllProjects(pool string) (volumes []api.StorageVolumeFull, err error)
+	GetStoragePoolVolumesFullWithFilter(pool string, filters []string) (volumes []api.StorageVolumeFull, err error)
+	GetStoragePoolVolumesFullWithFilterAllProjects(pool string, filters []string) (volumes []api.StorageVolumeFull, err error)
 	GetStoragePoolVolume(pool string, volType string, name string) (volume *api.StorageVolume, ETag string, err error)
+	GetStoragePoolVolumeFull(pool string, volType string, name string) (volume *api.StorageVolumeFull, ETag string, err error)
 	GetStoragePoolVolumeState(pool string, volType string, name string) (state *api.StorageVolumeState, err error)
 	CreateStoragePoolVolume(pool string, volume api.StorageVolumesPost) (err error)
 	UpdateStoragePoolVolume(pool string, volType string, name string, volume api.StorageVolumePut, ETag string) (err error)
@@ -383,11 +397,17 @@ type InstanceServer interface {
 	RenameStorageVolumeBackup(pool string, volName string, name string, backup api.StorageVolumeBackupPost) (op Operation, err error)
 	DeleteStorageVolumeBackup(pool string, volName string, name string) (op Operation, err error)
 	GetStorageVolumeBackupFile(pool string, volName string, name string, req *BackupFileRequest) (resp *BackupFileResponse, err error)
+	CreateStorageVolumeBackupStream(pool string, volName string, backup api.StorageVolumeBackupsPost, req *BackupFileRequest) (err error)
 	CreateStoragePoolVolumeFromBackup(pool string, args StorageVolumeBackupArgs) (op Operation, err error)
 
 	// Storage volume ISO import function ("custom_volume_iso" API extension)
 	CreateStoragePoolVolumeFromISO(pool string, args StorageVolumeBackupArgs) (op Operation, err error)
 	CreateStoragePoolVolumeFromMigration(pool string, volume api.StorageVolumesPost) (op Operation, err error)
+
+	// Storage volume file manipulations functions ("file_storage_volume" API extension)
+	GetStorageVolumeFile(pool string, volumeType string, volumeName string, filePath string) (content io.ReadCloser, resp *InstanceFileResponse, err error)
+	CreateStorageVolumeFile(pool string, volumeType string, volumeName string, filePath string, args InstanceFileArgs) (err error)
+	DeleteStorageVolumeFile(pool string, volumeType string, volumeName string, filePath string) (err error)
 
 	// Storage volume SFTP functions ("custom_volume_sftp" API extension)
 	GetStoragePoolVolumeFileSFTPConn(pool string, volType string, volName string) (net.Conn, error)
@@ -585,6 +605,12 @@ type InstanceBackupArgs struct {
 
 	// Name to import backup as
 	Name string
+
+	// Config overrides.
+	Config []string
+
+	// Device overrides.
+	Devices []string
 }
 
 // The InstanceCopyArgs struct is used to pass additional options during instance copy.

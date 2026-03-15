@@ -186,6 +186,7 @@ func (s *consoleWs) connectVGA(r *http.Request, w http.ResponseWriter) error {
 
 			<-readDone
 			l.Debug("Finished mirroring console to websocket")
+			_ = conn.Close()
 			<-writeDone
 		}()
 
@@ -309,6 +310,7 @@ func (s *consoleWs) doConsole() error {
 
 		<-readDone
 		l.Debug("Finished mirroring console to websocket")
+		_ = conn.Close()
 		<-writeDone
 		close(mirrorDoneCh)
 	}()
@@ -321,15 +323,22 @@ func (s *consoleWs) doConsole() error {
 		close(consoleDisconnectCh)
 	}
 
-	// Get the console and control websockets.
-	s.connsLock.Lock()
-	consoleConn := s.conns[0]
-	ctrlConn := s.conns[-1]
-	s.connsLock.Unlock()
-
+	// Once this function ends ensure that any connected websockets are closed.
 	defer func() {
-		_ = consoleConn.Close()
-		_ = ctrlConn.Close()
+		s.connsLock.Lock()
+
+		consoleConn := s.conns[0]
+		ctrlConn := s.conns[-1]
+
+		if consoleConn != nil {
+			_ = consoleConn.Close()
+		}
+
+		if ctrlConn != nil {
+			_ = ctrlConn.Close()
+		}
+
+		s.connsLock.Unlock()
 	}()
 
 	// Write a reset escape sequence to the console to cancel any ongoing reads to the handle
@@ -489,7 +498,7 @@ func instanceConsolePost(d *Daemon, r *http.Request) response.Response {
 			return response.SmartError(err)
 		}
 
-		return operations.ForwardedOperationResponse(projectName, opAPI)
+		return operations.ForwardedOperationResponse(opAPI)
 	}
 
 	if post.Type == "" {
@@ -717,9 +726,14 @@ func instanceConsoleLogGet(d *Daemon, r *http.Request) response.Response {
 
 		var headers map[string]string
 		if consoleLogType == "vga" {
-			screenshotFile, err := os.CreateTemp(v.Path(), "screenshot-*.png")
+			screenshotFile, err := os.Create(fmt.Sprintf("/tmp/incus_screenshot_%d", inst.ID()))
 			if err != nil {
 				return response.SmartError(fmt.Errorf("Couldn't create screenshot file: %w", err))
+			}
+
+			err = screenshotFile.Chmod(0o600)
+			if err != nil {
+				return response.SmartError(err)
 			}
 
 			ent.Cleanup = func() {

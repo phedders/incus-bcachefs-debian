@@ -232,6 +232,35 @@ func (m *Monitor) MachineDefinition() (string, error) {
 	return strings.TrimSuffix(resp.Return, "-machine"), nil
 }
 
+// MemoryConfiguration returns the current QEMU machine memory configuration (current, max, slots).
+func (m *Monitor) MemoryConfiguration() (int64, int64, int64, error) {
+	// Prepare the request.
+	var req struct {
+		Path     string `json:"path"`
+		Property string `json:"property"`
+	}
+
+	req.Path = "/machine"
+	req.Property = "memory"
+
+	// Prepare the response.
+	var resp struct {
+		Return struct {
+			Size    int64 `json:"size"`
+			Slots   int64 `json:"slots"`
+			MaxSize int64 `json:"max-size"`
+		} `json:"return"`
+	}
+
+	// Query the machine.
+	err := m.Run("qom-get", req, &resp)
+	if err != nil {
+		return -1, -1, -1, err
+	}
+
+	return resp.Return.Size, resp.Return.MaxSize, resp.Return.Slots, nil
+}
+
 // SendFile adds a new file descriptor to the QMP fd table associated to name.
 func (m *Monitor) SendFile(name string, file *os.File) error {
 	// Check if disconnected.
@@ -456,30 +485,35 @@ func (m *Monitor) QueryMigrate() (*MigrationStatus, error) {
 // MigrateWait waits until migration job reaches the specified status.
 // Returns nil if the migraton job reaches the specified status or an error if the migration job is in the failed
 // status.
-func (m *Monitor) MigrateWait(state string) error {
+func (m *Monitor) MigrateWait(ctx context.Context, state string) error {
 	// Wait until it completes or fails.
 	for {
-		// Prepare the response.
-		var resp struct {
-			Return struct {
-				Status string `json:"status"`
-			} `json:"return"`
-		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// Prepare the response.
+			var resp struct {
+				Return struct {
+					Status string `json:"status"`
+				} `json:"return"`
+			}
 
-		err := m.Run("query-migrate", nil, &resp)
-		if err != nil {
-			return err
-		}
+			err := m.Run("query-migrate", nil, &resp)
+			if err != nil {
+				return err
+			}
 
-		if resp.Return.Status == "failed" {
-			return errors.New("Migrate call failed")
-		}
+			if resp.Return.Status == "failed" {
+				return errors.New("Migrate call failed")
+			}
 
-		if resp.Return.Status == state {
-			return nil
-		}
+			if resp.Return.Status == state {
+				return nil
+			}
 
-		time.Sleep(1 * time.Second)
+			time.Sleep(1 * time.Second)
+		}
 	}
 }
 
@@ -711,13 +745,38 @@ func (m *Monitor) AddObject(args map[string]any) error {
 }
 
 // AddBlockDevice adds a block device.
-func (m *Monitor) AddBlockDevice(blockDev map[string]any, device map[string]any, attached bool) error {
-	if !attached {
-		return nil
-	}
-
+func (m *Monitor) AddBlockDevice(blockDev map[string]any, device map[string]any, usb bool) error {
 	reverter := revert.New()
 	defer reverter.Fail()
+
+	// If USB, start with a USB block only controller.
+	var usbID string
+
+	if usb {
+		id, ok := device["id"].(string)
+		if !ok {
+			return errors.New("Parent device must have an id")
+		}
+
+		usbID = "usb_" + id
+
+		usbDev := map[string]any{
+			"driver": "usb-bot",
+			"bus":    "qemu_usb.0",
+			"id":     usbID,
+		}
+
+		err := m.AddDevice(usbDev)
+		if err != nil {
+			return fmt.Errorf("Failed adding USB device: %w", err)
+		}
+
+		reverter.Add(func() {
+			_ = m.RemoveDevice(usbID)
+		})
+
+		device["bus"] = usbID + ".0"
+	}
 
 	nodeName, ok := blockDev["node-name"].(string)
 	if !ok {
@@ -738,6 +797,14 @@ func (m *Monitor) AddBlockDevice(blockDev map[string]any, device map[string]any,
 	err := m.AddDevice(device)
 	if err != nil {
 		return fmt.Errorf("Failed adding device: %w", err)
+	}
+
+	// If USB, bring the device up now.
+	if usb {
+		err = m.Run("qom-set", map[string]any{"path": usbID, "property": "attached", "value": true}, nil)
+		if err != nil {
+			return fmt.Errorf("Failed to bring up USB device: %w", err)
+		}
 	}
 
 	reverter.Success()
@@ -834,7 +901,7 @@ func (m *Monitor) RemoveDevice(deviceID string) error {
 }
 
 // AddNIC adds a NIC device.
-func (m *Monitor) AddNIC(netDev map[string]any, device map[string]any) error {
+func (m *Monitor) AddNIC(netDev map[string]any, device map[string]any, connected bool) error {
 	reverter := revert.New()
 	defer reverter.Fail()
 
@@ -859,6 +926,19 @@ func (m *Monitor) AddNIC(netDev map[string]any, device map[string]any) error {
 	err := m.AddDevice(device)
 	if err != nil {
 		return fmt.Errorf("Failed adding NIC device: %w", err)
+	}
+
+	id, ok := device["id"].(string)
+	if !ok {
+		return errors.New("NIC device must have an id")
+	}
+
+	// Set link down if asked to.
+	if !connected {
+		err = m.SetNICLink(id, connected)
+		if err != nil {
+			return fmt.Errorf("Failed setting NIC device link status: %w", err)
+		}
 	}
 
 	reverter.Success()
@@ -1063,6 +1143,30 @@ func (m *Monitor) NBDServerStart() (net.Conn, error) {
 	return conn, nil
 }
 
+// NBDUnixServerStart starts an internal NBD server listening on the specified Unix socket.
+func (m *Monitor) NBDUnixServerStart(path string) error {
+	var args struct {
+		Addr struct {
+			Data struct {
+				Str string `json:"str"`
+			} `json:"data"`
+			Type string `json:"type"`
+		} `json:"addr"`
+		MaxConnections int `json:"max-connections"`
+	}
+
+	args.Addr.Type = "fd"
+	args.Addr.Data.Str = path
+	args.MaxConnections = 1
+
+	err := m.Run("nbd-server-start", args, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // NBDServerStop stops the internal NBD server.
 func (m *Monitor) NBDServerStop() error {
 	err := m.Run("nbd-server-stop", nil, nil)
@@ -1074,7 +1178,7 @@ func (m *Monitor) NBDServerStop() error {
 }
 
 // NBDBlockExportAdd exports a writable device via the NBD server.
-func (m *Monitor) NBDBlockExportAdd(deviceNodeName string) error {
+func (m *Monitor) NBDBlockExportAdd(deviceNodeName string, writable bool) error {
 	var args struct {
 		ID       string `json:"id"`
 		Type     string `json:"type"`
@@ -1085,9 +1189,50 @@ func (m *Monitor) NBDBlockExportAdd(deviceNodeName string) error {
 	args.ID = deviceNodeName
 	args.Type = "nbd"
 	args.NodeName = deviceNodeName
-	args.Writable = true
+	args.Writable = writable
 
 	err := m.Run("block-export-add", args, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// QueryNamedBlockNodes returns block nodes names.
+func (m *Monitor) QueryNamedBlockNodes() ([]string, error) {
+	var resp struct {
+		Return []struct {
+			NodeName string `json:"node-name"`
+		} `json:"return"`
+	}
+
+	err := m.Run("query-named-block-nodes", nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []string{}
+	for _, r := range resp.Return {
+		result = append(result, r.NodeName)
+	}
+
+	return result, nil
+}
+
+// ChangeBackingFile changes backing file name for node.
+func (m *Monitor) ChangeBackingFile(deviceNodeName string, imageNodeName string, backingFilename string) error {
+	var args struct {
+		Device      string `json:"device"`
+		NodeName    string `json:"image-node-name"`
+		BackingFile string `json:"backing-file"`
+	}
+
+	args.Device = deviceNodeName
+	args.NodeName = imageNodeName
+	args.BackingFile = backingFilename
+
+	err := m.Run("change-backing-file", args, nil)
 	if err != nil {
 		return err
 	}
@@ -1115,7 +1260,7 @@ func (m *Monitor) BlockDevSnapshot(deviceNodeName string, snapshotNodeName strin
 
 // blockJobWaitReady waits until the specified jobID is ready, errored or missing.
 // Returns nil if the job is ready, otherwise an error.
-func (m *Monitor) blockJobWaitReady(jobID string) error {
+func (m *Monitor) blockJobWaitReady(jobID string, exitOnNotFound bool) error {
 	for {
 		var resp struct {
 			Return []struct {
@@ -1147,8 +1292,10 @@ func (m *Monitor) blockJobWaitReady(jobID string) error {
 			found = true
 		}
 
-		if !found {
+		if !found && !exitOnNotFound {
 			return errors.New("Specified block job not found")
+		} else if !found && exitOnNotFound {
+			return nil
 		}
 
 		time.Sleep(1 * time.Second)
@@ -1156,28 +1303,37 @@ func (m *Monitor) blockJobWaitReady(jobID string) error {
 }
 
 // BlockCommit merges a snapshot device back into its parent device.
-func (m *Monitor) BlockCommit(deviceNodeName string) error {
+func (m *Monitor) BlockCommit(deviceNodeName string, top string, base string) error {
 	var args struct {
 		Device string `json:"device"`
 		JobID  string `json:"job-id"`
+		Top    string `json:"top-node,omitempty"`
+		Base   string `json:"base-node,omitempty"`
 	}
 
 	args.Device = deviceNodeName
 	args.JobID = args.Device
+	args.Top = top
+	args.Base = base
 
 	err := m.Run("block-commit", args, nil)
 	if err != nil {
 		return err
 	}
 
-	err = m.blockJobWaitReady(args.JobID)
+	// From QEMU doc: If top has no overlays on top of it, or if it is in use by a writer,
+	// the job will not be completed by itself.
+	hasTop := top != deviceNodeName && top != ""
+	err = m.blockJobWaitReady(args.JobID, hasTop)
 	if err != nil {
 		return err
 	}
 
-	err = m.BlockJobComplete(args.JobID)
-	if err != nil {
-		return err
+	if !hasTop {
+		err = m.BlockJobComplete(args.JobID)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -1210,7 +1366,7 @@ func (m *Monitor) BlockDevMirror(deviceNodeName string, targetNodeName string) e
 		return err
 	}
 
-	err = m.blockJobWaitReady(args.JobID)
+	err = m.blockJobWaitReady(args.JobID, false)
 	if err != nil {
 		return err
 	}
@@ -1251,14 +1407,14 @@ func (m *Monitor) BlockJobComplete(deviceNodeName string) error {
 }
 
 // UpdateBlockSize updates the size of a disk.
-func (m *Monitor) UpdateBlockSize(id string) error {
+func (m *Monitor) UpdateBlockSize(id string, size int64) error {
 	var args struct {
 		NodeName string `json:"node-name"`
 		Size     int64  `json:"size"`
 	}
 
 	args.NodeName = id
-	args.Size = 1
+	args.Size = size
 
 	err := m.Run("block_resize", args, nil)
 	if err != nil {
@@ -1476,4 +1632,16 @@ func (m *Monitor) DumpGuestMemory(path string, format string) error {
 	}
 
 	return m.Run("dump-guest-memory", args, &queryResp)
+}
+
+// SetNICLink sets the link status of the given device.
+func (m *Monitor) SetNICLink(id string, connected bool) error {
+	var args struct {
+		Name string `json:"name"`
+		Up   bool   `json:"up"`
+	}
+
+	args.Name = id
+	args.Up = connected
+	return m.Run("set_link", args, nil)
 }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,6 +59,7 @@ import (
 	"github.com/lxc/incus/v6/internal/server/instance"
 	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
 	"github.com/lxc/incus/v6/internal/server/instance/operationlock"
+	"github.com/lxc/incus/v6/internal/server/ip"
 	"github.com/lxc/incus/v6/internal/server/lifecycle"
 	"github.com/lxc/incus/v6/internal/server/locking"
 	"github.com/lxc/incus/v6/internal/server/metrics"
@@ -944,19 +946,19 @@ func (d *lxc) initLXC(config bool) (*liblxc.Container, error) {
 	}
 
 	// Call the onstart hook on start.
-	err = lxcSetConfigItem(cc, "lxc.hook.pre-start", fmt.Sprintf("/proc/%d/exe callhook %s %s %s start", os.Getpid(), internalUtil.VarPath(""), strconv.Quote(d.Project().Name), strconv.Quote(d.Name())))
+	err = lxcSetConfigItem(cc, "lxc.hook.pre-start", fmt.Sprintf("/proc/%d/exe callhook %s %s %s start", os.Getpid(), internalUtil.VarPath(""), util.SingleQuote(d.Project().Name), util.SingleQuote(d.Name())))
 	if err != nil {
 		return nil, err
 	}
 
 	// Call the onstopns hook on stop but before namespaces are unmounted.
-	err = lxcSetConfigItem(cc, "lxc.hook.stop", fmt.Sprintf("%s callhook %s %s %s stopns", d.state.OS.ExecPath, internalUtil.VarPath(""), strconv.Quote(d.Project().Name), strconv.Quote(d.Name())))
+	err = lxcSetConfigItem(cc, "lxc.hook.stop", fmt.Sprintf("%s callhook %s %s %s stopns", d.state.OS.ExecPath, internalUtil.VarPath(""), util.SingleQuote(d.Project().Name), util.SingleQuote(d.Name())))
 	if err != nil {
 		return nil, err
 	}
 
 	// Call the onstop hook on stop.
-	err = lxcSetConfigItem(cc, "lxc.hook.post-stop", fmt.Sprintf("%s callhook %s %s %s stop", d.state.OS.ExecPath, internalUtil.VarPath(""), strconv.Quote(d.Project().Name), strconv.Quote(d.Name())))
+	err = lxcSetConfigItem(cc, "lxc.hook.post-stop", fmt.Sprintf("%s callhook %s %s %s stop", d.state.OS.ExecPath, internalUtil.VarPath(""), util.SingleQuote(d.Project().Name), util.SingleQuote(d.Name())))
 	if err != nil {
 		return nil, err
 	}
@@ -1017,6 +1019,19 @@ func (d *lxc) initLXC(config bool) (*liblxc.Container, error) {
 		_ = lxcSetConfigItem(cc, "lxc.apparmor.profile", "unconfined")
 	}
 
+	// Setup SELinux.
+	if d.state.OS.SELinuxAvailable && d.state.OS.SELinuxContextInstanceLXC != "" {
+		seContext, err := d.selinuxContext(d.state.OS.SELinuxContextInstanceLXC)
+		if err != nil {
+			return nil, err
+		}
+
+		err = lxcSetConfigItem(cc, "lxc.selinux.context", seContext)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Setup Seccomp if necessary
 	if seccomp.InstanceNeedsPolicy(d) {
 		err = lxcSetConfigItem(cc, "lxc.seccomp.profile", seccomp.ProfilePath(d))
@@ -1067,6 +1082,16 @@ func (d *lxc) initLXC(config bool) (*liblxc.Container, error) {
 				return nil, err
 			}
 		}
+	}
+
+	err = lxcSetConfigItem(cc, "lxc.environment", "CREDENTIALS_DIRECTORY=/dev/.incus-systemd-credentials")
+	if err != nil {
+		return nil, err
+	}
+
+	err = lxcSetConfigItem(cc, "lxc.mount.entry", fmt.Sprintf("%s dev/.incus-systemd-credentials none bind,ro,create=dir 0 0", filepath.Join(d.Path(), "credentials")))
+	if err != nil {
+		return nil, err
 	}
 
 	// Setup NVIDIA runtime
@@ -1467,7 +1492,7 @@ func (d *lxc) deviceStart(dev device.Device, instanceRunning bool) (*deviceConfi
 
 			// Attach network interface if requested.
 			if len(runConf.NetworkInterface) > 0 {
-				err = d.deviceAttachNIC(configCopy, runConf.NetworkInterface)
+				err = d.deviceAttachNIC(dev.Name(), configCopy, runConf.NetworkInterface)
 				if err != nil {
 					return nil, err
 				}
@@ -1544,16 +1569,18 @@ func (d *lxc) deviceAddCgroupRules(cgroups []deviceConfig.RunConfigItem) error {
 }
 
 // deviceAttachNIC live attaches a NIC device to a container.
-func (d *lxc) deviceAttachNIC(configCopy map[string]string, netIF []deviceConfig.RunConfigItem) error {
-	devName := ""
+func (d *lxc) deviceAttachNIC(devName string, configCopy map[string]string, netIF []deviceConfig.RunConfigItem) error {
+	ctDevName := ""
+	connected := true
 	for _, dev := range netIF {
 		if dev.Key == "link" {
-			devName = dev.Value
-			break
+			ctDevName = dev.Value
+		} else if dev.Key == "connected" {
+			connected = util.IsTrueOrEmpty(dev.Value)
 		}
 	}
 
-	if devName == "" {
+	if ctDevName == "" {
 		return errors.New("Device didn't provide a link property to use")
 	}
 
@@ -1564,12 +1591,12 @@ func (d *lxc) deviceAttachNIC(configCopy map[string]string, netIF []deviceConfig
 	}
 
 	// Add the interface to the container.
-	err = cc.AttachInterface(devName, configCopy["name"])
+	err = cc.AttachInterface(ctDevName, configCopy["name"])
 	if err != nil {
-		return fmt.Errorf("Failed to attach interface: %s to %s: %w", devName, configCopy["name"], err)
+		return fmt.Errorf("Failed to attach interface: %s to %s: %w", ctDevName, configCopy["name"], err)
 	}
 
-	return nil
+	return d.setNICLink(devName, connected, true)
 }
 
 // deviceStop loads a new device and calls its Stop() function.
@@ -1786,6 +1813,25 @@ func (d *lxc) DeviceEventHandler(runConf *deviceConfig.RunConfig) error {
 	// Add cgroup rules if requested.
 	if len(runConf.CGroups) > 0 {
 		err := d.deviceAddCgroupRules(runConf.CGroups)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Handle NIC reconfiguration.
+	var devName string
+	var connected bool
+	for _, dev := range runConf.NetworkInterface {
+		switch dev.Key {
+		case "devName":
+			devName = dev.Value
+		case "connected":
+			connected = util.IsTrueOrEmpty(dev.Value)
+		}
+	}
+
+	if devName != "" {
+		err := d.setNICLink(devName, connected, false)
 		if err != nil {
 			return err
 		}
@@ -2282,6 +2328,15 @@ func (d *lxc) startCommon() (string, []func() error, error) {
 			}
 
 			for _, nicItem := range runConf.NetworkInterface {
+				// The connected state is not a LXC configuration key; we defer its handling to a post hook.
+				if nicItem.Key == "connected" {
+					runConf.PostHooks = append(runConf.PostHooks, func() error {
+						return d.setNICLink(dev.Name(), util.IsTrueOrEmpty(nicItem.Value), true)
+					})
+
+					continue
+				}
+
 				err = lxcSetConfigItem(cc, fmt.Sprintf("%s.%d.%s", networkKeyPrefix, nicID, nicItem.Key), nicItem.Value)
 				if err != nil {
 					return "", nil, fmt.Errorf("Failed to setup device network interface %q: %w", dev.Name(), err)
@@ -2302,6 +2357,12 @@ func (d *lxc) startCommon() (string, []func() error, error) {
 				}
 			}
 		}
+	}
+
+	// Initialize the credentials directory.
+	err = d.setupCredentials(false)
+	if err != nil {
+		return "", nil, err
 	}
 
 	// Override NVIDIA_VISIBLE_DEVICES if we have devices that need it.
@@ -2375,6 +2436,23 @@ func (d *lxc) startCommon() (string, []func() error, error) {
 		}
 	}
 
+	// Setup BPF token delegation if enabled
+	bpfConfig := d.bpfTokenConfig()
+	if bpfConfig.enable {
+		err = lxcSetConfigItem(cc, "lxc.hook.start-host", shellquote.Join(
+			fmt.Sprintf("/proc/%d/exe", os.Getpid()),
+			"forkbpf",
+			bpfConfig.mountPath,
+			bpfConfig.cmdTypes,
+			bpfConfig.mapTypes,
+			bpfConfig.progTypes,
+			bpfConfig.attachTypes,
+		))
+		if err != nil {
+			return "", nil, err
+		}
+	}
+
 	// Load the LXC raw config.
 	err = d.loadRawLXCConfig(cc)
 	if err != nil {
@@ -2440,6 +2518,39 @@ func (d *lxc) startCommon() (string, []func() error, error) {
 	reverter.Success()
 
 	return configPath, postStartHooks, nil
+}
+
+type bpfTokenConfig struct {
+	enable      bool
+	mountPath   string
+	cmdTypes    string
+	mapTypes    string
+	progTypes   string
+	attachTypes string
+}
+
+func (d *lxc) bpfTokenConfig() bpfTokenConfig {
+	if util.IsTrue(d.expandedConfig["security.privileged"]) {
+		return bpfTokenConfig{}
+	}
+
+	cfg := bpfTokenConfig{
+		mountPath:   d.expandedConfig["security.bpffs.path"],
+		cmdTypes:    d.expandedConfig["security.bpffs.delegate_cmds"],
+		mapTypes:    d.expandedConfig["security.bpffs.delegate_maps"],
+		progTypes:   d.expandedConfig["security.bpffs.delegate_progs"],
+		attachTypes: d.expandedConfig["security.bpffs.delegate_attachs"],
+	}
+
+	if cfg.cmdTypes != "" || cfg.mapTypes != "" || cfg.progTypes != "" || cfg.attachTypes != "" {
+		cfg.enable = true
+	}
+
+	if cfg.mountPath == "" {
+		cfg.mountPath = "/sys/fs/bpf"
+	}
+
+	return cfg
 }
 
 // detachInterfaceRename enters the container's network namespace and moves the named interface
@@ -2616,7 +2727,8 @@ func (d *lxc) Start(stateful bool) error {
 		"forkstart",
 		name,
 		d.state.OS.LxcPath,
-		configPath)
+		configPath,
+		d.LogPath())
 	if err != nil && !d.IsRunning() {
 		// Attempt to extract the LXC errors
 		lxcLog := ""
@@ -2661,6 +2773,16 @@ func (d *lxc) Start(stateful bool) error {
 		_ = d.Stop(false)
 
 		return err
+	}
+
+	// Apply OOM priority after container is started and hooks completed.
+	err = d.setOOMPriority(d.InitPID())
+	if err != nil {
+		d.logger.Warn("Failed to set OOM priority", logger.Ctx{
+			"err":      err,
+			"instance": d.Name(),
+			"project":  d.Project().Name,
+		})
 	}
 
 	if op.Action() == "start" {
@@ -3455,6 +3577,7 @@ func (d *lxc) Render() (any, any, error) {
 		// Prepare the response.
 		snapState := api.InstanceSnapshot{
 			CreatedAt:       d.creationDate,
+			Description:     d.description,
 			ExpandedConfig:  d.expandedConfig,
 			ExpandedDevices: d.expandedDevices.CloneNative(),
 			LastUsedAt:      d.lastUsedDate,
@@ -3698,7 +3821,7 @@ func (d *lxc) Snapshot(name string, expiry time.Time, stateful bool) error {
 }
 
 // Restore restores a snapshot.
-func (d *lxc) Restore(sourceContainer instance.Instance, stateful bool) error {
+func (d *lxc) Restore(sourceContainer instance.Instance, stateful bool, diskOnly bool) error {
 	var ctxMap logger.Ctx
 
 	op, err := operationlock.Create(d.Project().Name, d.Name(), d.op, operationlock.ActionRestore, false, false)
@@ -3815,17 +3938,34 @@ func (d *lxc) Restore(sourceContainer instance.Instance, stateful bool) error {
 		return err
 	}
 
-	// Restore the configuration.
-	args := db.InstanceArgs{
-		Architecture: sourceContainer.Architecture(),
-		Config:       sourceContainer.LocalConfig(),
-		Description:  sourceContainer.Description(),
-		Devices:      sourceContainer.LocalDevices(),
-		Ephemeral:    sourceContainer.IsEphemeral(),
-		Profiles:     sourceContainer.Profiles(),
-		Project:      sourceContainer.Project().Name,
-		Type:         sourceContainer.Type(),
-		Snapshot:     sourceContainer.IsSnapshot(),
+	args := db.InstanceArgs{}
+	if !diskOnly {
+		// Restore the configuration.
+		args = db.InstanceArgs{
+			Architecture: sourceContainer.Architecture(),
+			Config:       sourceContainer.LocalConfig(),
+			Description:  sourceContainer.Description(),
+			Devices:      sourceContainer.LocalDevices(),
+			Ephemeral:    sourceContainer.IsEphemeral(),
+			Profiles:     sourceContainer.Profiles(),
+			Project:      sourceContainer.Project().Name,
+			Type:         sourceContainer.Type(),
+			Snapshot:     sourceContainer.IsSnapshot(),
+		}
+	} else {
+		args = db.InstanceArgs{
+			Architecture: d.Architecture(),
+			Config:       d.LocalConfig(),
+			Description:  d.Description(),
+			Devices:      d.LocalDevices(),
+			Ephemeral:    d.IsEphemeral(),
+			Profiles:     d.Profiles(),
+			Project:      d.Project().Name,
+			Type:         d.Type(),
+			Snapshot:     d.IsSnapshot(),
+		}
+
+		args.Config["volatile.uuid.generation"] = sourceContainer.LocalConfig()["volatile.uuid.generation"]
 	}
 
 	// Don't pass as user-requested as there's no way to fix a bad config.
@@ -4419,6 +4559,7 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 			d.release()
 			d.cConfig = false
 			_, _ = d.initLXC(true)
+			_ = d.setupCredentials(true)
 			cgroup.TaskSchedulerTrigger("container", d.name, "changed")
 		}
 	}()
@@ -4470,6 +4611,12 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 		newDevType, err := device.LoadByType(d.state, d.Project().Name, newDevice)
 		if err != nil {
 			return []string{} // Couldn't create Device, so this cannot be an update.
+		}
+
+		// Detached devices need to be fully recreated on update so that the update logic doesn't
+		// try to access non-existing LXC devices.
+		if !util.IsTrueOrEmpty(oldDevice["attached"]) {
+			return []string{}
 		}
 
 		return newDevType.UpdatableFields(oldDevType)
@@ -4696,6 +4843,16 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 				err = cg.SetBlkioWeight(priority)
 				if err != nil {
 					return err
+				}
+			} else if key == "limits.memory.oom_priority" {
+				// Configure the OOM priority.
+				err = d.setOOMPriority(cc.InitPid())
+				if err != nil {
+					d.logger.Warn("Failed to set OOM priority", logger.Ctx{
+						"err":      err,
+						"instance": d.Name(),
+						"project":  d.Project().Name,
+					})
 				}
 			} else if key == "limits.memory" || strings.HasPrefix(key, "limits.memory.") {
 				// Skip if no memory CGroup
@@ -4927,6 +5084,12 @@ func (d *lxc) Update(args db.InstanceArgs, userRequested bool) error {
 					return err
 				}
 			}
+		}
+
+		// Update the credentials directory.
+		err = d.setupCredentials(true)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -5422,10 +5585,22 @@ func (d *lxc) MigrateSend(args instance.MigrateSendArgs) error {
 	d.logger.Debug("Migration send starting")
 	defer d.logger.Debug("Migration send stopped")
 
+	// Check for an existing operation.
+
 	// Setup a new operation.
+	op := operationlock.Get(d.Project().Name, d.Name())
+	if op != nil && op.ActionMatch(operationlock.ActionMigrate) {
+		return errors.New("The instance is already being migrated")
+	}
+
 	op, err := operationlock.CreateWaitGet(d.Project().Name, d.Name(), d.op, operationlock.ActionMigrate, nil, false, true)
 	if err != nil {
 		return err
+	}
+
+	// If not running, stop any forkfile instance.
+	if !d.IsRunning() {
+		d.stopForkfile(false)
 	}
 
 	// Wait for essential migration connections before negotiation.
@@ -6298,6 +6473,7 @@ func (d *lxc) MigrateReceive(args instance.MigrateReceiveArgs) error {
 				CreatedAt:    d.CreationDate(),
 				LastUsedAt:   d.LastUsedDate(),
 				Config:       d.LocalConfig(),
+				Description:  d.Description(),
 				Devices:      d.LocalDevices().CloneNative(),
 				Ephemeral:    d.IsEphemeral(),
 				Stateful:     d.IsStateful(),
@@ -6841,6 +7017,32 @@ func (d *lxc) templateApplyNow(trigger instance.TemplateTrigger) error {
 		containerMeta["privileged"] = "false"
 	}
 
+	// Setup security check.
+	rootfsPath, err := os.OpenFile(d.RootfsPath(), unix.O_PATH, 0)
+	if err != nil {
+		return fmt.Errorf("Failed to open instance rootfs path: %w", err)
+	}
+
+	defer func() { _ = rootfsPath.Close() }()
+
+	checkBeneath := func(targetPath string) error {
+		fd, err := unix.Openat2(int(rootfsPath.Fd()), targetPath, &unix.OpenHow{
+			Flags:   unix.O_PATH | unix.O_CLOEXEC,
+			Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_MAGICLINKS,
+		})
+		if err != nil {
+			if errors.Is(err, unix.EXDEV) {
+				return errors.New("Template is attempting access to path outside of container")
+			}
+
+			return nil
+		}
+
+		_ = unix.Close(fd)
+
+		return nil
+	}
+
 	// Go through the templates
 	for tplPath, tpl := range metadata.Templates {
 		err = func(tplPath string, tpl *api.ImageMetadataTemplate) error {
@@ -6853,8 +7055,38 @@ func (d *lxc) templateApplyNow(trigger instance.TemplateTrigger) error {
 				return nil
 			}
 
+			// Perform some security checks.
+			relPath := strings.TrimLeft(tplPath, "/")
+
+			err = checkBeneath(relPath)
+			if err != nil {
+				return err
+			}
+
+			if filepath.Base(tpl.Template) != tpl.Template {
+				return errors.New("Template path is attempting to read outside of template directory")
+			}
+
+			tplDirStat, err := os.Lstat(d.TemplatesPath())
+			if err != nil {
+				return fmt.Errorf("Couldn't access template directory: %w", err)
+			}
+
+			if !tplDirStat.IsDir() {
+				return errors.New("Template directory isn't a regular directory")
+			}
+
+			tplFileStat, err := os.Lstat(filepath.Join(d.TemplatesPath(), tpl.Template))
+			if err != nil {
+				return fmt.Errorf("Couldn't access template file: %w", err)
+			}
+
+			if tplFileStat.Mode()&os.ModeSymlink == os.ModeSymlink {
+				return errors.New("Template file is a symlink")
+			}
+
 			// Open the file to template, create if needed
-			fullpath := filepath.Join(d.RootfsPath(), strings.TrimLeft(tplPath, "/"))
+			fullpath := filepath.Join(d.RootfsPath(), relPath)
 			if util.PathExists(fullpath) {
 				if tpl.CreateOnly {
 					return nil
@@ -8217,13 +8449,15 @@ func (d *lxc) FillNetworkDevice(name string, m deviceConfig.Device) (deviceConfi
 		return nil, err
 	}
 
+	isPhysicalWithBridge := device.IsPhysicalNICWithBridge(d.state, d.Project().Name, m)
+
 	// Fill in the MAC address.
-	if !slices.Contains([]string{"physical", "ipvlan"}, nicType) && m["hwaddr"] == "" {
+	if (!slices.Contains([]string{"physical", "ipvlan"}, nicType) || isPhysicalWithBridge) && m["hwaddr"] == "" {
 		configKey := fmt.Sprintf("volatile.%s.hwaddr", name)
 		volatileHwaddr := d.localConfig[configKey]
 		if volatileHwaddr == "" {
 			// Generate a new MAC address.
-			volatileHwaddr, err = instance.DeviceNextInterfaceHWAddr()
+			volatileHwaddr, err = instance.DeviceNextInterfaceHWAddr(d.MACPattern())
 			if err != nil || volatileHwaddr == "" {
 				return nil, fmt.Errorf("Failed generating %q: %w", configKey, err)
 			}
@@ -8732,6 +8966,16 @@ func (d *lxc) Metrics(hostInterfaces []net.Interface) (*metrics.MetricSet, error
 		out.AddSamples(metrics.ProcsTotal, metrics.Sample{Value: float64(pids)})
 	}
 
+	// Set the timestamps
+	startedAt, err := d.processStartedAt(d.InitPID())
+	if err != nil {
+		d.logger.Warn("Failed to get instance startup time", logger.Ctx{"err": err})
+	} else {
+		out.AddSamples(metrics.BootTimeSeconds, metrics.Sample{Value: float64(startedAt.Unix())})
+	}
+
+	out.AddSamples(metrics.TimeSeconds, metrics.Sample{Value: float64(time.Now().Unix())})
+
 	return out, nil
 }
 
@@ -8819,6 +9063,11 @@ func (d *lxc) getFSStats() (*metrics.MetricSet, error) {
 				realDev = dev["source"]
 			}
 		} else {
+			// Skip special disks.
+			if device.IsSpecialDisk(dev["source"]) {
+				continue
+			}
+
 			source := dev["source"]
 
 			statfs, err = linux.StatVFS(source)
@@ -8937,4 +9186,134 @@ func (d *lxc) ReloadDevice(devName string) error {
 // CanLiveMigrate returns whether the container is live-migratable.
 func (d *lxc) CanLiveMigrate() bool {
 	return util.IsTrue(d.expandedConfig["migration.stateful"])
+}
+
+// setupCredentials sets up the systemd credentials directory.
+func (d *lxc) setupCredentials(update bool) error {
+	// Skip updating if the container isn't running.
+	if update && !d.IsRunning() {
+		return nil
+	}
+
+	credentialsDir := filepath.Join(d.Path(), "credentials")
+	credentials := map[string][]byte{}
+	oldCredentials := map[string]bool{}
+
+	var rootUID, rootGID int64
+	idmapset, err := d.NextIdmap()
+	if err != nil {
+		return err
+	}
+
+	if idmapset != nil {
+		rootUID, rootGID = idmapset.ShiftIntoNS(0, 0)
+	}
+
+	for k, v := range d.expandedConfig {
+		after, ok := strings.CutPrefix(k, "systemd.credential.")
+		if ok {
+			credentials[after] = []byte(v)
+			continue
+		}
+
+		after, ok = strings.CutPrefix(k, "systemd.credential-binary.")
+		if ok {
+			data, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(v, "="))
+			if err != nil {
+				return fmt.Errorf("Invalid base64 value for %q: %q", k, v)
+			}
+
+			credentials[after] = data
+		}
+	}
+
+	// Cleanup the credentials directory.
+	if update && util.PathExists(credentialsDir) {
+		credEntries, err := os.ReadDir(credentialsDir)
+		if err != nil {
+			return fmt.Errorf("Failed to list credentials directory: %w", err)
+		}
+
+		for _, entry := range credEntries {
+			oldCredentials[entry.Name()] = true
+		}
+	} else {
+		_ = os.RemoveAll(credentialsDir)
+
+		err = internalUtil.MkdirAllOwner(credentialsDir, 0o100, int(rootUID), int(rootGID))
+		if err != nil {
+			return fmt.Errorf("Failed to create credentials directory: %w", err)
+		}
+	}
+
+	for k, v := range credentials {
+		credentialPath := filepath.Join(credentialsDir, k)
+		err := os.WriteFile(credentialPath, v, 0o400)
+		if err != nil {
+			return fmt.Errorf("Failed to write credential %q: %w", k, err)
+		}
+
+		err = os.Chown(credentialPath, int(rootUID), int(rootGID))
+		if err != nil {
+			return fmt.Errorf("Failed setting permissions for file %q: %w", credentialPath, err)
+		}
+
+		delete(oldCredentials, k)
+	}
+
+	for oldCredential := range oldCredentials {
+		err = os.Remove(filepath.Join(credentialsDir, oldCredential))
+		if err != nil {
+			return fmt.Errorf("Failed to remove credential %q: %w", oldCredential, err)
+		}
+	}
+
+	return nil
+}
+
+// GuestOS returns the guest OS. For containers, we can safely assume Linux.
+func (d *lxc) GuestOS() string {
+	return "linux"
+}
+
+// CreateQcow2Snapshot creates a qcow2 snapshot for a running instance. Not supported by containers.
+func (d *lxc) CreateQcow2Snapshot(devPath string, devName string, snapName string, backingFilename string) error {
+	return nil
+}
+
+// DeleteQcow2Snapshot deletes a qcow2 snapshot for a running instance. Not supported by containers.
+func (d *lxc) DeleteQcow2Snapshot(devName string, snapshotIndex int, backingFilename string) error {
+	return nil
+}
+
+// ExportQcow2Block exports a qcow2 block device. Not supported by containers.
+func (d *lxc) ExportQcow2Block(diskIndex int) (func(), string, error) {
+	return nil, "", nil
+}
+
+// setNICLink sets the link status of the given device.
+func (d *lxc) setNICLink(devName string, connected bool, assumeUp bool) error {
+	// This check is added so that devices that cannot handle link states do not fail to initialize.
+	if connected && assumeUp {
+		return nil
+	}
+
+	link, err := ip.LinkByName(d.localConfig["volatile."+devName+".host_name"])
+	if err != nil {
+		return fmt.Errorf("Failed to find interface %s: %w", devName, err)
+	}
+
+	if connected {
+		err = link.SetUp()
+		if err != nil {
+			return fmt.Errorf("Failed to bring %s up: %w", devName, err)
+		}
+	} else {
+		err = link.SetDown()
+		if err != nil {
+			return fmt.Errorf("Failed to bring %s down: %w", devName, err)
+		}
+	}
+
+	return nil
 }

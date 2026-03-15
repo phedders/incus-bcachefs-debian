@@ -356,9 +356,11 @@ func networkCreateTap(hostName string, m deviceConfig.Device) (uint32, error) {
 
 	mtu = max(instanceMTU, parentMTU)
 
-	err = NetworkSetDevMTU(hostName, mtu)
-	if err != nil {
-		return 0, fmt.Errorf("Failed to set the MTU %d: %w", mtu, err)
+	if mtu > 0 {
+		err = NetworkSetDevMTU(hostName, mtu)
+		if err != nil {
+			return 0, fmt.Errorf("Failed to set the MTU %d: %w", mtu, err)
+		}
 	}
 
 	// Set TX queue length on both ends.
@@ -609,12 +611,12 @@ func networkSetupHostVethLimits(d *deviceCommon, oldConfig deviceConfig.Device, 
 
 // networkClearHostVethLimits clears any network rate limits to the veth device specified in the config.
 func networkClearHostVethLimits(d *deviceCommon) error {
-	err := d.state.Firewall.InstanceClearNetPrio(d.inst.Project().Name, d.inst.Name(), d.config["host_name"])
-	if err != nil {
-		return err
+	// Detached NICs cannot be cleaned up this way.
+	if !util.IsTrueOrEmpty(d.config["attached"]) {
+		return nil
 	}
 
-	return nil
+	return d.state.Firewall.InstanceClearNetPrio(d.inst.Project().Name, d.inst.Name(), d.config["host_name"])
 }
 
 // networkValidGateway validates the gateway value.
@@ -706,7 +708,7 @@ func networkSRIOVParentVFInfo(vfParent string, vfID int) (ip.VirtFuncInfo, error
 }
 
 // networkSRIOVSetupVF configures a SR-IOV virtual function (VF) on the parent (PF) and stores original properties
-// of the PF and VF devices into voltatile for restoration on detach.
+// of the PF and VF devices into volatile for restoration on detach.
 // The useSpoofCheck argument controls whether to use the spoof check feature for the VF on the parent device.
 // If this is false then "security.mac_filtering" must not be enabled.
 // Returns VF PCI device info and IOMMU group number for VMs.
@@ -728,6 +730,11 @@ func networkSRIOVSetupVF(d deviceCommon, vfParent string, vfDevice string, vfID 
 	volatile["last_state.vf.id"] = fmt.Sprintf("%d", vfID)
 	volatile["last_state.vf.vlan"] = fmt.Sprintf("%d", vfInfo.VLAN)
 	volatile["last_state.vf.spoofcheck"] = fmt.Sprintf("%t", vfInfo.SpoofCheck)
+
+	// Only persist trust state if it's supported by the NIC.
+	if vfInfo.Trusted != ^uint32(0) {
+		volatile["last_state.vf.trusted"] = fmt.Sprintf("%d", vfInfo.Trusted)
+	}
 
 	// Record the host interface we represents the VF device which we will move into instance.
 	volatile["host_name"] = vfDevice
@@ -759,6 +766,20 @@ func networkSRIOVSetupVF(d deviceCommon, vfParent string, vfDevice string, vfID 
 		err := link.SetVfVlan(volatile["last_state.vf.id"], d.config["vlan"])
 		if err != nil {
 			return vfPCIDev, 0, fmt.Errorf("Failed setting VLAN for VF %q: %w", volatile["last_state.vf.id"], err)
+		}
+	}
+
+	// Setup VF trust setting if specified
+	if d.config["security.trusted"] != "" {
+		if vfInfo.Trusted == ^uint32(0) {
+			return vfPCIDev, 0, fmt.Errorf("Failed setting trusted for vf %q: The driver reported missing support for this feature", volatile["last_state.vf.id"])
+		}
+
+		link := &ip.Link{Name: vfParent}
+		toSet := util.IsTrue(d.config["security.trusted"])
+		err = link.SetVfTrusted(volatile["last_state.vf.id"], toSet)
+		if err != nil {
+			return vfPCIDev, 0, fmt.Errorf("Failed setting trusted to %t for VF %q: %w", toSet, volatile["last_state.vf.id"], err)
 		}
 	}
 
@@ -922,6 +943,16 @@ func networkSRIOVRestoreVF(d deviceCommon, useSpoofCheck bool, volatile map[stri
 		}
 	}
 
+	// Reset VF trusted if specified.
+	if volatile["last_state.vf.trusted"] != "" {
+		mode := util.IsTrue(volatile["last_state.vf.trusted"])
+		link := &ip.Link{Name: parent}
+		err := link.SetVfTrusted(volatile["last_state.vf.id"], mode)
+		if err != nil && d.config["security.trusted"] != "" {
+			return err
+		}
+	}
+
 	// Bind VF device onto the host so that the settings will take effect.
 	err = networkPCIBindWaitInterface(vfPCIDev, volatile["host_name"])
 	if err != nil {
@@ -978,7 +1009,7 @@ func networkPCIBindWaitInterface(pciDev pcidev.Device, ifName string) error {
 
 // networkSRIOVSetupContainerVFNIC configures the VF NIC interface ready for moving into container.
 // It configures the MAC address and MTU, then brings the interface up.
-func networkSRIOVSetupContainerVFNIC(hostName string, config map[string]string) error {
+func networkSRIOVSetupContainerVFNIC(hostName string, macPattern string, config map[string]string) error {
 	// Set the MAC address.
 	if config["hwaddr"] != "" {
 		hwaddr, err := net.ParseMAC(config["hwaddr"])
@@ -986,8 +1017,18 @@ func networkSRIOVSetupContainerVFNIC(hostName string, config map[string]string) 
 			return fmt.Errorf("Failed parsing MAC address %q: %w", config["hwaddr"], err)
 		}
 
+		// Retry a few times as some vendors take a little while to initialize.
 		link := &ip.Link{Name: hostName}
-		err = link.SetAddress(hwaddr)
+
+		for range 10 {
+			err = link.SetAddress(hwaddr)
+			if err == nil {
+				break
+			}
+
+			time.Sleep(500 * time.Millisecond)
+		}
+
 		if err != nil {
 			return fmt.Errorf("Failed setting MAC address %q on %q: %w", config["hwaddr"], hostName, err)
 		}
@@ -1031,7 +1072,7 @@ func networkSRIOVSetupContainerVFNIC(hostName string, config map[string]string) 
 		}
 
 		// Try using a random MAC address and bringing interface up.
-		randMAC, err := instance.DeviceNextInterfaceHWAddr()
+		randMAC, err := instance.DeviceNextInterfaceHWAddr(macPattern)
 		if err != nil {
 			return fmt.Errorf("Failed generating random MAC for VF %q: %w", hostName, err)
 		}

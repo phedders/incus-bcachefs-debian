@@ -20,14 +20,16 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spf13/cobra"
+	"software.sslmate.com/src/go-pkcs12"
 
 	incus "github.com/lxc/incus/v6/client"
-	cli "github.com/lxc/incus/v6/internal/cmd"
+	u "github.com/lxc/incus/v6/cmd/incus/usage"
 	"github.com/lxc/incus/v6/internal/i18n"
 	"github.com/lxc/incus/v6/internal/ports"
 	internalUtil "github.com/lxc/incus/v6/internal/util"
 	"github.com/lxc/incus/v6/shared/api"
 	config "github.com/lxc/incus/v6/shared/cliconfig"
+	cli "github.com/lxc/incus/v6/shared/cmd"
 	localtls "github.com/lxc/incus/v6/shared/tls"
 	"github.com/lxc/incus/v6/shared/util"
 )
@@ -44,7 +46,7 @@ type remoteColumn struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdRemote) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("remote")
+	cmd.Use = cli.U("remote")
 	cmd.Short = i18n.G("Manage the list of remote servers")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Manage the list of remote servers`))
@@ -118,7 +120,7 @@ type cmdRemoteAdd struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdRemoteAdd) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("add", i18n.G("[<remote>] <IP|FQDN|URL|token>"))
+	cmd.Use = cli.U("add", u.NewName(u.Remote).Optional(), u.EitherPlaceholder(i18n.G("IP"), i18n.G("FQDN"), i18n.G("URL"), i18n.G("token")))
 	cmd.Short = i18n.G("Add new remote servers")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Add new remote servers
@@ -648,7 +650,7 @@ type cmdRemoteGenerateCertificate struct {
 // Command generates the command definition.
 func (c *cmdRemoteGenerateCertificate) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("generate-certificate")
+	cmd.Use = cli.U("generate-certificate")
 	cmd.Short = i18n.G("Generate the client certificate")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Manually trigger the generation of a client certificate`))
@@ -695,7 +697,7 @@ type cmdRemoteGetDefault struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdRemoteGetDefault) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("get-default")
+	cmd.Use = cli.U("get-default")
 	cmd.Short = i18n.G("Show the default remote")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Show the default remote`))
@@ -709,14 +711,19 @@ func (c *cmdRemoteGetDefault) Command() *cobra.Command {
 type cmdRemoteGetClientCertificate struct {
 	global *cmdGlobal
 	remote *cmdRemote
+
+	flagFormat string
 }
 
 // Command returns a cobra.Command for get-client-certificate.
 func (c *cmdRemoteGetClientCertificate) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("get-client-certificate")
-	cmd.Short = i18n.G("Print the client certificate used by this Incus client")
+	cmd.Use = cli.U("get-client-certificate", u.Target(u.File).Optional())
+	cmd.Short = i18n.G("Print or retrieve the client certificate used by this Incus client")
 	cmd.RunE = c.Run
+
+	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", "pem", i18n.G("Format (pem|pfx)")+"``")
+
 	return cmd
 }
 
@@ -725,9 +732,17 @@ func (c *cmdRemoteGetClientCertificate) Run(cmd *cobra.Command, args []string) e
 	conf := c.global.conf
 
 	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 0, 0)
+	exit, err := c.global.checkArgs(cmd, args, 0, 1)
 	if exit {
 		return err
+	}
+
+	if !slices.Contains([]string{"pem", "pfx"}, c.flagFormat) {
+		return fmt.Errorf(i18n.G("Invalid certificate format %q"), c.flagFormat)
+	}
+
+	if c.flagFormat == "pfx" && len(args) == 0 {
+		return errors.New("PFX export requires a filename")
 	}
 
 	// Check if we need to generate a new certificate.
@@ -743,12 +758,63 @@ func (c *cmdRemoteGetClientCertificate) Run(cmd *cobra.Command, args []string) e
 	}
 
 	// Read the certificate.
-	tlsClientCert, _, _, err := conf.GetClientCertificate("")
+	tlsClientCert, tlsClientKey, _, err := conf.GetClientCertificate(conf.DefaultRemote)
 	if err != nil {
 		return fmt.Errorf("Failed to get certificate: %w", err)
 	}
 
+	if len(args) > 0 {
+		// Create the file.
+		w, err := os.Create(args[0])
+		if err != nil {
+			return err
+		}
+
+		defer func() { _ = w.Close() }()
+
+		switch c.flagFormat {
+		case "pem":
+			_, err = fmt.Fprint(w, tlsClientCert)
+			if err != nil {
+				return err
+			}
+
+		case "pfx":
+			// Restrict the permission as it includes the key.
+			err = w.Chmod(0o600)
+			if err != nil {
+				return err
+			}
+
+			// Get a password.
+			password := c.global.asker.AskPasswordOnce(fmt.Sprintf(i18n.G("Password for %s: "), args[0]))
+			if err != nil {
+				return err
+			}
+
+			// Load the cert and key.
+			cert, err := tls.X509KeyPair([]byte(tlsClientCert), []byte(tlsClientKey))
+			if err != nil {
+				return err
+			}
+
+			// Get the PKCS12.
+			pfx, err := pkcs12.Modern2023.Encode(cert.PrivateKey, cert.Leaf, nil, password)
+			if err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprint(w, string(pfx))
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
 	fmt.Print(tlsClientCert)
+
 	return nil
 }
 
@@ -760,7 +826,7 @@ type cmdRemoteGetClientToken struct {
 // Command returns a cobra.Command for get-client-token.
 func (c *cmdRemoteGetClientToken) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("get-client-token <expiry>")
+	cmd.Use = cli.U("get-client-token", u.Expiry)
 	cmd.Short = i18n.G("Generate a client token derived from the client certificate")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Generate a client trust token derived from the existing client certificate and private key.
@@ -863,7 +929,7 @@ type cmdRemoteList struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdRemoteList) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("list")
+	cmd.Use = cli.U("list")
 	cmd.Aliases = []string{"ls"}
 	cmd.Short = i18n.G("List the available remotes")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
@@ -1040,7 +1106,7 @@ type cmdRemoteRename struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdRemoteRename) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("rename", i18n.G("<remote> <new-name>"))
+	cmd.Use = cli.U("rename", u.Remote, u.NewName(u.Remote))
 	cmd.Aliases = []string{"mv"}
 	cmd.Short = i18n.G("Rename remotes")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
@@ -1121,7 +1187,7 @@ type cmdRemoteRemove struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdRemoteRemove) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("remove", i18n.G("<remote>"))
+	cmd.Use = cli.U("remove", u.Remote)
 	cmd.Aliases = []string{"delete", "rm"}
 	cmd.Short = i18n.G("Remove remotes")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
@@ -1187,7 +1253,7 @@ type cmdRemoteSwitch struct {
 func (c *cmdRemoteSwitch) Command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Aliases = []string{"set-default"}
-	cmd.Use = usage("switch", i18n.G("<remote>"))
+	cmd.Use = cli.U("switch", u.Remote)
 	cmd.Short = i18n.G("Switch the default remote")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Switch the default remote`))
@@ -1235,7 +1301,7 @@ type cmdRemoteSetURL struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdRemoteSetURL) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("set-url", i18n.G("<remote> <URL>"))
+	cmd.Use = cli.U("set-url", u.Remote, u.URL)
 	cmd.Short = i18n.G("Set the URL for the remote")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Set the URL for the remote`))

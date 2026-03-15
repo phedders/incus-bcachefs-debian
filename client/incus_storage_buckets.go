@@ -1,6 +1,8 @@
 package incus
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -118,6 +120,87 @@ func (r *ProtocolIncus) GetStoragePoolBucketsWithFilterAllProjects(poolName stri
 	return buckets, nil
 }
 
+// GetStoragePoolBucketsFull returns a list of storage buckets for the provided pool (full struct).
+func (r *ProtocolIncus) GetStoragePoolBucketsFull(poolName string) ([]api.StorageBucketFull, error) {
+	err := r.CheckExtension("storage_bucket_full")
+	if err != nil {
+		return nil, err
+	}
+
+	buckets := []api.StorageBucketFull{}
+
+	// Fetch the raw value.
+	u := api.NewURL().Path("storage-pools", poolName, "buckets").WithQuery("recursion", "2")
+	_, err = r.queryStruct("GET", u.String(), nil, "", &buckets)
+	if err != nil {
+		return nil, err
+	}
+
+	return buckets, nil
+}
+
+// GetStoragePoolBucketsFullWithFilter returns a filtered list of storage buckets for the provided pool (full struct).
+func (r *ProtocolIncus) GetStoragePoolBucketsFullWithFilter(poolName string, filters []string) ([]api.StorageBucketFull, error) {
+	err := r.CheckExtension("storage_bucket_full")
+	if err != nil {
+		return nil, err
+	}
+
+	buckets := []api.StorageBucketFull{}
+
+	// Fetch the raw value
+	u := api.NewURL().Path("storage-pools", poolName, "buckets").
+		WithQuery("recursion", "2").
+		WithQuery("filter", parseFilters(filters))
+
+	_, err = r.queryStruct("GET", u.String(), nil, "", &buckets)
+	if err != nil {
+		return nil, err
+	}
+
+	return buckets, nil
+}
+
+// GetStoragePoolBucketsFullAllProjects gets all storage pool buckets across all projects (full struct).
+func (r *ProtocolIncus) GetStoragePoolBucketsFullAllProjects(poolName string) ([]api.StorageBucketFull, error) {
+	err := r.CheckExtension("storage_bucket_full")
+	if err != nil {
+		return nil, errors.New(`The server is missing the required "storage_bucket_full" API extension`)
+	}
+
+	buckets := []api.StorageBucketFull{}
+
+	u := api.NewURL().Path("storage-pools", poolName, "buckets").WithQuery("recursion", "2").WithQuery("all-projects", "true")
+	_, err = r.queryStruct("GET", u.String(), nil, "", &buckets)
+	if err != nil {
+		return nil, err
+	}
+
+	return buckets, nil
+}
+
+// GetStoragePoolBucketsFullWithFilterAllProjects gets a filtered list of storage pool buckets across all projects (full struct).
+func (r *ProtocolIncus) GetStoragePoolBucketsFullWithFilterAllProjects(poolName string, filters []string) ([]api.StorageBucketFull, error) {
+	err := r.CheckExtension("storage_bucket_full")
+	if err != nil {
+		return nil, err
+	}
+
+	buckets := []api.StorageBucketFull{}
+
+	u := api.NewURL().Path("storage-pools", poolName, "buckets").
+		WithQuery("recursion", "2").
+		WithQuery("filter", parseFilters(filters)).
+		WithQuery("all-projects", "true")
+
+	_, err = r.queryStruct("GET", u.String(), nil, "", &buckets)
+	if err != nil {
+		return nil, err
+	}
+
+	return buckets, nil
+}
+
 // GetStoragePoolBucket returns a storage bucket entry for the provided pool and bucket name.
 func (r *ProtocolIncus) GetStoragePoolBucket(poolName string, bucketName string) (*api.StorageBucket, string, error) {
 	err := r.CheckExtension("storage_buckets")
@@ -129,6 +212,25 @@ func (r *ProtocolIncus) GetStoragePoolBucket(poolName string, bucketName string)
 
 	// Fetch the raw value.
 	u := api.NewURL().Path("storage-pools", poolName, "buckets", bucketName)
+	etag, err := r.queryStruct("GET", u.String(), nil, "", &bucket)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return &bucket, etag, nil
+}
+
+// GetStoragePoolBucketFull returns a full storage bucket entry for the provided pool and bucket name.
+func (r *ProtocolIncus) GetStoragePoolBucketFull(poolName string, bucketName string) (*api.StorageBucketFull, string, error) {
+	err := r.CheckExtension("storage_bucket_full")
+	if err != nil {
+		return nil, "", err
+	}
+
+	bucket := api.StorageBucketFull{}
+
+	// Fetch the raw value.
+	u := api.NewURL().Path("storage-pools", poolName, "buckets", bucketName).WithQuery("recursion", "1")
 	etag, err := r.queryStruct("GET", u.String(), nil, "", &bucket)
 	if err != nil {
 		return nil, "", err
@@ -403,6 +505,70 @@ func (r *ProtocolIncus) GetStoragePoolBucketBackupFile(pool string, bucketName s
 	resp.Size = size
 
 	return &resp, nil
+}
+
+// CreateStoragePoolBucketBackupStream requests that Incus creates and returns new direct backup
+// for the storage bucket.
+func (r *ProtocolIncus) CreateStoragePoolBucketBackupStream(poolName string, bucketName string, backup api.StorageBucketBackupsPost, req *BackupFileRequest) error {
+	if !r.HasExtension("direct_backup") {
+		return errors.New("The server is missing the required \"direct_backup\" API extension")
+	}
+
+	// Build the URL
+	uri := fmt.Sprintf("%s/1.0/storage-pools/%s/buckets/%s/backups", r.httpBaseURL.String(), url.PathEscape(poolName), url.PathEscape(bucketName))
+	if r.project != "" {
+		uri += fmt.Sprintf("?project=%s", url.QueryEscape(r.project))
+	}
+
+	// Encode the backup data
+	buf := bytes.Buffer{}
+	err := json.NewEncoder(&buf).Encode(backup)
+	if err != nil {
+		return err
+	}
+
+	// Prepare the download request
+	request, err := http.NewRequest("POST", uri, bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		return err
+	}
+
+	request.Header.Set("Accept", "application/octet-stream")
+	if r.httpUserAgent != "" {
+		request.Header.Set("User-Agent", r.httpUserAgent)
+	}
+
+	// Start the request
+	response, doneCh, err := cancel.CancelableDownload(req.Canceler, r.DoHTTP, request)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = response.Body.Close() }()
+	defer close(doneCh)
+
+	if response.StatusCode != http.StatusOK {
+		_, _, err = incusParseResponse(response)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Handle the data
+	body := response.Body
+	if req.ProgressHandler != nil {
+		body = &ioprogress.ProgressReader{
+			ReadCloser: response.Body,
+			Tracker: &ioprogress.ProgressTracker{
+				Handler: func(received int64, speed int64) {
+					req.ProgressHandler(ioprogress.ProgressData{Text: fmt.Sprintf("%s (%s/s)", units.GetByteSizeString(received, 2), units.GetByteSizeString(speed, 2))})
+				},
+			},
+		}
+	}
+
+	_, err = io.Copy(req.BackupFile, body)
+	return err
 }
 
 // CreateStoragePoolBucketFromBackup creates a new storage bucket from a backup.

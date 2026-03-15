@@ -26,8 +26,9 @@ type VolumeUsage struct {
 
 // MountInfo represents info about the result of a mount operation.
 type MountInfo struct {
-	DiskPath  string                               // The location of the block disk (if supported).
-	PostHooks []func(inst instance.Instance) error // Hooks to be called following a mount.
+	DiskPath    string                               // The location of the block disk (if supported).
+	BackingPath []string                             // The location of the block disk (backing disk for qcow2).
+	PostHooks   []func(inst instance.Instance) error // Hooks to be called following a mount.
 }
 
 // Type represents an Incus storage pool type.
@@ -143,7 +144,7 @@ type Pool interface {
 	MigrateCustomVolume(projectName string, conn io.ReadWriteCloser, args *migration.VolumeSourceArgs, op *operations.Operation) error
 
 	// Custom volume backups.
-	BackupCustomVolume(projectName string, volName string, tarWriter *instancewriter.InstanceTarWriter, optimized bool, snapshots bool, op *operations.Operation) error
+	BackupCustomVolume(projectName string, volName string, writer instancewriter.InstanceWriter, optimized bool, snapshots bool, op *operations.Operation) error
 	CreateCustomVolumeFromBackup(srcBackup backup.Info, srcData io.ReadSeeker, op *operations.Operation) error
 
 	// Storage volume recovery.

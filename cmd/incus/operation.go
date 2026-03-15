@@ -10,9 +10,10 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 
-	cli "github.com/lxc/incus/v6/internal/cmd"
+	u "github.com/lxc/incus/v6/cmd/incus/usage"
 	"github.com/lxc/incus/v6/internal/i18n"
 	"github.com/lxc/incus/v6/shared/api"
+	cli "github.com/lxc/incus/v6/shared/cmd"
 )
 
 type cmdOperation struct {
@@ -27,7 +28,7 @@ type operationColumn struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdOperation) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("operation")
+	cmd.Use = cli.U("operation")
 	cmd.Short = i18n.G("List, show and delete background operations")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`List, show and delete background operations`))
@@ -60,11 +61,11 @@ type cmdOperationDelete struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdOperationDelete) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("delete", i18n.G("[<remote>:]<operation>"))
+	cmd.Use = cli.U("delete", u.Operation.Remote().List(1))
 	cmd.Aliases = []string{"cancel", "rm", "remove"}
-	cmd.Short = i18n.G("Delete a background operation (will attempt to cancel)")
+	cmd.Short = i18n.G("Delete background operations (will attempt to cancel)")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Delete a background operation (will attempt to cancel)`))
+		`Delete background operations (will attempt to cancel)`))
 
 	cmd.RunE = c.Run
 
@@ -74,27 +75,31 @@ func (c *cmdOperationDelete) Command() *cobra.Command {
 // Run runs the actual command logic.
 func (c *cmdOperationDelete) Run(cmd *cobra.Command, args []string) error {
 	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 1)
+	exit, err := c.global.checkArgs(cmd, args, 1, -1)
 	if exit {
 		return err
 	}
 
 	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+	resources, err := c.global.parseServers(args...)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
+	for _, resource := range resources {
+		if resource.name == "" {
+			return errors.New(i18n.G("Missing operation name"))
+		}
 
-	// Delete the operation
-	err = resource.server.DeleteOperation(resource.name)
-	if err != nil {
-		return err
-	}
+		// Delete the operation
+		err = resource.server.DeleteOperation(resource.name)
+		if err != nil {
+			return err
+		}
 
-	if !c.global.flagQuiet {
-		fmt.Printf(i18n.G("Operation %s deleted")+"\n", resource.name)
+		if !c.global.flagQuiet {
+			fmt.Printf(i18n.G("Operation %s deleted")+"\n", resource.name)
+		}
 	}
 
 	return nil
@@ -113,7 +118,7 @@ type cmdOperationList struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdOperationList) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("list", i18n.G("[<remote>:]"))
+	cmd.Use = cli.U("list", u.RemoteColonOpt)
 	cmd.Aliases = []string{"ls"}
 	cmd.Short = i18n.G("List background operations")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
@@ -295,7 +300,7 @@ type cmdOperationShow struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdOperationShow) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("show", i18n.G("[<remote>:]<operation>"))
+	cmd.Use = cli.U("show", u.Operation.Remote())
 	cmd.Short = i18n.G("Show details on a background operation")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Show details on a background operation`))

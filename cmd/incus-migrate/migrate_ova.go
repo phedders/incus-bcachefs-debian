@@ -295,6 +295,13 @@ func (m *OVAMigration) unpackOVA(outPath string) error {
 
 	tarReader := tar.NewReader(file)
 
+	outPathRoot, err := os.OpenRoot(outPath)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = outPathRoot.Close() }()
+
 	for {
 		header, err := tarReader.Next()
 		if err == io.EOF {
@@ -305,17 +312,21 @@ func (m *OVAMigration) unpackOVA(outPath string) error {
 			return err
 		}
 
-		outFile, err := os.Create(filepath.Join(outPath, header.Name))
+		outFile, err := outPathRoot.Create(filepath.Join(outPath, header.Name))
 		if err != nil {
-			fmt.Println("Error creating file:", err)
-			continue
+			return fmt.Errorf("Error creating file: %v", err)
 		}
 
-		_, err = io.Copy(outFile, tarReader)
-		if err != nil {
-			fmt.Println("Error extracting file:", err)
-			outFile.Close()
-			continue
+		for {
+			_, err = io.CopyN(outFile, tarReader, 4*1024*1024)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+
+				outFile.Close()
+				return fmt.Errorf("Error unpacking file: %v", err)
+			}
 		}
 
 		outFile.Close()

@@ -96,6 +96,24 @@ type StorageVolumePostTarget struct {
 	Websockets map[string]string `json:"secrets,omitempty" yaml:"secrets,omitempty"`
 }
 
+// StorageVolumeFull is a combination of StorageVolume, StorageVolumeBackup, StorageVolumeSnapshot and StorageVolumeState.
+//
+// swagger:model
+//
+// API extension: storage_volume_full.
+type StorageVolumeFull struct {
+	StorageVolume `yaml:",inline"`
+
+	// List of backups.
+	Backups []StorageVolumeBackup `json:"backups" yaml:"backups"`
+
+	// List of snapshots.
+	Snapshots []StorageVolumeSnapshot `json:"snapshots" yaml:"snapshots"`
+
+	// State.
+	State *StorageVolumeState `json:"state" yaml:"state"`
+}
+
 // StorageVolume represents the fields of a storage volume.
 //
 // swagger:model
@@ -162,7 +180,7 @@ func (v *StorageVolume) URL(apiVersion string, poolName string) *URL {
 type StorageVolumePut struct {
 	// Storage volume configuration map (refer to doc/storage.md)
 	// Example: {"zfs.remove_snapshots": "true", "size": "50GiB"}
-	Config map[string]string `json:"config" yaml:"config"`
+	Config ConfigMap `json:"config" yaml:"config"`
 
 	// Description of the storage volume
 	// Example: My custom volume
