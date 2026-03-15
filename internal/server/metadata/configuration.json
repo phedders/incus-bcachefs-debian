@@ -458,11 +458,29 @@
 			"nic_bridged": {
 				"keys": [
 					{
+						"attached": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is plugged in or not",
+							"type": "bool"
+						}
+					},
+					{
 						"boot.priority": {
 							"longdesc": "",
 							"managed": "no",
 							"shortdesc": "Boot priority for VMs (higher value boots first)",
 							"type": "integer"
+						}
+					},
+					{
+						"connected": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is connected to the host network",
+							"type": "bool"
 						}
 					},
 					{
@@ -544,7 +562,7 @@
 						"limits.egress": {
 							"longdesc": "",
 							"managed": "no",
-							"shortdesc": "I/O limit in bit/s for outgoing traffic (various suffixes supported, see {ref}instances-limit-units)",
+							"shortdesc": "I/O limit in bit/s for outgoing traffic (various suffixes supported, see {ref}`instances-limit-units`)",
 							"type": "string"
 						}
 					},
@@ -552,7 +570,7 @@
 						"limits.ingress": {
 							"longdesc": "",
 							"managed": "no",
-							"shortdesc": "I/O limit in bit/s for incoming traffic (various suffixes supported, see {ref}instances-limit-units)",
+							"shortdesc": "I/O limit in bit/s for incoming traffic (various suffixes supported, see {ref}`instances-limit-units`)",
 							"type": "string"
 						}
 					},
@@ -715,6 +733,15 @@
 			"nic_ipvlan": {
 				"keys": [
 					{
+						"attached": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is plugged in or not",
+							"type": "bool"
+						}
+					},
+					{
 						"gvrp": {
 							"default": "false",
 							"longdesc": "",
@@ -817,11 +844,29 @@
 			"nic_macvlan": {
 				"keys": [
 					{
+						"attached": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is plugged in or not",
+							"type": "bool"
+						}
+					},
+					{
 						"boot.priority": {
 							"longdesc": "",
 							"managed": "no",
 							"shortdesc": "Boot priority for VMs (higher value boots first)",
 							"type": "integer"
+						}
+					},
+					{
+						"connected": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is connected to the host network (VM only)",
+							"type": "bool"
 						}
 					},
 					{
@@ -916,11 +961,29 @@
 						}
 					},
 					{
+						"attached": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is plugged in or not",
+							"type": "bool"
+						}
+					},
+					{
 						"boot.priority": {
 							"longdesc": "",
 							"managed": "no",
 							"shortdesc": "Boot priority for VMs (higher value boots first)",
 							"type": "integer"
+						}
+					},
+					{
+						"connected": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is connected to the host network (requires `acceleration` set to `none`)",
+							"type": "bool"
 						}
 					},
 					{
@@ -1003,6 +1066,39 @@
 							"managed": "no",
 							"shortdesc": "Comma-delimited list of IPv6 static routes to route to the NIC and publish on uplink network",
 							"type": "string"
+						}
+					},
+					{
+						"limits.egress": {
+							"longdesc": "",
+							"managed": "no",
+							"shortdesc": "I/O limit in bit/s for outgoing traffic (various suffixes supported, see {ref}`instances-limit-units`)",
+							"type": "string"
+						}
+					},
+					{
+						"limits.ingress": {
+							"longdesc": "",
+							"managed": "no",
+							"shortdesc": "I/O limit in bit/s for incoming traffic (various suffixes supported, see {ref}`instances-limit-units`)",
+							"type": "string"
+						}
+					},
+					{
+						"limits.max": {
+							"longdesc": "",
+							"managed": "no",
+							"shortdesc": "I/O limit in bit/s for both incoming and outgoing traffic. (same as setting both limits.ingress and limits.egress / mutually exclusive with limits.ingress and limits.egress)",
+							"type": "string"
+						}
+					},
+					{
+						"limits.priority": {
+							"default": "100",
+							"longdesc": "",
+							"managed": "no",
+							"shortdesc": "The priority for outgoing traffic, to be used by the kernel queuing discipline to prioritize network packets",
+							"type": "integer"
 						}
 					},
 					{
@@ -1105,10 +1201,28 @@
 			"nic_p2p": {
 				"keys": [
 					{
-						"boot.priotiry": {
+						"attached": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is plugged in or not",
+							"type": "bool"
+						}
+					},
+					{
+						"boot.priority": {
 							"longdesc": "",
 							"shortdesc": "Boot priority for VMs (higher value boots first)",
 							"type": "integer"
+						}
+					},
+					{
+						"connected": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is connected to the host network",
+							"type": "bool"
 						}
 					},
 					{
@@ -1152,14 +1266,14 @@
 					{
 						"limits.egress": {
 							"longdesc": "",
-							"shortdesc": "I/O limit in bit/s for outgoing traffic (various suffixes supported, see {ref}instances-limit-units)",
+							"shortdesc": "I/O limit in bit/s for outgoing traffic (various suffixes supported, see {ref}`instances-limit-units`)",
 							"type": "string"
 						}
 					},
 					{
 						"limits.ingress": {
 							"longdesc": "",
-							"shortdesc": "I/O limit in bit/s for incoming traffic (various suffixes supported, see {ref}instances-limit-units)",
+							"shortdesc": "I/O limit in bit/s for incoming traffic (various suffixes supported, see {ref}`instances-limit-units`)",
 							"type": "string"
 						}
 					},
@@ -1204,6 +1318,15 @@
 			},
 			"nic_physical": {
 				"keys": [
+					{
+						"attached": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is plugged in or not",
+							"type": "bool"
+						}
+					},
 					{
 						"boot.priority": {
 							"longdesc": "",
@@ -1271,11 +1394,37 @@
 							"shortdesc": "The VLAN ID to attach to",
 							"type": "integer"
 						}
+					},
+					{
+						"vlan.tagged": {
+							"longdesc": "",
+							"managed": "no",
+							"shortdesc": "Comma-delimited list of VLAN IDs or VLAN ranges to join for tagged traffic",
+							"type": "integer"
+						}
 					}
 				]
 			},
 			"nic_routed": {
 				"keys": [
+					{
+						"attached": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is plugged in or not",
+							"type": "bool"
+						}
+					},
+					{
+						"connected": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is connected to the host network",
+							"type": "bool"
+						}
+					},
 					{
 						"gvrp": {
 							"default": "false",
@@ -1417,14 +1566,14 @@
 					{
 						"limits.egress": {
 							"longdesc": "",
-							"shortdesc": "I/O limit in bit/s for outgoing traffic (various suffixes supported, see {ref}instances-limit-units)",
+							"shortdesc": "I/O limit in bit/s for outgoing traffic (various suffixes supported, see {ref}`instances-limit-units`)",
 							"type": "string"
 						}
 					},
 					{
 						"limits.ingress": {
 							"longdesc": "",
-							"shortdesc": "I/O limit in bit/s for incoming traffic (various suffixes supported, see {ref}instances-limit-units)",
+							"shortdesc": "I/O limit in bit/s for incoming traffic (various suffixes supported, see {ref}`instances-limit-units`)",
 							"type": "string"
 						}
 					},
@@ -1491,6 +1640,15 @@
 			"nic_sriov": {
 				"keys": [
 					{
+						"attached": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the NIC is plugged in or not",
+							"type": "bool"
+						}
+					},
+					{
 						"boot.priority": {
 							"longdesc": "",
 							"managed": "no",
@@ -1542,12 +1700,45 @@
 						}
 					},
 					{
+						"pci": {
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "The PCI address of the parent host device",
+							"type": "string"
+						}
+					},
+					{
+						"productid": {
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "The product ID of the parent host device",
+							"type": "string"
+						}
+					},
+					{
 						"security.mac_filtering": {
 							"default": "false",
 							"longdesc": "",
 							"managed": "no",
 							"shortdesc": "Prevent the instance from spoofing another instance's MAC address",
 							"type": "bool"
+						}
+					},
+					{
+						"security.trusted": {
+							"default": "false, if supported by parent device",
+							"longdesc": "",
+							"managed": "no",
+							"shortdesc": "Allows the instance to configure the NIC in ways that may negatively impact security.",
+							"type": "bool"
+						}
+					},
+					{
+						"vendorid": {
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "The vendor ID of the parent host device",
+							"type": "string"
 						}
 					},
 					{
@@ -1568,6 +1759,15 @@
 							"required": "yes",
 							"shortdesc": "PCI address of the device",
 							"type": "string"
+						}
+					},
+					{
+						"firmware": {
+							"default": "true",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether to expose the device's option ROM to the VM",
+							"type": "bool"
 						}
 					}
 				]
@@ -1771,6 +1971,13 @@
 						}
 					},
 					{
+						"pci": {
+							"longdesc": "",
+							"shortdesc": "The PCI address of a USB controller to monitor",
+							"type": "string"
+						}
+					},
+					{
 						"productid": {
 							"longdesc": "",
 							"shortdesc": "The product ID of the USB device",
@@ -1804,6 +2011,15 @@
 			},
 			"usb": {
 				"keys": [
+					{
+						"attached": {
+							"default": "`true`",
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Whether the USB device is plugged in or not",
+							"type": "bool"
+						}
+					},
 					{
 						"busnum": {
 							"longdesc": "",
@@ -1929,7 +2145,7 @@
 					{
 						"boot.autostart": {
 							"liveupdate": "no",
-							"longdesc": "If set to `false`, restore the last state.",
+							"longdesc": "If unset or set to `last-state`, restores the last state.",
 							"shortdesc": "Whether to always start the instance when the daemon starts",
 							"type": "bool"
 						}
@@ -1945,9 +2161,8 @@
 					},
 					{
 						"boot.autostart.priority": {
-							"defaultdesc": "0",
 							"liveupdate": "no",
-							"longdesc": "The instance with the highest value is started first.",
+							"longdesc": "The instance with the highest value is started first.\nInstances without a priority set will be started (with some parallelism) ahead of\ninstances with a priority set.",
 							"shortdesc": "What order to start the instances in",
 							"type": "integer"
 						}
@@ -2140,6 +2355,22 @@
 							"liveupdate": "yes",
 							"longdesc": "`SMBIOS Type 11` configuration keys.",
 							"shortdesc": "Free-form `SMBIOS Type 11` key/value",
+							"type": "string"
+						}
+					},
+					{
+						"systemd.credential-binary.*": {
+							"liveupdate": "yes",
+							"longdesc": "Systemd credential key/value pair passed as a read-only bind mount in containers and as `SMBIOS Type 11` data in virtual machines. The value is Base64 encoded.",
+							"shortdesc": "Systemd credential key/value, where value is Base64 encoded",
+							"type": "string"
+						}
+					},
+					{
+						"systemd.credential.*": {
+							"liveupdate": "yes",
+							"longdesc": "Systemd credential key/value pair passed as a read-only bind mount in containers and as `SMBIOS Type 11` data in virtual machines.",
+							"shortdesc": "Systemd credential key/value",
 							"type": "string"
 						}
 					},
@@ -2412,6 +2643,15 @@
 						}
 					},
 					{
+						"limits.memory.oom_priority": {
+							"defaultdesc": "`0`",
+							"liveupdate": "yes",
+							"longdesc": "Specify an integer between -1000 and 1000.\nA negative value makes the instance less likely to be killed by the Out Of Memory killer,\nwhile a positive value makes it more likely to be killed.\nThe default value of 0 means no adjustment to the Out Of Memory score.",
+							"shortdesc": "Out Of Memory killer priority adjustment for the instance",
+							"type": "integer"
+						}
+					},
+					{
 						"limits.memory.swap": {
 							"condition": "container",
 							"defaultdesc": "`true`",
@@ -2453,6 +2693,52 @@
 							"longdesc": "",
 							"shortdesc": "Whether the `incus-agent` is queried for state information and metrics",
 							"type": "bool"
+						}
+					},
+					{
+						"security.bpffs.delegate_attachs": {
+							"condition": "unprivileged container",
+							"liveupdate": "no",
+							"longdesc": "See {ref}`bpf-tokens` for more information.\n",
+							"shortdesc": "What BPF attach types to delegate",
+							"type": "string"
+						}
+					},
+					{
+						"security.bpffs.delegate_cmds": {
+							"condition": "unprivileged container",
+							"liveupdate": "no",
+							"longdesc": "See {ref}`bpf-tokens` for more information.\n",
+							"shortdesc": "What BPF command types to delegate",
+							"type": "string"
+						}
+					},
+					{
+						"security.bpffs.delegate_maps": {
+							"condition": "unprivileged container",
+							"liveupdate": "no",
+							"longdesc": "See {ref}`bpf-tokens` for more information.\n",
+							"shortdesc": "What BPF map types to delegate",
+							"type": "string"
+						}
+					},
+					{
+						"security.bpffs.delegate_progs": {
+							"condition": "unprivileged container",
+							"liveupdate": "no",
+							"longdesc": "See {ref}`bpf-tokens` for more information.\n",
+							"shortdesc": "What BPF program types to delegate",
+							"type": "string"
+						}
+					},
+					{
+						"security.bpffs.path": {
+							"condition": "unprivileged container",
+							"defaultdesc": "`/sys/fs/bpf`",
+							"liveupdate": "no",
+							"longdesc": "The specified path must exist in the container.\nThe BPF file system is only mounted if any of the `security.bpffs.delegate_*` options are set.\nSee {ref}`bpf-tokens` for more information.\n",
+							"shortdesc": "The path to mount the BPF file system at",
+							"type": "string"
 						}
 					},
 					{
@@ -2932,6 +3218,13 @@
 						}
 					},
 					{
+						"volatile.\u003cname\u003e.last_state.vf.trusted": {
+							"longdesc": "The original trusted setting used when moving a VF into an instance.",
+							"shortdesc": "SR-IOV virtual function original trusted setting",
+							"type": "string"
+						}
+					},
+					{
 						"volatile.\u003cname\u003e.last_state.vf.vlan": {
 							"longdesc": "The original VLAN used when moving a VF into an instance.",
 							"shortdesc": "SR-IOV virtual function original VLAN",
@@ -3076,6 +3369,20 @@
 							"longdesc": "",
 							"shortdesc": "QEMU VM definition name (used for migration between versions)",
 							"type": "string"
+						}
+					},
+					{
+						"volatile.vm.hotplug.memory": {
+							"longdesc": "",
+							"shortdesc": "Memory setup of the VM as needed for state restoration",
+							"type": "string"
+						}
+					},
+					{
+						"volatile.vm.needs_reset": {
+							"longdesc": "",
+							"shortdesc": "Indicates that the VM needs a full reset on next reboot",
+							"type": "bool"
 						}
 					},
 					{
@@ -3945,6 +4252,15 @@
 						}
 					},
 					{
+						"dns.mode": {
+							"condition": "-",
+							"default": "`managed`",
+							"longdesc": "",
+							"shortdesc": "DNS registration mode: none for no DNS record, managed for OVN managed records",
+							"type": "string"
+						}
+					},
+					{
 						"dns.nameservers": {
 							"default": "Uplink DNS servers (IPv4 and IPv6 address if no uplink is configured)",
 							"longdesc": "",
@@ -4154,6 +4470,78 @@
 						}
 					},
 					{
+						"tunnel.NAME.group": {
+							"condition": "`vxlan`",
+							"default": "`239.0.0.1`",
+							"longdesc": "",
+							"shortdesc": "Multicast address for `vxlan`",
+							"type": "string"
+						}
+					},
+					{
+						"tunnel.NAME.id": {
+							"condition": "`vxlan`",
+							"default": "`0`",
+							"longdesc": "",
+							"shortdesc": "Specific tunnel ID to use for the `vxlan` tunnel",
+							"type": "integer"
+						}
+					},
+					{
+						"tunnel.NAME.interface": {
+							"condition": "`vxlan`",
+							"default": "-",
+							"longdesc": "",
+							"shortdesc": "Specific host interface to use for the tunnel",
+							"type": "string"
+						}
+					},
+					{
+						"tunnel.NAME.local": {
+							"condition": "`gre`",
+							"default": "-",
+							"longdesc": "",
+							"shortdesc": "Local address for the tunnel",
+							"type": "string"
+						}
+					},
+					{
+						"tunnel.NAME.port": {
+							"condition": "`vxlan`",
+							"default": "`0`",
+							"longdesc": "",
+							"shortdesc": "Specific port to use for the `vxlan` tunnel",
+							"type": "integer"
+						}
+					},
+					{
+						"tunnel.NAME.protocol": {
+							"condition": "standard mode",
+							"default": "-",
+							"longdesc": "",
+							"shortdesc": "Tunneling protocol: `vxlan` or `gre`",
+							"type": "string"
+						}
+					},
+					{
+						"tunnel.NAME.remote": {
+							"condition": "`gre`",
+							"default": "-",
+							"longdesc": "",
+							"shortdesc": "Remote address for the tunnel",
+							"type": "string"
+						}
+					},
+					{
+						"tunnel.NAME.ttl": {
+							"condition": "`vxlan`",
+							"default": "`1`",
+							"longdesc": "",
+							"shortdesc": "Specific TTL to use for multicast routing topologies",
+							"type": "integer"
+						}
+					},
+					{
 						"user.*": {
 							"longdesc": "",
 							"shortdesc": "User-provided free-form key/value pairs",
@@ -4236,6 +4624,14 @@
 							"condition": "-",
 							"longdesc": "",
 							"shortdesc": "The VLAN ID to attach to",
+							"type": "integer"
+						}
+					},
+					{
+						"vlan.tagged": {
+							"condition": "Parent must be an existing bridge",
+							"longdesc": "",
+							"shortdesc": "Comma-delimited list of VLAN IDs or VLAN ranges to join for tagged traffic",
 							"type": "integer"
 						}
 					}
@@ -4396,6 +4792,14 @@
 		"network_zone": {
 			"common": {
 				"keys": [
+					{
+						"dns.contact": {
+							"longdesc": "",
+							"required": "no",
+							"shortdesc": "Admin contact email for DNS server",
+							"type": "string"
+						}
+					},
 					{
 						"dns.nameservers": {
 							"longdesc": "",
@@ -4733,6 +5137,13 @@
 						}
 					},
 					{
+						"restricted.images.servers": {
+							"longdesc": "Specify a comma-delimited list of image servers domains that are allowed for use in this project.\nIf this option is not set, all image servers are accessible.",
+							"shortdesc": "Which image servers (HTTP host) are allowed for us in this project",
+							"type": "string"
+						}
+					},
+					{
 						"restricted.networks.access": {
 							"longdesc": "Specify a comma-delimited list of network names that are allowed for use in this project.\nIf this option is not set, all networks are accessible.\n\nNote that this setting depends on the {config:option}`project-restricted:restricted.devices.nic` setting.",
 							"shortdesc": "Which network names are allowed for use in this project",
@@ -4829,6 +5240,14 @@
 							"longdesc": "Specify the number of days after which the unused cached image expires.",
 							"shortdesc": "When an unused cached remote image is flushed in the project",
 							"type": "integer"
+						}
+					},
+					{
+						"network.hwaddr_pattern": {
+							"longdesc": "Specify a MAC address template, e.g. `10:66:6a:xx:xx:xx`, to use within the cluster.\nEvery `x` in the template will be replaced by a random character in `0`–`f`.\nBeware of the birthday paradox! A single `xx` block leads to a 10% collision probability with only 8 addresses; for a double `xx:xx` block, 118 addresses; for a triple `xx:xx:xx` block, 1881; for a quadruple `xx:xx:xx:xx` block, 30084. We provide absolutely no guardrail against that.",
+							"scope": "global",
+							"shortdesc": "MAC address template",
+							"type": "string"
 						}
 					},
 					{
@@ -5548,6 +5967,27 @@
 							"shortdesc": "Volume to use to store the image tarballs",
 							"type": "string"
 						}
+					},
+					{
+						"storage.logs_volume": {
+							"longdesc": "Specify the volume using the syntax `POOL/VOLUME`.",
+							"scope": "local",
+							"shortdesc": "Volume to use to store instance log directories",
+							"type": "string"
+						}
+					}
+				]
+			},
+			"network": {
+				"keys": [
+					{
+						"network.hwaddr_pattern": {
+							"defaultdesc": "`10:66:6a:xx:xx:xx`",
+							"longdesc": "Specify a MAC address template, e.g. `10:66:6a:xx:xx:xx`, to use within the cluster.\nEvery `x` in the template will be replaced by a random character in `0`–`f`.\nBeware of the birthday paradox! A single `xx` block leads to a 10% collision probability with only 8 addresses; for a double `xx:xx` block, 118 addresses; for a triple `xx:xx:xx` block, 1881; for a quadruple `xx:xx:xx:xx` block, 30084. We provide absolutely no guardrail against that.",
+							"scope": "global",
+							"shortdesc": "MAC address template",
+							"type": "string"
+						}
 					}
 				]
 			},
@@ -5618,6 +6058,1320 @@
 							"longdesc": "",
 							"scope": "global",
 							"shortdesc": "ID of the OpenFGA permission store",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_btrfs": {
+			"common": {
+				"keys": [
+					{
+						"btrfs.mount_options": {
+							"default": "`user_subvol_rm_allowed`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Mount options for block devices",
+							"type": "string"
+						}
+					},
+					{
+						"size": {
+							"default": "auto (20% of free disk space, \u003e= 5 GiB and \u003c= 30 GiB)",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Size of the storage pool when creating loop-based pools (in bytes, suffixes supported, can be increased to grow storage pool)",
+							"type": "string"
+						}
+					},
+					{
+						"source": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Path to an existing block device, loop file or Btrfs subvolume",
+							"type": "string"
+						}
+					},
+					{
+						"source.wipe": {
+							"default": "`false`",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Wipe the block device specified in `source` prior to creating the storage pool",
+							"type": "bool"
+						}
+					}
+				]
+			}
+		},
+		"storage_bucket_btrfs": {
+			"common": {
+				"keys": [
+					{
+						"size": {
+							"condition": "appropriate driver",
+							"default": "same as `volume.size`",
+							"longdesc": "",
+							"shortdesc": "Size/quota of the storage bucket",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_bucket_cephobject": {
+			"common": {
+				"keys": [
+					{
+						"size": {
+							"default": "-",
+							"longdesc": "",
+							"shortdesc": "Quota of the storage bucket",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_bucket_lvm": {
+			"common": {
+				"keys": [
+					{
+						"size": {
+							"condition": "appropriate driver",
+							"default": "same as `volume.size`",
+							"longdesc": "",
+							"shortdesc": "Size/quota of the storage bucket",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_bucket_zfs": {
+			"common": {
+				"keys": [
+					{
+						"size": {
+							"condition": "appropriate driver",
+							"default": "same as `volume.size`",
+							"longdesc": "",
+							"shortdesc": "Size/quota of the storage bucket",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_ceph": {
+			"common": {
+				"keys": [
+					{
+						"ceph.cluster_name": {
+							"default": "`ceph`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Name of the Ceph cluster in which to create new storage pools",
+							"type": "string"
+						}
+					},
+					{
+						"ceph.osd.data_pool_name": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Name of the OSD data pool",
+							"type": "string"
+						}
+					},
+					{
+						"ceph.osd.force_reuse": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Deprecated, should not be used.",
+							"type": "bool"
+						}
+					},
+					{
+						"ceph.osd.pg_name": {
+							"default": "`32`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Number of placement groups for the OSD storage pool",
+							"type": "string"
+						}
+					},
+					{
+						"ceph.osd.pool_name": {
+							"default": "name of the pool",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Name of the OSD storage pool",
+							"type": "string"
+						}
+					},
+					{
+						"ceph.rbd.clone_copy": {
+							"default": "`true`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Whether to use RBD lightweight clones rather than full dataset copies",
+							"type": "bool"
+						}
+					},
+					{
+						"ceph.rbd.du": {
+							"default": "`true`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Whether to use RBD `du` to obtain disk usage data for stopped instances",
+							"type": "bool"
+						}
+					},
+					{
+						"ceph.rbd.features": {
+							"default": "`layering`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Comma-separated list of RBD features to enable on the volumes",
+							"type": "string"
+						}
+					},
+					{
+						"ceph.user.name": {
+							"default": "`admin`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "The Ceph user to use when creating storage pools and volumes",
+							"type": "string"
+						}
+					},
+					{
+						"source": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Existing OSD storage pool to use",
+							"type": "string"
+						}
+					},
+					{
+						"volatile.pool.pristine": {
+							"default": "`true`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Whether the pool was empty on creation time",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_cephfs": {
+			"common": {
+				"keys": [
+					{
+						"cephfs.cluster_name": {
+							"default": "`ceph`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Name of the Ceph cluster that contains the CephFS file system",
+							"type": "string"
+						}
+					},
+					{
+						"cephfs.create_missing": {
+							"default": "`false`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Create the file system and the missing data and metadata OSD pools",
+							"type": "bool"
+						}
+					},
+					{
+						"cephfs.data_pool": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Data OSD pool name to create for the file system",
+							"type": "string"
+						}
+					},
+					{
+						"cephfs.fscache": {
+							"default": "`false`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Enable use of kernel `fscache` and `cachefilesd`",
+							"type": "bool"
+						}
+					},
+					{
+						"cephfs.meta_pool": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Metadata OSD pool name to create for the file system",
+							"type": "string"
+						}
+					},
+					{
+						"cephfs.osd_pg_num": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "OSD pool `pg_num` to use when creating missing OSD pools",
+							"type": "string"
+						}
+					},
+					{
+						"cephfs.path": {
+							"default": "`/`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "The base path for the CephFS mount",
+							"type": "string"
+						}
+					},
+					{
+						"cephfs.user.name": {
+							"default": "`admin`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "The Ceph user to use",
+							"type": "string"
+						}
+					},
+					{
+						"source": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Existing CephFS file system or file system path to use",
+							"type": "string"
+						}
+					},
+					{
+						"volatile.pool.pristine": {
+							"default": "`true`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Whether the CephFS file system was empty on creation time",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_cephobject": {
+			"common": {
+				"keys": [
+					{
+						"cephobject.bucket_name_prefix": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Prefix to add to bucket names in Ceph",
+							"type": "string"
+						}
+					},
+					{
+						"cephobject.cluster_name": {
+							"default": "`ceph`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "The Ceph cluster to use",
+							"type": "string"
+						}
+					},
+					{
+						"cephobject.radosgw.endpoint": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "URL of the `radosgw` gateway process",
+							"type": "string"
+						}
+					},
+					{
+						"cephobject.radosgw.endpoint_cert_file": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Path to the file containing the TLS client certificate to use for endpoint communication",
+							"type": "string"
+						}
+					},
+					{
+						"cephobject.user.name": {
+							"default": "`admin`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "The Ceph user to use",
+							"type": "string"
+						}
+					},
+					{
+						"volatile.pool.pristine": {
+							"default": "`true`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Whether the `radosgw` `incus-admin` user existed at creation time",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_dir": {
+			"common": {
+				"keys": [
+					{
+						"rsync.bwlimit": {
+							"default": "`0` (no limit)",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "The upper limit to be placed on the socket I/O when `rsync` must be used to transfer storage entities",
+							"type": "string"
+						}
+					},
+					{
+						"rsync.compression": {
+							"default": "`true`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Whether to use compression while migrating storage pools",
+							"type": "bool"
+						}
+					},
+					{
+						"source": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Path to an existing directory",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_lvm": {
+			"common": {
+				"keys": [
+					{
+						"block.type": {
+							"condition": "block-based volume",
+							"default": "same as `volume.block.type`",
+							"longdesc": "",
+							"shortdesc": "Type of the block volume"
+						}
+					},
+					{
+						"lvm.metadata_size": {
+							"default": "`0` (auto)",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "The size of the metadata space for the physical volume.",
+							"type": "string"
+						}
+					},
+					{
+						"lvm.thinpool_metadata_size": {
+							"default": "`0` (auto)",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "The size of the thin pool metadata volume (the default is to let LVM calculate an appropriate size). Not usable with `lvmcluster`.",
+							"type": "string"
+						}
+					},
+					{
+						"lvm.thinpool_name": {
+							"default": "`IncusThinPool`",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Thin pool where volumes are created. Not usable with `lvmcluster`.",
+							"type": "string"
+						}
+					},
+					{
+						"lvm.use_thinpool": {
+							"default": "`true`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Whether the storage pool uses a thin pool for logical volumes. Not usable with `lvmcluster`.",
+							"type": "bool"
+						}
+					},
+					{
+						"lvm.vg.force_reuse": {
+							"default": "`false`",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Force using an existing non-empty volume group. Not usable with `lvmcluster`.",
+							"type": "bool"
+						}
+					},
+					{
+						"lvm.vg_name": {
+							"default": "name of the pool",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Name of the volume group to create.",
+							"type": "string"
+						}
+					},
+					{
+						"size": {
+							"default": "auto (20% of free disk space, \u003e= 5 GiB and \u003c= 30 GiB) for `lvm`.",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Storage pool size (in bytes, suffixes supported, can be increased to grow storage pool). `lvmcluster` pools: cannot set at creation, but can be updated.",
+							"type": "string"
+						}
+					},
+					{
+						"source": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Path to an existing block device, loop file or LVM volume group.",
+							"type": "string"
+						}
+					},
+					{
+						"source.wipe": {
+							"default": "`false`",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Wipe the block device specified in `source` prior to creating the storage pool.",
+							"type": "bool"
+						}
+					}
+				]
+			}
+		},
+		"storage_volume_btrfs": {
+			"common": {
+				"keys": [
+					{
+						"initial.gid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.gid` or `0`",
+							"longdesc": "",
+							"shortdesc": "GID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.mode": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.mode` or `711`",
+							"longdesc": "",
+							"shortdesc": "Mode of the volume in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.uid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.uid` or `0`",
+							"longdesc": "",
+							"shortdesc": "UID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"security.shared": {
+							"condition": "custom block volume",
+							"default": "same as `volume.security.shared` or `false`",
+							"longdesc": "",
+							"shortdesc": "Enable sharing the volume across multiple instances",
+							"type": "bool"
+						}
+					},
+					{
+						"security.shifted": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.shifted` or `false`",
+							"longdesc": "",
+							"shortdesc": "{{enable_ID_shifting}}",
+							"type": "bool"
+						}
+					},
+					{
+						"security.unmapped": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.unmapped` or `false`",
+							"longdesc": "",
+							"shortdesc": "Disable ID mapping for the volume",
+							"type": "bool"
+						}
+					},
+					{
+						"size": {
+							"condition": "appropriate driver",
+							"default": "same as `volume.size`",
+							"longdesc": "",
+							"shortdesc": "Size/quota of the storage volume",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.expiry": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.expiry.manual": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry.manual`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.pattern": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.pattern` or `snap%d`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_pattern_format}} [^*]",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.schedule": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.schedule`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_schedule_format}}",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_volume_ceph": {
+			"common": {
+				"keys": [
+					{
+						"block.filesystem": {
+							"condition": "block-based volume with content type `filesystem`",
+							"default": "same as `volume.block.filesystem`",
+							"longdesc": "",
+							"shortdesc": "{{block_filesystem}}",
+							"type": "string"
+						}
+					},
+					{
+						"block.mount_options": {
+							"condition": "block-based volume with content type `filesystem`",
+							"default": "same as `volume.block.mount_options`",
+							"longdesc": "",
+							"shortdesc": "Mount options for block-backed file system volumes",
+							"type": "string"
+						}
+					},
+					{
+						"initial.gid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.gid` or `0`",
+							"longdesc": "",
+							"shortdesc": "GID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.mode": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.mode` or `711`",
+							"longdesc": "",
+							"shortdesc": "Mode of the volume in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.uid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.uid` or `0`",
+							"longdesc": "",
+							"shortdesc": "UID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"security.shared": {
+							"condition": "custom block volume",
+							"default": "same as `volume.security.shared` or `false`",
+							"longdesc": "",
+							"shortdesc": "Enable sharing the volume across multiple instances",
+							"type": "bool"
+						}
+					},
+					{
+						"security.shifted": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.shifted` or `false`",
+							"longdesc": "",
+							"shortdesc": "{{enable_ID_shifting}}",
+							"type": "bool"
+						}
+					},
+					{
+						"security.unmapped": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.unmapped` or `false`",
+							"longdesc": "",
+							"shortdesc": "Disable ID mapping for the volume",
+							"type": "bool"
+						}
+					},
+					{
+						"size": {
+							"condition": "-",
+							"default": "same as `volume.size`",
+							"longdesc": "",
+							"shortdesc": "Size/quota of the storage volume",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.expiry": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.expiry.manual": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry.manual`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.pattern": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.pattern` or `snap%d`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_pattern_format}} [^*]",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.schedule": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.schedule`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_schedule_format}}",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_volume_cephfs": {
+			"common": {
+				"keys": [
+					{
+						"initial.gid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.gid` or `0`",
+							"longdesc": "",
+							"shortdesc": "GID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.mode": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.mode` or `711`",
+							"longdesc": "",
+							"shortdesc": "Mode of the volume in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.uid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.uid` or `0`",
+							"longdesc": "",
+							"shortdesc": "UID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"security.shared": {
+							"condition": "custom block volume",
+							"default": "same as `volume.security.shared` or `false`",
+							"longdesc": "",
+							"shortdesc": "Enable sharing the volume across multiple instances",
+							"type": "bool"
+						}
+					},
+					{
+						"security.shifted": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.shifted` or `false`",
+							"longdesc": "",
+							"shortdesc": "{{enable_ID_shifting}}",
+							"type": "bool"
+						}
+					},
+					{
+						"security.unmapped": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.unmapped` or `false`",
+							"longdesc": "",
+							"shortdesc": "Disable ID mapping for the volume",
+							"type": "bool"
+						}
+					},
+					{
+						"size": {
+							"condition": "appropriate driver",
+							"default": "same as `volume.size`",
+							"longdesc": "",
+							"shortdesc": "Size/quota of the storage volume",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.expiry": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.expiry.manual": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry.manual`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.pattern": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.pattern` or `snap%d`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_pattern_format}} [^*]",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.schedule": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.schedule`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_schedule_format}}",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_volume_dir": {
+			"common": {
+				"keys": [
+					{
+						"initial.gid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.gid` or `0`",
+							"longdesc": "",
+							"shortdesc": "GID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.mode": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.mode` or `711`",
+							"longdesc": "",
+							"shortdesc": "Mode of the volume in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.uid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.uid` or `0`",
+							"longdesc": "",
+							"shortdesc": "UID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"security.shared": {
+							"condition": "custom block volume",
+							"default": "same as `volume.security.shared` or `false`",
+							"longdesc": "",
+							"shortdesc": "Enable sharing the volume across multiple instances",
+							"type": "bool"
+						}
+					},
+					{
+						"security.shifted": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.shifted` or `false`",
+							"longdesc": "",
+							"shortdesc": "{{enable_ID_shifting}}",
+							"type": "bool"
+						}
+					},
+					{
+						"security.size": {
+							"condition": "appropriate driver",
+							"default": "same as `volume.size`",
+							"longdesc": "",
+							"shortdesc": "Size/quota of the storage volume",
+							"type": "string"
+						}
+					},
+					{
+						"security.unmapped": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.unmapped` or `false`",
+							"longdesc": "",
+							"shortdesc": "Disable ID mapping for the volume",
+							"type": "bool"
+						}
+					},
+					{
+						"snapshots.expiry": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.expiry.manual": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry.manual`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.pattern": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.pattern` or `snap%d`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_pattern_format}}  [^*]",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.schedule": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.schedule`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_schedule_format}}",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_volume_lvm": {
+			"common": {
+				"keys": [
+					{
+						"block.filesystem": {
+							"condition": "block-based volume with content type `filesystem`",
+							"default": "same as `volume.block.filesystem`",
+							"longdesc": "",
+							"shortdesc": "{{block_filesystem}}",
+							"type": "string"
+						}
+					},
+					{
+						"block.mount_options": {
+							"condition": "block-based volume with content type `filesystem`",
+							"default": "same as `volume.block.mount_options`",
+							"longdesc": "",
+							"shortdesc": "Mount options for block-backed file system volumes",
+							"type": "string"
+						}
+					},
+					{
+						"initial.gid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.gid` or `0`",
+							"longdesc": "",
+							"shortdesc": "GID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.mode": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.mode` or `711`",
+							"longdesc": "",
+							"shortdesc": "Mode of the volume in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.uid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.uid` or `0`",
+							"longdesc": "",
+							"shortdesc": "UID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"lvm.stripes": {
+							"condition": "-",
+							"default": "same as `volume.lvm.stripes`",
+							"longdesc": "",
+							"shortdesc": "Number of stripes to use for new volumes (or thin pool volume)",
+							"type": "string"
+						}
+					},
+					{
+						"lvm.stripes.size": {
+							"condition": "-",
+							"default": "same as `volume.lvm.stripes.size`",
+							"longdesc": "",
+							"shortdesc": "Size of stripes to use (at least 4096 bytes and multiple of 512 bytes)",
+							"type": "string"
+						}
+					},
+					{
+						"lvmcluster.remove_snapshots": {
+							"condition": "-",
+							"default": "same as `volume.lvmcluster.remove_snapshots` or `false`",
+							"longdesc": "",
+							"shortdesc": "Remove snapshots as needed",
+							"type": "bool"
+						}
+					},
+					{
+						"security.shared": {
+							"condition": "custom block volume",
+							"default": "same as `volume.security.shared` or `false`",
+							"longdesc": "",
+							"shortdesc": "Enable sharing the volume across multiple instances",
+							"type": "bool"
+						}
+					},
+					{
+						"security.shifted": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.shifted` or `false`",
+							"longdesc": "",
+							"shortdesc": "{{enable_ID_shifting}}",
+							"type": "bool"
+						}
+					},
+					{
+						"security.unmapped": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.unmapped` or `false`",
+							"longdesc": "",
+							"shortdesc": "Disable ID mapping for the volume",
+							"type": "bool"
+						}
+					},
+					{
+						"size": {
+							"condition": "default: same as `volume.size`",
+							"longdesc": "",
+							"shortdesc": "Size/quota of the storage volume",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.expiry": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.expiry.manual": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry.manual`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.pattern": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.pattern` or `snap%d`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_pattern_format}}  [^*]",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.schedule": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.schedule`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_schedule_format}}",
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"storage_volume_zfs": {
+			"common": {
+				"keys": [
+					{
+						"block.filesystem": {
+							"condition": "block-based volume with content type `filesystem` (`zfs.block_mode` enabled)",
+							"default": "same as `volume.block.filesystem`",
+							"longdesc": "",
+							"shortdesc": "{{block_filesystem}}",
+							"type": "string"
+						}
+					},
+					{
+						"block.mount_options": {
+							"condition": "block-based volume with content type `filesystem` (`zfs.block_mode` enabled)",
+							"default": "same as `volume.block.mount_options`",
+							"longdesc": "",
+							"shortdesc": "Mount options for block-backed file system volumes",
+							"type": "string"
+						}
+					},
+					{
+						"initial.gid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.gid` or `0`",
+							"longdesc": "",
+							"shortdesc": "GID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.mode": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.mode` or `711`",
+							"longdesc": "",
+							"shortdesc": "Mode of the volume in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"initial.uid": {
+							"condition": "custom volume with content type `filesystem`",
+							"default": "same as `volume.initial.uid` or `0`",
+							"longdesc": "",
+							"shortdesc": "UID of the volume owner in the instance",
+							"type": "int"
+						}
+					},
+					{
+						"security.shared": {
+							"condition": "custom block volume",
+							"default": "same as `volume.security.shared` or `false`",
+							"longdesc": "",
+							"shortdesc": "Enable sharing the volume across multiple instances",
+							"type": "bool"
+						}
+					},
+					{
+						"security.shifted": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.shifted` or `false`",
+							"longdesc": "",
+							"shortdesc": "{{enable_ID_shifting}}",
+							"type": "bool"
+						}
+					},
+					{
+						"security.unmapped": {
+							"condition": "custom volume",
+							"default": "same as `volume.security.unmapped` or `false`",
+							"longdesc": "",
+							"shortdesc": "Disable ID mapping for the volume",
+							"type": "bool"
+						}
+					},
+					{
+						"size": {
+							"condition": "-",
+							"default": "same as `volume.size`",
+							"longdesc": "",
+							"shortdesc": "Size/quota of the storage volume",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.expiry": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.expiry.manual": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.expiry.manual`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_expiry_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.pattern": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.pattern` or `snap%d`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_pattern_format}} [^*]",
+							"type": "string"
+						}
+					},
+					{
+						"snapshots.schedule": {
+							"condition": "custom volume",
+							"default": "same as `volume.snapshot.schedule`",
+							"longdesc": "",
+							"shortdesc": "{{snapshot_schedule_format}}",
+							"type": "string"
+						}
+					},
+					{
+						"zfs.block_mode": {
+							"condition": "-",
+							"default": "same as `volume.zfs.block_mode`",
+							"longdesc": "",
+							"shortdesc": "Whether to use a formatted `zvol` rather than a {spellexception}`dataset` (`zfs.block_mode` can be set only for custom storage volumes; use `volume.zfs.block_mode` to enable ZFS block mode for all storage volumes in the pool, including instance volumes)",
+							"type": "bool"
+						}
+					},
+					{
+						"zfs.blocksize": {
+							"condition": "-",
+							"default": "same as `volume.zfs.blocksize`",
+							"longdesc": "",
+							"shortdesc": "Size of the ZFS block in range from 512 bytes to 16 MiB (must be power of 2) - for block volume, a maximum value of 128 KiB will be used even if a higher value is set",
+							"type": "string"
+						}
+					},
+					{
+						"zfs.delegate": {
+							"condition": "ZFS 2.2 or higher",
+							"default": "same as `volume.zfs.delegate`",
+							"longdesc": "",
+							"shortdesc": "Controls whether to delegate the ZFS dataset and anything underneath it to the container(s) using it. Allows the use of the `zfs` command in the container",
+							"type": "bool"
+						}
+					},
+					{
+						"zfs.remove_snapshots": {
+							"condition": "-",
+							"default": "same as `volume.zfs.remove_snapshots` or `false`",
+							"longdesc": "",
+							"shortdesc": "Remove snapshots as needed",
+							"type": "bool"
+						}
+					},
+					{
+						"zfs.reserve_space": {
+							"condition": "-",
+							"default": "same as `volume.zfs.reserve_space` or `false`",
+							"longdesc": "",
+							"shortdesc": "Use `reservation`/`refreservation` along with `quota`/`refquota`",
+							"type": "bool"
+						}
+					},
+					{
+						"zfs.use_refquota": {
+							"condition": "-",
+							"default": "same as `volume.zfsuse_refquota` or `false`",
+							"longdesc": "",
+							"shortdesc": "Use `refquota` instead of `quota` for space",
+							"type": "bool"
+						}
+					}
+				]
+			}
+		},
+		"storage_zfs": {
+			"common": {
+				"keys": [
+					{
+						"size": {
+							"default": "auto (20% of free disk space, \u003e= 5 GiB and \u003c= 30 GiB)",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Size of the storage pool when creating loop-based pools (in bytes, suffixes supported, can be increased to grow storage pool)",
+							"type": "string"
+						}
+					},
+					{
+						"source": {
+							"default": "-",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Path to existing block device(s), loop file or ZFS dataset/pool. Multiple block devices should be separated by `,`. When listing block devices, you can also prefix them with `vdev` type. To specify a `vdev` type, use an `=` sign between the `vdev` type and the block devices (e.g., `mirror=/dev/sda,/dev/sdb`). Only `stripe`, `mirror`, `raidz1` and `raidz2` `vdev` types are supported.",
+							"type": "string"
+						}
+					},
+					{
+						"source.wipe": {
+							"default": "`false`",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Wipe the block device specified in `source` prior to creating the storage pool",
+							"type": "bool"
+						}
+					},
+					{
+						"zfs.clone_copy": {
+							"default": "`true`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Whether to use ZFS lightweight clones rather than full {spellexception}`dataset` copies (Boolean), or `rebase` to copy based on the initial image",
+							"type": "string"
+						}
+					},
+					{
+						"zfs.export": {
+							"default": "`true`",
+							"longdesc": "",
+							"scope": "global",
+							"shortdesc": "Disable zpool export while unmount performed",
+							"type": "bool"
+						}
+					},
+					{
+						"zfs.pool_name": {
+							"default": "name of the pool",
+							"longdesc": "",
+							"scope": "local",
+							"shortdesc": "Name of the zpool",
 							"type": "string"
 						}
 					}

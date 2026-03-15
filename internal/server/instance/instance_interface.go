@@ -92,12 +92,15 @@ type Instance interface {
 	IsPrivileged() bool
 
 	// Snapshots & migration & backups.
-	Restore(source Instance, stateful bool) error
+	Restore(source Instance, stateful bool, diskOnly bool) error
 	Snapshot(name string, expiry time.Time, stateful bool) error
 	Snapshots() ([]Instance, error)
 	Backups() ([]backup.InstanceBackup, error)
 	UpdateBackupFile() error
 	CanLiveMigrate() bool
+	CreateQcow2Snapshot(diskPath string, devName string, snapshotName string, backingFilename string) error
+	DeleteQcow2Snapshot(devName string, snapshotIndex int, backingFilename string) error
+	ExportQcow2Block(blockIndex int) (func(), string, error)
 
 	// Config handling.
 	Rename(newName string, applyTemplateTrigger bool) error
@@ -140,6 +143,7 @@ type Instance interface {
 	Description() string
 	CreationDate() time.Time
 	LastUsedDate() time.Time
+	GuestOS() string
 
 	Profiles() []api.Profile
 	InitPID() int
@@ -148,6 +152,7 @@ type Instance interface {
 	FillNetworkDevice(name string, m deviceConfig.Device) (deviceConfig.Device, error)
 
 	ETag() []any
+	MACPattern() string
 
 	// Paths.
 	Path() string

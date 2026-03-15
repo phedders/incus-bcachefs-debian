@@ -206,7 +206,7 @@ func storagePoolVolumeSnapshotsTypePost(d *Daemon, r *http.Request) response.Res
 		pattern = "snap%d"
 	}
 
-	pattern, err = internalUtil.RenderTemplate(pattern, pongo2.Context{
+	renderedPattern, err := internalUtil.RenderTemplate(pattern, pongo2.Context{
 		"creation_date": time.Now(),
 	})
 	if err != nil {
@@ -214,17 +214,19 @@ func storagePoolVolumeSnapshotsTypePost(d *Daemon, r *http.Request) response.Res
 	}
 
 	// Get a snapshot name.
-	if req.Name == "" {
+	if req.Name == "" && strings.Count(renderedPattern, "%d") == 1 {
 		var i int
 
 		_ = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
-			i = tx.GetNextStorageVolumeSnapshotIndex(ctx, poolName, volumeName, volumeType, pattern)
+			i = tx.GetNextStorageVolumeSnapshotIndex(ctx, poolName, volumeName, volumeType, renderedPattern)
 
 			return nil
 		})
 
-		req.Name = fmt.Sprintf(pattern, i)
-	} else {
+		req.Name = fmt.Sprintf(renderedPattern, i)
+	} else if req.Name == "" && renderedPattern != pattern {
+		req.Name = renderedPattern
+	} else if req.Name != "" {
 		// Make sure the snapshot doesn't already exist.
 		err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
 			snapDBVolume, err := tx.GetStoragePoolVolume(ctx, pool.ID(), projectName, volumeType, fmt.Sprintf("%s/%s", volumeName, req.Name), true)
@@ -239,6 +241,8 @@ func storagePoolVolumeSnapshotsTypePost(d *Daemon, r *http.Request) response.Res
 		if err != nil {
 			return response.SmartError(err)
 		}
+	} else {
+		return response.BadRequest(errors.New("Couldn't determine snapshot name"))
 	}
 
 	// Quick checks.
@@ -1569,7 +1573,7 @@ func volumeDetermineNextSnapshotName(ctx context.Context, s *state.State, volume
 		}
 	}
 
-	if snapshotExists {
+	if snapshotExists && count == 1 {
 		var i int
 
 		_ = s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
@@ -1579,6 +1583,8 @@ func volumeDetermineNextSnapshotName(ctx context.Context, s *state.State, volume
 		})
 
 		return strings.Replace(pattern, "%d", strconv.Itoa(i), 1), nil
+	} else if snapshotExists {
+		return "", errors.New("Snapshot with that name already exists")
 	}
 
 	return pattern, nil

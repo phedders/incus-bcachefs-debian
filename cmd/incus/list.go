@@ -15,10 +15,11 @@ import (
 	"github.com/spf13/cobra"
 
 	incus "github.com/lxc/incus/v6/client"
-	cli "github.com/lxc/incus/v6/internal/cmd"
+	u "github.com/lxc/incus/v6/cmd/incus/usage"
 	"github.com/lxc/incus/v6/internal/i18n"
 	"github.com/lxc/incus/v6/internal/instance"
 	"github.com/lxc/incus/v6/shared/api"
+	cli "github.com/lxc/incus/v6/shared/cmd"
 	"github.com/lxc/incus/v6/shared/units"
 )
 
@@ -38,6 +39,7 @@ type cmdList struct {
 	flagFast        bool
 	flagFormat      string
 	flagAllProjects bool
+	rawFormat       bool
 
 	shorthandFilters map[string]func(*api.Instance, *api.InstanceState, string) bool
 }
@@ -45,7 +47,7 @@ type cmdList struct {
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdList) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("list", i18n.G("[<remote>:] [<filter>...]"))
+	cmd.Use = cli.U("list", u.RemoteColonOpt, u.Filter.List(0))
 	cmd.Aliases = []string{"ls"}
 	cmd.Short = i18n.G("List instances")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
@@ -408,6 +410,15 @@ func (c *cmdList) Run(cmd *cobra.Command, args []string) error {
 		return errors.New(i18n.G("Can't specify --project with --all-projects"))
 	}
 
+	// Check for raw unit formatting.
+	formatFields := strings.SplitN(c.flagFormat, ",", 2)
+	if len(formatFields) == 2 {
+		formatOptions := strings.Split(formatFields[1], ",")
+		if slices.Contains(formatOptions, "raw") {
+			c.rawFormat = true
+		}
+	}
+
 	// Parse the remote
 	var remote string
 	var name string
@@ -760,7 +771,11 @@ func (c *cmdList) projectColumnData(cInfo api.InstanceFull) string {
 
 func (c *cmdList) memoryUsageColumnData(cInfo api.InstanceFull) string {
 	if cInfo.IsActive() && cInfo.State != nil && cInfo.State.Memory.Usage > 0 {
-		return units.GetByteSizeStringIEC(cInfo.State.Memory.Usage, 2)
+		if !c.rawFormat {
+			return units.GetByteSizeStringIEC(cInfo.State.Memory.Usage, 2)
+		}
+
+		return strconv.FormatInt(cInfo.State.Memory.Usage, 10)
 	}
 
 	return ""
@@ -797,7 +812,11 @@ func (c *cmdList) diskUsageColumnData(cInfo api.InstanceFull) string {
 	rootDisk, _, _ := instance.GetRootDiskDevice(cInfo.ExpandedDevices)
 
 	if cInfo.State != nil && cInfo.State.Disk != nil && cInfo.State.Disk[rootDisk].Usage > 0 {
-		return units.GetByteSizeStringIEC(cInfo.State.Disk[rootDisk].Usage, 2)
+		if !c.rawFormat {
+			return units.GetByteSizeStringIEC(cInfo.State.Disk[rootDisk].Usage, 2)
+		}
+
+		return strconv.FormatInt(cInfo.State.Disk[rootDisk].Usage, 10)
 	}
 
 	return ""

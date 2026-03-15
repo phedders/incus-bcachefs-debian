@@ -2,6 +2,7 @@ package validate
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -149,6 +150,20 @@ func IsPriority(value string) error {
 	return nil
 }
 
+// IsOOMPriority validates priority number.
+func IsOOMPriority(value string) error {
+	valueInt, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return fmt.Errorf("Invalid value for an integer %q", value)
+	}
+
+	if valueInt < -1000 || valueInt > 1000 {
+		return fmt.Errorf("Invalid value for a limit %q. Must be between -1000 and 1000", value)
+	}
+
+	return nil
+}
+
 // IsBool validates if string can be understood as a bool.
 func IsBool(value string) error {
 	if !slices.Contains([]string{"true", "false", "yes", "no", "1", "0", "on", "off"}, strings.ToLower(value)) {
@@ -246,6 +261,16 @@ func IsNetworkMAC(value string) error {
 	// Check is valid Ethernet MAC length and delimiter.
 	if err != nil || len(value) != 17 || strings.ContainsAny(value, "-.") {
 		return errors.New("Invalid MAC address, must be 6 bytes of hex separated by colons")
+	}
+
+	return nil
+}
+
+// IsMACPattern validates whether the string is a MAC address pattern.
+func IsMACPattern(value string) error {
+	match, _ := regexp.MatchString(`^(?:[0-9a-fA-FxX]{2}:){5}[0-9a-fA-FxX]{2}$`, value)
+	if !match {
+		return errors.New("Invalid MAC address pattern, must be 6 bytes (hex characters or `x` to denote a wildcard) separated by colons")
 	}
 
 	return nil
@@ -549,7 +574,7 @@ func IsAPIName(value string, allowSlashes bool) error {
 	}
 
 	// Check for special URL characters.
-	reservedChars := []string{"?", "&", "+", "\"", "'", "`", "*"}
+	reservedChars := []string{"$", "?", "&", "+", "\"", "'", "`", "*"}
 	if !allowSlashes {
 		reservedChars = append(reservedChars, "/")
 	}
@@ -595,11 +620,12 @@ func IsPCIAddress(value string) error {
 
 // IsCompressionAlgorithm validates whether a value is a valid compression algorithm and is available on the system.
 func IsCompressionAlgorithm(value string) error {
+	// none doesn't need any checking.
 	if value == "none" {
 		return nil
 	}
 
-	// Going to look up tar2sqfs executable binary
+	// Going to look up tar2sqfs executable binary.
 	if value == "squashfs" {
 		value = "tar2sqfs"
 	}
@@ -610,8 +636,32 @@ func IsCompressionAlgorithm(value string) error {
 		return err
 	}
 
+	if len(fields) == 0 {
+		return errors.New("Invalid compressor provided")
+	}
+
+	// Check that we're dealing with a supported option.
+	if !slices.Contains([]string{
+		"bzip2",
+		"gzip",
+		"lzma",
+		"pigz",
+		"pzstd",
+		"pxz",
+		"tar2sqfs",
+		"xz",
+		"zstd",
+	}, fields[0]) {
+		return fmt.Errorf("Compression algorithm %q isn't currently supported", fields[0])
+	}
+
+	// Check that the command exists on the system.
 	_, err = exec.LookPath(fields[0])
-	return err
+	if err != nil {
+		return fmt.Errorf("Compression algorithm %q isn't supported on this system", fields[0])
+	}
+
+	return nil
 }
 
 // IsArchitecture validates whether the value is a valid architecture name.
@@ -927,4 +977,14 @@ func IsMinimumDuration(minimum time.Duration) func(value string) error {
 
 		return nil
 	}
+}
+
+// IsBase64 validates whether the string is Base64 encoded.
+func IsBase64(value string) error {
+	_, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(value, "="))
+	if err != nil {
+		return fmt.Errorf("Invalid value for a base64 string %q: %w", value, err)
+	}
+
+	return nil
 }

@@ -8,8 +8,9 @@ import (
 	"github.com/spf13/cobra"
 
 	incus "github.com/lxc/incus/v6/client"
-	cli "github.com/lxc/incus/v6/internal/cmd"
+	u "github.com/lxc/incus/v6/cmd/incus/usage"
 	"github.com/lxc/incus/v6/internal/i18n"
+	cli "github.com/lxc/incus/v6/shared/cmd"
 	"github.com/lxc/incus/v6/shared/ioprogress"
 	"github.com/lxc/incus/v6/shared/units"
 )
@@ -18,12 +19,14 @@ type cmdImport struct {
 	global *cmdGlobal
 
 	flagStorage string
+	flagConfig  []string
+	flagDevice  []string
 }
 
 // Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
 func (c *cmdImport) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("import", i18n.G("[<remote>:] <backup file> [<instance name>]"))
+	cmd.Use = cli.U("import", u.RemoteColonOpt, u.BackupFile, u.NewName(u.Instance).Optional())
 	cmd.Short = i18n.G("Import instance backups")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Import backups of instances including their snapshots.`))
@@ -33,6 +36,8 @@ func (c *cmdImport) Command() *cobra.Command {
 
 	cmd.RunE = c.Run
 	cmd.Flags().StringVarP(&c.flagStorage, "storage", "s", "", i18n.G("Storage pool name")+"``")
+	cmd.Flags().StringArrayVarP(&c.flagConfig, "config", "c", nil, i18n.G("Config key/value to apply to the new instance")+"``")
+	cmd.Flags().StringArrayVarP(&c.flagDevice, "device", "d", nil, i18n.G("New key/value to apply to a specific device")+"``")
 
 	return cmd
 }
@@ -108,6 +113,8 @@ func (c *cmdImport) Run(cmd *cobra.Command, args []string) error {
 		},
 		PoolName: c.flagStorage,
 		Name:     instanceName,
+		Config:   c.flagConfig,
+		Devices:  c.flagDevice,
 	}
 
 	op, err := resource.server.CreateInstanceFromBackup(createArgs)

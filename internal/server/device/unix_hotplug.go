@@ -22,7 +22,15 @@ import (
 // callbacks without needing to keep a reference to the unixHotplug device struct.
 func unixHotplugIsOurDevice(config deviceConfig.Device, unixHotplug *UnixHotplugEvent) bool {
 	// Check if event matches criteria for this device, if not return.
-	if (config["vendorid"] != "" && config["vendorid"] != unixHotplug.Vendor) || (config["productid"] != "" && config["productid"] != unixHotplug.Product) {
+	if config["vendorid"] != "" && config["vendorid"] != unixHotplug.Vendor {
+		return false
+	}
+
+	if config["productid"] != "" && config["productid"] != unixHotplug.Product {
+		return false
+	}
+
+	if config["pci"] != "" && config["pci"] != unixHotplug.PCI {
 		return false
 	}
 
@@ -59,6 +67,13 @@ func (d *unixHotplug) validateConfig(instConf instance.ConfigReader) error {
 		//  type: string
 		//  shortdesc: The product ID of the USB device
 		"productid": validate.Optional(validate.IsDeviceID),
+
+		// gendoc:generate(entity=devices, group=unix-hotplug, key=pci)
+		//
+		// ---
+		//  type: string
+		//  shortdesc: The PCI address of a USB controller to monitor
+		"pci": validate.Optional(validate.IsPCIAddress),
 
 		// gendoc:generate(entity=devices, group=unix-hotplug, key=uid)
 		//
@@ -98,8 +113,8 @@ func (d *unixHotplug) validateConfig(instConf instance.ConfigReader) error {
 		return err
 	}
 
-	if d.config["vendorid"] == "" && d.config["productid"] == "" {
-		return errors.New("Unix hotplug devices require a vendorid or a productid")
+	if d.config["vendorid"] == "" && d.config["productid"] == "" && d.config["pci"] == "" {
+		return errors.New("Unix hotplug devices require a vendorid, productid or PCI address")
 	}
 
 	return nil
@@ -139,6 +154,10 @@ func (d *unixHotplug) Register() error {
 			err := unixDeviceRemove(devicesPath, "unix", deviceName, relativeTargetPath, &runConf)
 			if err != nil {
 				return nil, err
+			}
+			// Return early to prevent injecting duplicate uevents.
+			if len(runConf.Mounts) == 0 {
+				return nil, nil
 			}
 
 			// Add a post hook function to remove the specific unix hotplug device file after unmount.
@@ -239,6 +258,13 @@ func (d *unixHotplug) loadUnixDevice() *udev.Device {
 		err := e.AddMatchProperty("ID_MODEL_ID", d.config["productid"])
 		if err != nil {
 			logger.Warn("Failed to add property to device", logger.Ctx{"property_name": "ID_MODEL_ID", "property_value": d.config["productid"], "err": err})
+		}
+	}
+
+	if d.config["pci"] != "" {
+		err := e.AddMatchProperty("ID_PCI_ID", d.config["pci"])
+		if err != nil {
+			logger.Warn("Failed to add property to device", logger.Ctx{"property_name": "ID_PCI_ID", "property_value": d.config["pci"], "err": err})
 		}
 	}
 

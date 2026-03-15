@@ -2831,3 +2831,163 @@ The following target keys are supported:
 * `logging.NAME.target.retry` (How many times to retry the transmission)
 
 The webhook data matches what's sent over the existing events API.
+
+## `container_disk_tmpfs`
+
+This adds tmpfs support for disk devices.
+
+* `source=tmpfs:` mounts a tmpfs file system, respecting `size`, `uid`, `gid` and `mode` options
+* `source=tmpfs-overlay:` same as tmpfs but with additional overlayfs behavior
+
+## `instance_limits_oom`
+
+This adds a new `limits.memory.oom_priority` configuration option to
+configure the Out Of Memory score for the container or virtual-machine.
+
+## `backup_override_config`
+
+This adds support for overriding both configuration and devices during
+backup import by using the `X-Incus-config` and `X-Incus-devices` HTTP
+headers.
+
+## `network_ovn_tunnels`
+
+This adds support for network tunnels to OVN networks.
+
+## `init_preseed_cluster_groups`
+
+This API extension provides the ability to configure cluster groups in preseed init.
+
+## `usb_attached`
+
+This introduces a new `attached` property to USB devices describing whether they are plugged in or not.
+
+## `backup_iso`
+
+This allows to backup ISO custom volumes by simply copying them. It enables exporting ISO volumes with `incus storage volume export` and get an ISO back.
+
+## `instance_systemd_credentials`
+
+This adds two categories of configuration options, `systemd.credential.*` and `systemd.credential-binary.*`, which allow passing systemd credentials through a bind-mounted directory for containers and `SMBIOS Type 11` for virtual machines.
+
+## `cluster_group_usedby`
+
+A `used_by` field was added to the `GET /1.0/cluster/groups/{name}` endpoint.
+`used_by` holds the URLs of all instances and projects using the cluster group.
+
+## `bpf_token_delegation`
+
+This adds support for [eBPF token delegation](https://docs.ebpf.io/linux/concepts/token/).
+
+## `file_storage_volume`
+
+This adds file transfer API on the custom volumes.
+Implements `DELETE`, `GET`, `HEAD`, `POST` operations on the `/1.0/storage-pools/{poolName}/volumes/{type}/{volumeName}/files` endpoint.
+
+## `network_hwaddr_pattern`
+
+This adds `network.hwaddr_pattern` global and per-project configuration keys to customize MAC address allocation.
+
+## `storage_volume_full`
+
+This adds `?recursion=1` support to `/1.0/storage-pools/POOL/volumes/VOLUME` and `?recursion=2` support to `/1.0/storage-pools/POOL/volumes`.
+
+As well as a matching `StorageVolumeFull` struct.
+
+## `storage_bucket_full`
+
+This adds `?recursion=1` support to `/1.0/storage-pools/POOL/buckets/VOLUME` and `?recursion=2` support to `/1.0/storage-pools/POOL/buckets`.
+
+As well as a matching `StorageBucketFull` struct.
+
+## `device_pci_firmware`
+
+This extension introduces a new boolean `firmware` option for PCI devices.
+When set to `false`, Incus tells QEMU to disable the ROM-BAR (`rombar=0`) for the device.
+
+## `resources_serial`
+
+This adds serial device tracking to the resources API.
+
+## `ovn_nic_limits`
+
+This adds support for `limits.egress`, `limits.ingress`, `limits.max` and `limits.priority` on `ovn` type network devices.
+
+## `storage_lvmcluster_qcow2`
+
+This adds support for running virtual machines from `QCOW2` images. Support is currently limited to `lvmcluster` storage driver.
+
+## `oidc_allowed_subnets`
+
+This indicates support by Incus for the custom `incus.allowed_subnets` OIDC claim.
+
+## `file_delete_force`
+
+This adds a new `X-Incus-force` HTTP header that when set to `true` allows for recursive deletion of instance or custom volume files.
+
+## `nic_sriov_select_ext`
+
+Adds support for selecting an SR-IOV network interface by vendor ID, product ID, or PCI address.
+
+## `network_zones_dns_contact`
+
+Adds a `dns.contact` configuration key to network zones.
+
+## `nic_attached_connected`
+
+This introduces two new properties for NICs:
+
+* `attached`, behaving like the `attached` key for disk and USB devices;
+* `connected`, setting the up/down link state for the NIC (when supported).
+
+## `nic_sriov_security_trusted`
+
+This introduces a new property for SR-IOV NICs:
+
+* `security.trusted` allows setting the `trusted` flag for the virtual function if the parent NIC supports it.
+
+## `direct_backup`
+
+This allows to perform backups of instances, custom storage volumes and storage buckets without disk buffering when the `Accept` header is set to `application/octet-stream` in the respective POST API endpoints. Doing so, said POST endpoints return the data stream instead of creating a backup entry in the database.
+
+## `instance_snapshot_disk_only_restore`
+
+This adds support for only restoring the disk of a snapshotted instance.
+
+## `unix_hotplug_pci`
+
+Adds a `pci` configuration key on the `unix-hotplug` device to allow filtering based on the USB controller PCI address.
+
+## `cluster_evacuating_restoring`
+
+Introduces new `Evacuating` and `Restoring` cluster member states.
+
+## `projects_restricted_image_servers`
+
+Introduces a new `restricted.images.servers` project configuration option.
+This allows specifying a comma separate list of image server domains from which the user may download images.
+
+## `storage_lvmcluster_size`
+
+Adds support for specifying the `size` parameter when updating `lvmcluster` storage pool.
+
+## `authorization_scriptlet_cert`
+
+This adds two fields, `Chain` and `Certificate`, to the `details`
+argument of the authorization scriptlet, to give more information about
+the client to authorize.
+
+## `lvmcluster_remove_snapshots`
+
+It is a Boolean that defaults to `false`. When set to `true`, it instructs Incus
+to remove any required snapshots when attempting to restore another snapshot.
+
+This is necessary because `lvmcluster` only allows restoring the latest snapshot.
+
+## `daemon_storage_logs`
+
+This adds `storage.logs_volume` alongside the existing `storage.backups_volume` and `storage.images_volume`.
+
+## `instances_debug_repair`
+
+This adds a new API at `POST /1.0/instances/NAME/debug/repair` to trigger low-level repair actions.

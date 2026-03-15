@@ -1,6 +1,8 @@
 package incus
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -173,6 +175,88 @@ func (r *ProtocolIncus) GetStoragePoolVolumesWithFilterAllProjects(pool string, 
 	return volumes, nil
 }
 
+// GetStoragePoolVolumesFull returns a list of StorageVolume entries for the provided pool (full struct).
+func (r *ProtocolIncus) GetStoragePoolVolumesFull(pool string) ([]api.StorageVolumeFull, error) {
+	if !r.HasExtension("storage_volume_full") {
+		return nil, errors.New("The server is missing the required \"storage_volume_full\" API extension")
+	}
+
+	volumes := []api.StorageVolumeFull{}
+
+	// Fetch the raw value
+	_, err := r.queryStruct("GET", fmt.Sprintf("/storage-pools/%s/volumes?recursion=2", url.PathEscape(pool)), nil, "", &volumes)
+	if err != nil {
+		return nil, err
+	}
+
+	return volumes, nil
+}
+
+// GetStoragePoolVolumesFullAllProjects returns a list of StorageVolume entries for the provided pool for all projects (full struct).
+func (r *ProtocolIncus) GetStoragePoolVolumesFullAllProjects(pool string) ([]api.StorageVolumeFull, error) {
+	err := r.CheckExtension("storage_volume_full")
+	if err != nil {
+		return nil, err
+	}
+
+	volumes := []api.StorageVolumeFull{}
+
+	uri := api.NewURL().Path("storage-pools", pool, "volumes").
+		WithQuery("recursion", "2").
+		WithQuery("all-projects", "true")
+
+	// Fetch the raw value.
+	_, err = r.queryStruct("GET", uri.String(), nil, "", &volumes)
+	if err != nil {
+		return nil, err
+	}
+
+	return volumes, nil
+}
+
+// GetStoragePoolVolumesFullWithFilter returns a filtered list of StorageVolume entries for the provided pool (full struct).
+func (r *ProtocolIncus) GetStoragePoolVolumesFullWithFilter(pool string, filters []string) ([]api.StorageVolumeFull, error) {
+	if !r.HasExtension("storage_volume_full") {
+		return nil, errors.New("The server is missing the required \"storage_volume_full\" API extension")
+	}
+
+	volumes := []api.StorageVolumeFull{}
+
+	v := url.Values{}
+	v.Set("recursion", "2")
+	v.Set("filter", parseFilters(filters))
+	// Fetch the raw value
+	_, err := r.queryStruct("GET", fmt.Sprintf("/storage-pools/%s/volumes?%s", url.PathEscape(pool), v.Encode()), nil, "", &volumes)
+	if err != nil {
+		return nil, err
+	}
+
+	return volumes, nil
+}
+
+// GetStoragePoolVolumesFullWithFilterAllProjects returns a filtered list of StorageVolume entries for the provided pool for all projects (full struct).
+func (r *ProtocolIncus) GetStoragePoolVolumesFullWithFilterAllProjects(pool string, filters []string) ([]api.StorageVolumeFull, error) {
+	err := r.CheckExtension("storage_volume_full")
+	if err != nil {
+		return nil, err
+	}
+
+	volumes := []api.StorageVolumeFull{}
+
+	uri := api.NewURL().Path("storage-pools", pool, "volumes").
+		WithQuery("recursion", "2").
+		WithQuery("filter", parseFilters(filters)).
+		WithQuery("all-projects", "true")
+
+	// Fetch the raw value.
+	_, err = r.queryStruct("GET", uri.String(), nil, "", &volumes)
+	if err != nil {
+		return nil, err
+	}
+
+	return volumes, nil
+}
+
 // GetStoragePoolVolume returns a StorageVolume entry for the provided pool and volume name.
 func (r *ProtocolIncus) GetStoragePoolVolume(pool string, volType string, name string) (*api.StorageVolume, string, error) {
 	if !r.HasExtension("storage") {
@@ -183,6 +267,24 @@ func (r *ProtocolIncus) GetStoragePoolVolume(pool string, volType string, name s
 
 	// Fetch the raw value
 	path := fmt.Sprintf("/storage-pools/%s/volumes/%s/%s", url.PathEscape(pool), url.PathEscape(volType), url.PathEscape(name))
+	etag, err := r.queryStruct("GET", path, nil, "", &volume)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return &volume, etag, nil
+}
+
+// GetStoragePoolVolumeFull returns a StorageVolumeFull entry for the provided pool and volume name.
+func (r *ProtocolIncus) GetStoragePoolVolumeFull(pool string, volType string, name string) (*api.StorageVolumeFull, string, error) {
+	if !r.HasExtension("storage_volume_full") {
+		return nil, "", errors.New("The server is missing the required \"storage_volume_full\" API extension")
+	}
+
+	volume := api.StorageVolumeFull{}
+
+	// Fetch the raw value
+	path := fmt.Sprintf("/storage-pools/%s/volumes/%s/%s?recursion=1", url.PathEscape(pool), url.PathEscape(volType), url.PathEscape(name))
 	etag, err := r.queryStruct("GET", path, nil, "", &volume)
 	if err != nil {
 		return nil, "", err
@@ -994,6 +1096,70 @@ func (r *ProtocolIncus) GetStorageVolumeBackupFile(pool string, volName string, 
 	return &resp, nil
 }
 
+// CreateStorageVolumeBackupStream requests that Incus creates and returns new direct backup for
+// the storage volume.
+func (r *ProtocolIncus) CreateStorageVolumeBackupStream(pool string, volName string, backup api.StorageVolumeBackupsPost, req *BackupFileRequest) error {
+	if !r.HasExtension("direct_backup") {
+		return errors.New("The server is missing the required \"direct_backup\" API extension")
+	}
+
+	// Build the URL
+	uri := fmt.Sprintf("%s/1.0/storage-pools/%s/volumes/custom/%s/backups", r.httpBaseURL.String(), url.PathEscape(pool), url.PathEscape(volName))
+	if r.project != "" {
+		uri += fmt.Sprintf("?project=%s", url.QueryEscape(r.project))
+	}
+
+	// Encode the backup data
+	buf := bytes.Buffer{}
+	err := json.NewEncoder(&buf).Encode(backup)
+	if err != nil {
+		return err
+	}
+
+	// Prepare the download request
+	request, err := http.NewRequest("POST", uri, bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		return err
+	}
+
+	request.Header.Set("Accept", "application/octet-stream")
+	if r.httpUserAgent != "" {
+		request.Header.Set("User-Agent", r.httpUserAgent)
+	}
+
+	// Start the request
+	response, doneCh, err := cancel.CancelableDownload(req.Canceler, r.DoHTTP, request)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = response.Body.Close() }()
+	defer close(doneCh)
+
+	if response.StatusCode != http.StatusOK {
+		_, _, err = incusParseResponse(response)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Handle the data
+	body := response.Body
+	if req.ProgressHandler != nil {
+		body = &ioprogress.ProgressReader{
+			ReadCloser: response.Body,
+			Tracker: &ioprogress.ProgressTracker{
+				Handler: func(received int64, speed int64) {
+					req.ProgressHandler(ioprogress.ProgressData{Text: fmt.Sprintf("%s (%s/s)", units.GetByteSizeString(received, 2), units.GetByteSizeString(speed, 2))})
+				},
+			},
+		}
+	}
+
+	_, err = io.Copy(req.BackupFile, body)
+	return err
+}
+
 // CreateStoragePoolVolumeFromMigration defines a new storage volume.
 // In contrast to CreateStoragePoolVolume, it also returns an operation object.
 func (r *ProtocolIncus) CreateStoragePoolVolumeFromMigration(pool string, volume api.StorageVolumesPost) (Operation, error) {
@@ -1163,4 +1329,155 @@ func (r *ProtocolIncus) GetStoragePoolVolumeFileSFTP(pool string, volType string
 	}()
 
 	return client, nil
+}
+
+// GetStorageVolumeFile retrieves the provided path from the storage volume.
+func (r *ProtocolIncus) GetStorageVolumeFile(pool string, volumeType string, volumeName string, filePath string) (io.ReadCloser, *InstanceFileResponse, error) {
+	// Send the request
+	path := fmt.Sprintf(
+		"/storage-pools/%s/volumes/%s/%s/files?path=%s",
+		url.PathEscape(pool), url.PathEscape(volumeType), url.PathEscape(volumeName), url.QueryEscape(filePath),
+	)
+
+	requestURL, err := r.setQueryAttributes(fmt.Sprintf("%s/1.0%s", r.httpBaseURL.String(), path))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	req, err := http.NewRequest("GET", requestURL, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Send the request
+	resp, err := r.DoHTTP(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Check the return value for a cleaner error
+	if resp.StatusCode != http.StatusOK {
+		_, _, err := incusParseResponse(resp)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// Parse the headers
+	uid, gid, mode, fileType, _ := api.ParseFileHeaders(resp.Header)
+	fileResp := InstanceFileResponse{
+		UID:  uid,
+		GID:  gid,
+		Mode: mode,
+		Type: fileType,
+	}
+
+	if fileResp.Type == "directory" {
+		// Decode the response
+		response := api.Response{}
+		decoder := json.NewDecoder(resp.Body)
+
+		err = decoder.Decode(&response)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// Get the file list
+		entries := []string{}
+		err = response.MetadataAsStruct(&entries)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		fileResp.Entries = entries
+
+		return nil, &fileResp, err
+	}
+
+	return resp.Body, &fileResp, err
+}
+
+// CreateStorageVolumeFile tells Incus to create a file in the storage volume.
+func (r *ProtocolIncus) CreateStorageVolumeFile(pool string, volumeType string, volumeName string, filePath string, args InstanceFileArgs) error {
+	// Send the request
+	path := fmt.Sprintf(
+		"/storage-pools/%s/volumes/%s/%s/files?path=%s",
+		url.PathEscape(pool), url.PathEscape(volumeType), url.PathEscape(volumeName), url.QueryEscape(filePath),
+	)
+
+	requestURL, err := r.setQueryAttributes(fmt.Sprintf("%s/1.0%s", r.httpBaseURL.String(), path))
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", requestURL, args.Content)
+	if err != nil {
+		return err
+	}
+
+	req.GetBody = func() (io.ReadCloser, error) {
+		_, err := args.Content.Seek(0, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		return io.NopCloser(args.Content), nil
+	}
+
+	// Set the various headers
+	if args.UID > -1 {
+		req.Header.Set("X-Incus-uid", fmt.Sprintf("%d", args.UID))
+	}
+
+	if args.GID > -1 {
+		req.Header.Set("X-Incus-gid", fmt.Sprintf("%d", args.GID))
+	}
+
+	if args.Mode > -1 {
+		req.Header.Set("X-Incus-mode", fmt.Sprintf("%04o", args.Mode))
+	}
+
+	if args.Type != "" {
+		req.Header.Set("X-Incus-type", args.Type)
+	}
+
+	if args.WriteMode != "" {
+		req.Header.Set("X-Incus-write", args.WriteMode)
+	}
+
+	// Send the request
+	resp, err := r.DoHTTP(req)
+	if err != nil {
+		return err
+	}
+
+	// Check the return value for a cleaner error
+	_, _, err = incusParseResponse(resp)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// DeleteStorageVolumeFile deletes a file in the storage volume.
+func (r *ProtocolIncus) DeleteStorageVolumeFile(pool string, volumeType string, volumeName string, filePath string) error {
+	// Send the request
+	path := fmt.Sprintf(
+		"/storage-pools/%s/volumes/%s/%s/files?path=%s",
+		url.PathEscape(pool), url.PathEscape(volumeType), url.PathEscape(volumeName), url.QueryEscape(filePath),
+	)
+
+	requestURL, err := r.setQueryAttributes(path)
+	if err != nil {
+		return err
+	}
+
+	// Send the request
+	_, _, err = r.query("DELETE", requestURL, nil, "")
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

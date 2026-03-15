@@ -5,16 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v2"
 
 	incus "github.com/lxc/incus/v6/client"
-	cli "github.com/lxc/incus/v6/internal/cmd"
 	internalUtil "github.com/lxc/incus/v6/internal/util"
 	"github.com/lxc/incus/v6/shared/api"
 	"github.com/lxc/incus/v6/shared/ask"
+	cli "github.com/lxc/incus/v6/shared/cmd"
 	"github.com/lxc/incus/v6/shared/revert"
 )
 
@@ -140,6 +142,17 @@ func (m *VolumeMigration) gatherInfo() error {
 		m.customVolumeArgs.ContentType = "filesystem"
 	} else {
 		m.customVolumeArgs.ContentType = "block"
+	}
+
+	if m.migrationType == MigrationTypeVolumeFilesystem {
+		if os.Geteuid() != 0 {
+			return errors.New("This tool must be run as root for filesystem migrations")
+		}
+
+		_, err := exec.LookPath("rsync")
+		if err != nil {
+			return errors.New("Unable to find required command \"rsync\"")
+		}
 	}
 
 	err = m.setSourceFormat()

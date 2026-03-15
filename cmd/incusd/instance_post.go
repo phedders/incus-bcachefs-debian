@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -34,6 +35,7 @@ import (
 	"github.com/lxc/incus/v6/shared/api"
 	apiScriptlet "github.com/lxc/incus/v6/shared/api/scriptlet"
 	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/util"
 )
 
 // swagger:operation POST /1.0/instances/{name} instances instance_post
@@ -620,6 +622,11 @@ func migrateInstance(ctx context.Context, s *state.State, inst instance.Instance
 	// Apply the config overrides.
 	maps.Copy(targetInstInfo.Config, req.Config)
 
+	// If "security.secureboot" has changed, force a NVRAM reset.
+	if util.IsTrueOrEmpty(inst.ExpandedConfig()["security.secureboot"]) != util.IsTrueOrEmpty(req.Config["security.secureboot"]) {
+		targetInstInfo.Config["volatile.apply_nvram"] = "true"
+	}
+
 	// Apply the device overrides.
 	maps.Copy(targetInstInfo.Devices, req.Devices)
 
@@ -630,6 +637,15 @@ func migrateInstance(ctx context.Context, s *state.State, inst instance.Instance
 
 	// Handle storage pool override.
 	if req.Pool != "" {
+		err := s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
+			_, err := tx.GetStoragePoolID(ctx, req.Pool)
+
+			return err
+		})
+		if response.IsNotFoundError(err) {
+			return fmt.Errorf("Can't find a storage pool '%s' for the instance to use", req.Pool)
+		}
+
 		rootDevKey, rootDev, err := internalInstance.GetRootDiskDevice(inst.ExpandedDevices().CloneNative())
 		if err != nil {
 			return err
@@ -973,6 +989,27 @@ func migrateInstance(ctx context.Context, s *state.State, inst instance.Instance
 				err = tx.CreateInstanceConfig(ctx, int(id), map[string]string{"volatile.cluster.group": targetGroupName})
 				if err != nil {
 					return fmt.Errorf("Failed to set volatile.apply_template config key: %w", err)
+				}
+			} else if targetMemberInfo != nil {
+				config, err := dbCluster.GetInstanceConfig(ctx, tx.Tx(), inst.ID())
+				if err != nil {
+					return err
+				}
+
+				// Remove 'volatile.cluster.group' if the instance is on a node outside the specified cluster group.
+				group := config["volatile.cluster.group"]
+				if group != "" {
+					groupMembers, err := tx.GetClusterGroupNodes(ctx, group)
+					if err != nil {
+						return err
+					}
+
+					if !slices.Contains(groupMembers, targetMemberInfo.Name) {
+						err = tx.DeleteInstanceConfigKey(ctx, id, "volatile.cluster.group")
+						if err != nil {
+							return fmt.Errorf("Failed to remove volatile.cluster.group config key: %w", err)
+						}
+					}
 				}
 			}
 

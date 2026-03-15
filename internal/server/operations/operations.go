@@ -153,6 +153,7 @@ func OperationCreate(s *state.State, projectName string, opClass OperationClass,
 		op.SetEventServer(s.Events)
 	}
 
+	// Validate and make a copy of the metadata to avoid concurrent reads/writes.
 	newMetadata, err := parseMetadata(opMetadata)
 	if err != nil {
 		return nil, err
@@ -504,9 +505,15 @@ func (op *Operation) Render() (string, *api.Operation, error) {
 		renderedResources = tmpResources
 	}
 
-	// Local server name
-
 	op.lock.Lock()
+
+	// Make a read-only copy of the metadata to avoid concurrent reads/writes.
+	metadata := map[string]any{}
+	for k, v := range op.metadata {
+		metadata[k] = v
+	}
+
+	// Put together the response struct.
 	retOp := &api.Operation{
 		ID:          op.id,
 		Class:       op.class.String(),
@@ -516,7 +523,7 @@ func (op *Operation) Render() (string, *api.Operation, error) {
 		Status:      op.status.String(),
 		StatusCode:  op.status,
 		Resources:   renderedResources,
-		Metadata:    op.metadata,
+		Metadata:    metadata,
 		MayCancel:   op.mayCancel(),
 	}
 
@@ -586,8 +593,10 @@ func (op *Operation) UpdateMetadata(opMetadata any) error {
 		return errors.New("Read-only operations can't be updated")
 	}
 
+	// Validate and make a copy of the metadata to avoid concurrent reads/writes.
 	newMetadata, err := parseMetadata(opMetadata)
 	if err != nil {
+		op.lock.Unlock()
 		return err
 	}
 
@@ -624,12 +633,12 @@ func (op *Operation) ExtendMetadata(metadata any) error {
 	// Parse the new metadata.
 	extraMetadata, err := parseMetadata(metadata)
 	if err != nil {
+		op.lock.Unlock()
 		return err
 	}
 
 	// Get current metadata.
 	newMetadata := op.metadata
-	op.lock.Unlock()
 
 	// Merge with current one.
 	if op.metadata == nil {
@@ -639,7 +648,6 @@ func (op *Operation) ExtendMetadata(metadata any) error {
 	}
 
 	// Update the operation.
-	op.lock.Lock()
 	op.updatedAt = time.Now()
 	op.metadata = newMetadata
 	op.lock.Unlock()
@@ -659,9 +667,18 @@ func (op *Operation) ID() string {
 	return op.id
 }
 
-// Metadata returns the operation Metadata.
+// Metadata returns a read-only copy of the operation metadata.
 func (op *Operation) Metadata() map[string]any {
-	return op.metadata
+	op.lock.Lock()
+	defer op.lock.Unlock()
+
+	// Make a read-only copy of the metadata to avoid concurrent reads/writes.
+	metadata := map[string]any{}
+	for k, v := range op.metadata {
+		metadata[k] = v
+	}
+
+	return metadata
 }
 
 // URL returns the operation URL.

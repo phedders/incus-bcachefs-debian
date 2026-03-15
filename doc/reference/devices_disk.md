@@ -11,6 +11,10 @@ Disk devices supply additional storage to instances.
 For containers, they are essentially mount points inside the instance (either as a bind-mount of an existing file or directory on the host, or, if the source is a block device, a regular mount).
 Virtual machines share host-side mounts or directories through `9p` or `virtiofs` (if available), or as VirtIO disks for block-based disks.
 
+```{warning}
+The device name affects the serial generated for the device. If the device name exceeds 14 characters for `nvme` and `virtio-blk`, or 30 characters for `virtio-scsi`, Incus will hash the device value to ensure the generated serial remains within supported length constraints. The device name itself is left unchanged.
+```
+
 (devices-disk-types)=
 ## Types of disk devices
 
@@ -78,6 +82,23 @@ VM `agent`
   To add such a device, use the following command:
 
       incus config device add <instance_name> <device_name> disk source=agent:config
+
+Tmpfs
+: You can back a disk device with an in-memory file system by using the `tmpfs:` source.
+
+      incus config device add <instance_name> <device_name> disk source=tmpfs: path=<path_in_instance> [size=<size>] [initial.uid=<uid>] [initial.gid=<gid>] [initial.mode=<mode>]
+
+  Both `source` and `path` are required.
+  This creates a `tmpfs` mount inside the instance and supports optional properties for size, ownership, and permissions.
+
+Tmpfs with overlayfs behavior
+: If you want the same tmpfs behavior but combined with overlayfs semantics, use `tmpfs-overlay:` as the source.
+
+      incus config device add <instance_name> <device_name> disk source=tmpfs-overlay: path=<path_in_instance> [size=<size>] [initial.uid=<uid>] [initial.gid=<gid>] [initial.mode=<mode>]
+
+  Both `source` and `path` are required.
+  Additionally, the target `path` must already exist inside the container.
+  This provides an ephemeral in-memory file system with overlayfs handling.
 
 (devices-disk-initial-config)=
 ## Initial volume configuration for instance root disk devices

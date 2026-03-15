@@ -229,7 +229,8 @@ func storagePoolsGet(d *Daemon, r *http.Request) response.Response {
 
 			// If no member is specified and the daemon is clustered, we omit the node-specific fields.
 			if s.ServerClustered {
-				for _, key := range db.NodeSpecificStorageConfig {
+				nodeSpecificConfig := db.NodeSpecificStorageConfig(pool.Driver().Info().Name)
+				for _, key := range nodeSpecificConfig {
 					delete(poolAPI.Config, key)
 				}
 			} else {
@@ -376,10 +377,16 @@ func storagePoolsPost(d *Daemon, r *http.Request) response.Response {
 	if targetNode != "" {
 		// A targetNode was specified, let's just define the node's storage without actually creating it.
 		// The only legal key values for the storage config are the ones in NodeSpecificStorageConfig.
+		nodeSpecificConfig := db.NodeSpecificStorageConfig(req.Driver)
 		for key := range req.Config {
-			if !slices.Contains(db.NodeSpecificStorageConfig, key) {
+			if !slices.Contains(nodeSpecificConfig, key) {
 				return response.SmartError(fmt.Errorf("Config key %q may not be used as member-specific key", key))
 			}
+		}
+
+		// Make sure that no description is set through the member-specific path.
+		if req.Description != "" {
+			return response.BadRequest(errors.New("The storage pool description cannot be set for a specific member"))
 		}
 
 		err = storagePoolValidate(s, req.Name, req.Driver, req.Config)
@@ -410,9 +417,6 @@ func storagePoolsPost(d *Daemon, r *http.Request) response.Response {
 			if err != nil {
 				logger.Error("Failed to add storage pool to authorizer", logger.Ctx{"name": req.Name, "error": err})
 			}
-
-			// Send out the lifecycle event.
-			s.Events.SendLifecycle(api.ProjectDefaultName, lc)
 		}
 
 		return resp
@@ -445,6 +449,9 @@ func storagePoolsPost(d *Daemon, r *http.Request) response.Response {
 		if err != nil {
 			return response.InternalError(err)
 		}
+
+		// Send out the lifecycle event.
+		s.Events.SendLifecycle(api.ProjectDefaultName, lc)
 	} else {
 		// Create new single node storage pool.
 		err = storagePoolCreateGlobal(r.Context(), s, req, clientType)
@@ -476,8 +483,9 @@ func storagePoolPartiallyCreated(pool *api.StoragePool) bool {
 
 	// If the pool has global config keys, then it has previously been created by having its global config
 	// inserted, and this means it is partialled created.
+	nodeSpecificConfig := db.NodeSpecificStorageConfig(pool.Driver)
 	for key := range pool.Config {
-		if !slices.Contains(db.NodeSpecificStorageConfig, key) {
+		if !slices.Contains(nodeSpecificConfig, key) {
 			return true
 		}
 	}
@@ -489,9 +497,15 @@ func storagePoolPartiallyCreated(pool *api.StoragePool) bool {
 // Accepts an optional existing pool record, which will exist when performing subsequent re-create attempts.
 func storagePoolsPostCluster(ctx context.Context, s *state.State, pool *api.StoragePool, req api.StoragePoolsPost, clientType clusterRequest.ClientType) error {
 	// Check that no node-specific config key has been defined.
+	nodeSpecificConfig := db.NodeSpecificStorageConfig(req.Driver)
+	creationDisallowedConfig := storagePools.DisallowedStorageConfigForCreation(req.Driver)
 	for key := range req.Config {
-		if slices.Contains(db.NodeSpecificStorageConfig, key) {
+		if slices.Contains(nodeSpecificConfig, key) {
 			return fmt.Errorf("Config key %q is cluster member specific", key)
+		}
+
+		if slices.Contains(creationDisallowedConfig, key) {
+			return fmt.Errorf("Config key %q is not allowed during creation", key)
 		}
 	}
 
@@ -570,11 +584,13 @@ func storagePoolsPostCluster(ctx context.Context, s *state.State, pool *api.Stor
 		return err
 	}
 
-	req.Config = updatedConfig
+	// Clone the config so that updatedConfig retains the node-specific key for later use.
+	req.Config = util.CloneMap(updatedConfig)
 	logger.Debug("Created storage pool on local cluster member", logger.Ctx{"pool": req.Name})
 
 	// Strip node specific config keys from config. Very important so we don't forward node-specific config.
-	for _, k := range db.NodeSpecificStorageConfig {
+	nodeSpecificConfig = db.NodeSpecificStorageConfig(req.Driver)
+	for _, k := range nodeSpecificConfig {
 		delete(req.Config, k)
 	}
 
@@ -605,6 +621,37 @@ func storagePoolsPostCluster(ctx context.Context, s *state.State, pool *api.Stor
 	})
 	if err != nil {
 		return err
+	}
+
+	// Get the existing storage pool.
+	p, err := storagePools.LoadByName(s, pool.Name)
+	if err != nil {
+		return err
+	}
+
+	if p.Driver().Info().SameSource {
+		err := s.DB.Cluster.Transaction(ctx, func(ctx context.Context, tx *db.ClusterTx) error {
+			nodes, err := tx.GetNodes(ctx)
+			if err != nil {
+				return err
+			}
+
+			for _, node := range nodes {
+				if node.Name == s.ServerName {
+					continue
+				}
+
+				err := tx.UpdateStoragePoolConfig(poolID, node.ID, updatedConfig)
+				if err != nil {
+					return err
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	// Finally update the storage pool state.
@@ -730,7 +777,8 @@ func storagePoolGet(d *Daemon, r *http.Request) response.Response {
 
 	// If no member is specified and the daemon is clustered, we omit the node-specific fields.
 	if s.ServerClustered && !memberSpecific {
-		for _, key := range db.NodeSpecificStorageConfig {
+		nodeSpecificConfig := db.NodeSpecificStorageConfig(pool.Driver().Info().Name)
+		for _, key := range nodeSpecificConfig {
 			delete(poolAPI.Config, key)
 		}
 	} else {
@@ -811,11 +859,13 @@ func storagePoolPut(d *Daemon, r *http.Request) response.Response {
 	// Duplicate config for etag modification and generation.
 	etagConfig := localUtil.CopyConfig(pool.Driver().Config())
 
+	nodeSpecificConfig := db.NodeSpecificStorageConfig(pool.Driver().Info().Name)
+
 	// If no target node is specified and the daemon is clustered, we omit the node-specific fields so that
 	// the e-tag can be generated correctly. This is because the GET request used to populate the request
 	// will also remove node-specific keys when no target is specified.
 	if targetNode == "" && s.ServerClustered {
-		for _, key := range db.NodeSpecificStorageConfig {
+		for _, key := range nodeSpecificConfig {
 			delete(etagConfig, key)
 		}
 	}
@@ -841,7 +891,7 @@ func storagePoolPut(d *Daemon, r *http.Request) response.Response {
 		if targetNode == "" {
 			// If no target is specified, then ensure only non-node-specific config keys are changed.
 			for k := range req.Config {
-				if slices.Contains(db.NodeSpecificStorageConfig, k) {
+				if slices.Contains(nodeSpecificConfig, k) {
 					return response.BadRequest(fmt.Errorf("Config key %q is cluster member specific", k))
 				}
 			}
@@ -850,7 +900,7 @@ func storagePoolPut(d *Daemon, r *http.Request) response.Response {
 
 			// If a target is specified, then ensure only node-specific config keys are changed.
 			for k, v := range req.Config {
-				if !slices.Contains(db.NodeSpecificStorageConfig, k) && curConfig[k] != v {
+				if !slices.Contains(nodeSpecificConfig, k) && curConfig[k] != v {
 					return response.BadRequest(fmt.Errorf("Config key %q may not be used as cluster member specific key", k))
 				}
 			}
@@ -868,7 +918,10 @@ func storagePoolPut(d *Daemon, r *http.Request) response.Response {
 		ctx["target"] = targetNode
 	}
 
-	s.Events.SendLifecycle(api.ProjectDefaultName, lifecycle.StoragePoolUpdated.Event(pool.Name(), requestor, ctx))
+	// Send a single update event when the server is clustered.
+	if !s.ServerClustered || (s.ServerClustered && clientType == clusterRequest.ClientTypeNormal) {
+		s.Events.SendLifecycle(api.ProjectDefaultName, lifecycle.StoragePoolUpdated.Event(pool.Name(), requestor, ctx))
+	}
 
 	return response
 }
@@ -929,8 +982,9 @@ func doStoragePoolUpdate(s *state.State, pool storagePools.Pool, req api.Storage
 		// If non-node specific config being updated via "put" method in cluster, then merge the current
 		// node-specific network config with the submitted config to allow validation.
 		// This allows removal of non-node specific keys when they are absent from request config.
+		nodeSpecificConfig := db.NodeSpecificStorageConfig(pool.Driver().Info().Name)
 		for k, v := range pool.Driver().Config() {
-			if slices.Contains(db.NodeSpecificStorageConfig, k) {
+			if slices.Contains(nodeSpecificConfig, k) {
 				req.Config[k] = v
 			}
 		}
@@ -960,9 +1014,13 @@ func doStoragePoolUpdate(s *state.State, pool storagePools.Pool, req api.Storage
 
 		sendPool := req
 		sendPool.Config = make(map[string]string)
+		driverName := pool.Driver().Info().Name
+		nodeSpecificConfig := db.NodeSpecificStorageConfig(driverName)
+		clusterWideConfig := storagePools.ClusterWideStorageConfig(driverName)
 		for k, v := range req.Config {
 			// Don't forward node specific keys (these will be merged in on recipient node).
-			if slices.Contains(db.NodeSpecificStorageConfig, k) {
+			// Don't forward cluster wide keys as performing operation on one node is enough.
+			if slices.Contains(nodeSpecificConfig, k) || slices.Contains(clusterWideConfig, k) {
 				continue
 			}
 

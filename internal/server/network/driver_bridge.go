@@ -1036,7 +1036,7 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 			return fmt.Errorf("Failed generating stable random bridge MAC: %w", err)
 		}
 
-		randomHwaddr := randomHwaddr(r)
+		randomHwaddr := n.randomHwaddr(r)
 		bridge.Address, err = net.ParseMAC(randomHwaddr)
 		if err != nil {
 			return fmt.Errorf("Failed parsing MAC address %q: %w", randomHwaddr, err)
@@ -1048,6 +1048,19 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 	// Create the bridge interface if doesn't exist.
 	if !n.isRunning() {
 		if n.config["bridge.driver"] == "openvswitch" {
+			// Handle IncusOS services.
+			if n.state.OS.IncusOS != nil {
+				ok, err := n.state.OS.IncusOS.IsServiceEnabled("ovn")
+				if err != nil {
+					return err
+				}
+
+				if !ok {
+					return errors.New("IncusOS service \"ovn\" isn't currently enabled")
+				}
+			}
+
+			// Try to connect to OVS.
 			vswitch, err := n.state.OVS()
 			if err != nil {
 				return fmt.Errorf("Couldn't connect to OpenVSwitch: %v", err)
@@ -1205,8 +1218,24 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 					return fmt.Errorf("Failed to get link info for external interface %q", entry)
 				}
 
-				if linkInfo.Kind != "vlan" || linkInfo.Parent != ifParent || linkInfo.VlanID != vlanID || (linkInfo.Master != "" && linkInfo.Master != n.name) {
-					return fmt.Errorf("External interface %q already in use", entry)
+				if n.config["bridge.driver"] != "openvswitch" {
+					if linkInfo.Kind != "vlan" || linkInfo.Parent != ifParent || linkInfo.VlanID != vlanID || (linkInfo.Master != "" && linkInfo.Master != n.name) {
+						return fmt.Errorf("External interface %q already in use", entry)
+					}
+				} else {
+					vswitch, err := n.state.OVS()
+					if err != nil {
+						return err
+					}
+
+					ports, err := vswitch.GetBridgePorts(context.TODO(), n.name)
+					if err != nil {
+						return err
+					}
+
+					if linkInfo.Kind != "vlan" || linkInfo.Parent != ifParent || linkInfo.VlanID != vlanID || (linkInfo.Master != "" && !slices.Contains(ports, entry)) {
+						return fmt.Errorf("External interface %q already in use", entry)
+					}
 				}
 			}
 
@@ -1598,6 +1627,12 @@ func (n *bridge) setup(oldConfig map[string]string) error {
 			}
 		} else {
 			dnsmasqCmd = append(dnsmasqCmd, fmt.Sprintf("--dhcp-option-force=option6:dns-server,[%s]", ipAddress.String()))
+		}
+
+		// Disable receiving router advertisements from guests.
+		err = localUtil.SysctlSet(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", n.name), "0")
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
 		}
 
 		// Allow forwarding.
@@ -2175,6 +2210,13 @@ func (n *bridge) Update(newNetwork api.NetworkPut, targetNode string, clientType
 	}
 
 	reverter.Success()
+
+	// Notify dependent networks (those using this network as their uplink) of the changes.
+	// Do this after the network has been successfully updated so that a failure to notify a dependent network
+	// doesn't prevent the network itself from being updated.
+	if clientType == request.ClientTypeNormal && len(changedKeys) > 0 {
+		n.notifyDependentNetworks(changedKeys)
+	}
 
 	return nil
 }
@@ -3411,7 +3453,7 @@ func (n *bridge) UsesDNSMasq() bool {
 	}
 
 	// Start dnsmassq if IPv6 is used (needed for SLAAC or DHCPv6).
-	if !util.IsNoneOrEmpty(n.config["ipv6.address"]) {
+	if !util.IsNoneOrEmpty(n.config["ipv6.address"]) && (util.IsTrueOrEmpty(n.config["ipv6.dhcp"]) || util.IsTrueOrEmpty(n.config["ipv6.routing"])) {
 		ipAddress, _, err := net.ParseCIDR(n.config["ipv6.address"])
 		if err != nil {
 			return true

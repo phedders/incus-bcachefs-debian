@@ -38,12 +38,12 @@ var InstanceConfigKeysAny = map[string]func(value string) error{
 	"boot.autorestart": validate.Optional(validate.IsBool),
 
 	// gendoc:generate(entity=instance, group=boot, key=boot.autostart)
-	// If set to `false`, restore the last state.
+	// If unset or set to `last-state`, restores the last state.
 	// ---
 	//  type: bool
 	//  liveupdate: no
 	//  shortdesc: Whether to always start the instance when the daemon starts
-	"boot.autostart": validate.Optional(validate.IsBool),
+	"boot.autostart": validate.Optional(validate.Or(validate.IsBool, validate.IsOneOf("last-state"))),
 
 	// gendoc:generate(entity=instance, group=boot, key=boot.autostart.delay)
 	// The number of seconds to wait after the instance started before starting the next one.
@@ -56,9 +56,10 @@ var InstanceConfigKeysAny = map[string]func(value string) error{
 
 	// gendoc:generate(entity=instance, group=boot, key=boot.autostart.priority)
 	// The instance with the highest value is started first.
+	// Instances without a priority set will be started (with some parallelism) ahead of
+	// instances with a priority set.
 	// ---
 	//  type: integer
-	//  defaultdesc: 0
 	//  liveupdate: no
 	//  shortdesc: What order to start the instances in
 	"boot.autostart.priority": validate.Optional(validate.IsInt64),
@@ -249,6 +250,18 @@ var InstanceConfigKeysAny = map[string]func(value string) error{
 
 		return nil
 	},
+
+	// gendoc:generate(entity=instance, group=resource-limits, key=limits.memory.oom_priority)
+	// Specify an integer between -1000 and 1000.
+	// A negative value makes the instance less likely to be killed by the Out Of Memory killer,
+	// while a positive value makes it more likely to be killed.
+	// The default value of 0 means no adjustment to the Out Of Memory score.
+	// ---
+	//	type: integer
+	//	defaultdesc: `0`
+	//	liveupdate: yes
+	//	shortdesc: Out Of Memory killer priority adjustment for the instance
+	"limits.memory.oom_priority": validate.Optional(validate.IsOOMPriority),
 
 	// gendoc:generate(entity=instance, group=migration, key=migration.stateful)
 	// Enabling this option prevents the use of some features that are incompatible with it.
@@ -684,6 +697,59 @@ var InstanceConfigKeysContainer = map[string]func(value string) error{
 	//  shortdesc: Raw Seccomp configuration
 	"raw.seccomp": validate.IsAny,
 
+	// gendoc:generate(entity=instance, group=security, key=security.bpffs.delegate_cmds)
+	// See {ref}`bpf-tokens` for more information.
+	//
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: unprivileged container
+	//  shortdesc: What BPF command types to delegate
+	"security.bpffs.delegate_cmds": validate.Optional(validate.IsListOf(validate.IsAny)),
+
+	// gendoc:generate(entity=instance, group=security, key=security.bpffs.delegate_maps)
+	// See {ref}`bpf-tokens` for more information.
+	//
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: unprivileged container
+	//  shortdesc: What BPF map types to delegate
+	"security.bpffs.delegate_maps": validate.Optional(validate.IsListOf(validate.IsAny)),
+
+	// gendoc:generate(entity=instance, group=security, key=security.bpffs.delegate_progs)
+	// See {ref}`bpf-tokens` for more information.
+	//
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: unprivileged container
+	//  shortdesc: What BPF program types to delegate
+	"security.bpffs.delegate_progs": validate.Optional(validate.IsListOf(validate.IsAny)),
+
+	// gendoc:generate(entity=instance, group=security, key=security.bpffs.delegate_attachs)
+	// See {ref}`bpf-tokens` for more information.
+	//
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: unprivileged container
+	//  shortdesc: What BPF attach types to delegate
+	"security.bpffs.delegate_attachs": validate.Optional(validate.IsListOf(validate.IsAny)),
+
+	// gendoc:generate(entity=instance, group=security, key=security.bpffs.path)
+	// The specified path must exist in the container.
+	// The BPF file system is only mounted if any of the `security.bpffs.delegate_*` options are set.
+	// See {ref}`bpf-tokens` for more information.
+	//
+	// ---
+	//  type: string
+	//  defaultdesc: `/sys/fs/bpf`
+	//  liveupdate: no
+	//  condition: unprivileged container
+	//  shortdesc: The path to mount the BPF file system at
+	"security.bpffs.path": validate.Optional(validate.IsAbsFilePath),
+
 	// gendoc:generate(entity=instance, group=security, key=security.guestapi.images)
 	//
 	// ---
@@ -1112,6 +1178,20 @@ var InstanceConfigKeysVM = map[string]func(value string) error{
 	//  shortdesc: QEMU VM definition name (used for migration between versions)
 	"volatile.vm.definition": validate.Optional(validate.IsAny),
 
+	// gendoc:generate(entity=instance, group=volatile, key=volatile.vm.hotplug.memory)
+	//
+	// ---
+	//  type: string
+	//  shortdesc: Memory setup of the VM as needed for state restoration
+	"volatile.vm.hotplug.memory": validate.Optional(validate.IsAny),
+
+	// gendoc:generate(entity=instance, group=volatile, key=volatile.vm.needs_reset)
+	//
+	// ---
+	//  type: bool
+	//  shortdesc: Indicates that the VM needs a full reset on next reboot
+	"volatile.vm.needs_reset": validate.Optional(validate.IsBool),
+
 	// gendoc:generate(entity=instance, group=volatile, key=volatile.vm.rtc_adjustment)
 	// Real Time Clock adjustment time to allow virtual machines to run on a different base than the host.
 	// ---
@@ -1359,6 +1439,15 @@ func ConfigKeyChecker(key string, instanceType api.InstanceType) (func(value str
 			return validate.IsAny, nil
 		}
 
+		// gendoc:generate(entity=instance, group=volatile, key=volatile.<name>.last_state.vf.trusted)
+		// The original trusted setting used when moving a VF into an instance.
+		// ---
+		//  type: string
+		//  shortdesc: SR-IOV virtual function original trusted setting
+		if strings.HasSuffix(key, ".last_state.vf.trusted") {
+			return validate.IsAny, nil
+		}
+
 		// gendoc:generate(entity=instance, group=volatile, key=volatile.<name>.last_state.vf.vlan)
 		// The original VLAN used when moving a VF into an instance.
 		// ---
@@ -1376,7 +1465,13 @@ func ConfigKeyChecker(key string, instanceType api.InstanceType) (func(value str
 	//  liveupdate: yes
 	//  shortdesc: Free-form environment key/value
 	if strings.HasPrefix(key, "environment.") {
-		return validate.IsAny, nil
+		return func(val string) error {
+			if strings.Contains(val, "\n") {
+				return errors.New("Environment variables cannot contain line breaks")
+			}
+
+			return nil
+		}, nil
 	}
 
 	// gendoc:generate(entity=instance, group=miscellaneous, key=user.*)
@@ -1534,12 +1629,36 @@ func ConfigKeyChecker(key string, instanceType api.InstanceType) (func(value str
 		return validate.IsAny, nil
 	}
 
+	// gendoc:generate(entity=instance, group=miscellaneous, key=systemd.credential.*)
+	// Systemd credential key/value pair passed as a read-only bind mount in containers and as `SMBIOS Type 11` data in virtual machines.
+	// ---
+	//  type: string
+	//  liveupdate: yes
+	//  shortdesc: Systemd credential key/value
+	if strings.HasPrefix(key, "systemd.credential.") {
+		return validate.IsAny, nil
+	}
+
+	// gendoc:generate(entity=instance, group=miscellaneous, key=systemd.credential-binary.*)
+	// Systemd credential key/value pair passed as a read-only bind mount in containers and as `SMBIOS Type 11` data in virtual machines. The value is Base64 encoded.
+	// ---
+	//  type: string
+	//  liveupdate: yes
+	//  shortdesc: Systemd credential key/value, where value is Base64 encoded
+	if strings.HasPrefix(key, "systemd.credential-binary.") {
+		return validate.IsBase64, nil
+	}
+
 	return nil, fmt.Errorf("Unknown configuration key: %s", key)
 }
 
 // InstanceIncludeWhenCopying is used to decide whether to include a config item or not when copying an instance.
 // The remoteCopy argument indicates if the copy is remote (i.e between servers) as this affects the keys kept.
 func InstanceIncludeWhenCopying(configKey string, remoteCopy bool) bool {
+	if configKey == "volatile.apply_nvram" {
+		return true // Include volatile.apply_nvram to also reset the NVRAM in copied instances.
+	}
+
 	if configKey == "volatile.base_image" {
 		return true // Include volatile.base_image always as it can help optimize copies.
 	}

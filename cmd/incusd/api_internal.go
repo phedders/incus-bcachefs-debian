@@ -395,6 +395,9 @@ func internalContainerOnStart(d *Daemon, r *http.Request) response.Response {
 }
 
 func internalContainerOnStopNS(d *Daemon, r *http.Request) response.Response {
+	// Wait until daemon is fully started.
+	<-d.waitReady.Done()
+
 	s := d.State()
 
 	inst, err := internalContainerHookLoadFromReference(s, r)
@@ -425,6 +428,9 @@ func internalContainerOnStopNS(d *Daemon, r *http.Request) response.Response {
 }
 
 func internalContainerOnStop(d *Daemon, r *http.Request) response.Response {
+	// Wait until daemon is fully started.
+	<-d.waitReady.Done()
+
 	s := d.State()
 
 	inst, err := internalContainerHookLoadFromReference(s, r)
@@ -452,6 +458,9 @@ func internalContainerOnStop(d *Daemon, r *http.Request) response.Response {
 }
 
 func internalVirtualMachineOnResize(d *Daemon, r *http.Request) response.Response {
+	// Wait until daemon is fully started.
+	<-d.waitReady.Done()
+
 	s := d.State()
 
 	// Get the instance ID.
@@ -511,11 +520,13 @@ func internalSQLGet(d *Daemon, r *http.Request) response.Response {
 		return response.BadRequest(errors.New("Invalid database"))
 	}
 
-	schemaFormValue := r.FormValue("schema")
-	schemaOnly, err := strconv.Atoi(schemaFormValue)
+	dumpFormValue := r.FormValue("dump")
+	dumpInt, err := strconv.Atoi(dumpFormValue)
 	if err != nil {
-		schemaOnly = 0
+		dumpInt = 0
 	}
+
+	dumpOption := query.DumpOptions(dumpInt)
 
 	var db *sql.DB
 	if database == "global" {
@@ -531,7 +542,7 @@ func internalSQLGet(d *Daemon, r *http.Request) response.Response {
 
 	defer func() { _ = tx.Rollback() }()
 
-	dump, err := query.Dump(r.Context(), tx, schemaOnly == 1)
+	dump, err := query.Dump(r.Context(), tx, dumpOption)
 	if err != nil {
 		return response.SmartError(fmt.Errorf("Failed dump database %s: %w", database, err))
 	}
@@ -619,7 +630,7 @@ func internalSQLSelect(tx *sql.Tx, query string, result *internalSQL.SQLResult) 
 
 	result.Columns, err = rows.Columns()
 	if err != nil {
-		return fmt.Errorf("Failed to fetch colume names: %w", err)
+		return fmt.Errorf("Failed to fetch column names: %w", err)
 	}
 
 	for rows.Next() {
@@ -671,7 +682,7 @@ func internalSQLExec(tx *sql.Tx, query string, result *internalSQL.SQLResult) er
 
 // internalImportFromBackup creates instance, storage pool and volume DB records from an instance's backup file.
 // It expects the instance volume to be mounted so that the backup.yaml file is readable.
-func internalImportFromBackup(ctx context.Context, s *state.State, projectName string, instName string, allowNameOverride bool) error {
+func internalImportFromBackup(ctx context.Context, s *state.State, projectName string, instName string, allowNameOverride bool, deviceMap map[string]map[string]string, configMap map[string]string) error {
 	if instName == "" {
 		return errors.New("The name of the instance is required")
 	}
@@ -835,7 +846,11 @@ func internalImportFromBackup(ctx context.Context, s *state.State, projectName s
 		return fmt.Errorf("Failed loading profiles (%v) for instance: %w", strings.Join(backupConf.Container.Profiles, ", "), err)
 	}
 
-	// Add root device if needed.
+	// Initialize configuration if missing.
+	if backupConf.Container.Config == nil {
+		backupConf.Container.Config = map[string]string{}
+	}
+
 	if backupConf.Container.Devices == nil {
 		backupConf.Container.Devices = make(map[string]map[string]string)
 	}
@@ -844,7 +859,30 @@ func internalImportFromBackup(ctx context.Context, s *state.State, projectName s
 		backupConf.Container.ExpandedDevices = make(map[string]map[string]string)
 	}
 
+	// Add root device if needed.
 	internalImportRootDevicePopulate(instancePoolName, backupConf.Container.Devices, backupConf.Container.ExpandedDevices, profiles)
+
+	// Override device.
+	for k, m := range deviceMap {
+		for key, value := range m {
+			if backupConf.Container.Devices[k] == nil {
+				backupConf.Container.Devices[k] = map[string]string{}
+			}
+
+			if backupConf.Container.ExpandedDevices[k] == nil {
+				backupConf.Container.ExpandedDevices[k] = map[string]string{}
+			}
+
+			backupConf.Container.Devices[k][key] = value
+			backupConf.Container.ExpandedDevices[k][key] = value
+		}
+	}
+
+	// Override config.
+	for key, value := range configMap {
+		backupConf.Container.Config[key] = value
+		backupConf.Container.ExpandedConfig[key] = value
+	}
 
 	reverter := revert.New()
 	defer reverter.Fail()
@@ -945,6 +983,7 @@ func internalImportFromBackup(ctx context.Context, s *state.State, projectName s
 			Architecture: arch,
 			BaseImage:    baseImage,
 			Config:       snap.Config,
+			Description:  snap.Description,
 			CreationDate: snap.CreatedAt,
 			Type:         instanceType,
 			Snapshot:     true,

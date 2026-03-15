@@ -34,6 +34,7 @@ import (
 	"github.com/lxc/incus/v6/shared/logger"
 	"github.com/lxc/incus/v6/shared/resources"
 	"github.com/lxc/incus/v6/shared/revert"
+	"github.com/lxc/incus/v6/shared/units"
 	"github.com/lxc/incus/v6/shared/util"
 	"github.com/lxc/incus/v6/shared/validate"
 )
@@ -46,7 +47,7 @@ type ovnNet interface {
 	InstanceDevicePortAdd(instanceUUID string, deviceName string, deviceConfig deviceConfig.Device) error
 	InstanceDevicePortStart(opts *network.OVNInstanceNICSetupOpts, securityACLsRemove []string) (ovn.OVNSwitchPort, []net.IP, error)
 	InstanceDevicePortStop(ovsExternalOVNPort ovn.OVNSwitchPort, opts *network.OVNInstanceNICStopOpts) error
-	InstanceDevicePortRemove(instanceUUID string, deviceName string, deviceConfig deviceConfig.Device) error
+	InstanceDevicePortRemove(instanceUUID string, devName string, devConfig deviceConfig.Device, hasDuplicate bool) error
 	InstanceDevicePortIPs(instanceUUID string, deviceName string) ([]net.IP, error)
 }
 
@@ -77,7 +78,7 @@ func (d *nicOVN) UpdatableFields(oldDevice Type) []string {
 		return []string{}
 	}
 
-	return []string{"security.acls"}
+	return []string{"security.acls", "limits.ingress", "limits.egress", "limits.max", "limits.priority", "connected"}
 }
 
 // validateConfig checks the supplied config for correctness.
@@ -282,6 +283,57 @@ func (d *nicOVN) validateConfig(instConf instance.ConfigReader) error {
 		//  managed: no
 		//  shortdesc: The VLAN ID to use when nesting (see also `nested`)
 		"vlan",
+
+		// gendoc:generate(entity=devices, group=nic_ovn, key=limits.ingress)
+		//
+		// ---
+		//  type: string
+		//  managed: no
+		//  shortdesc: I/O limit in bit/s for incoming traffic (various suffixes supported, see {ref}`instances-limit-units`)
+		"limits.ingress",
+
+		// gendoc:generate(entity=devices, group=nic_ovn, key=limits.egress)
+		//
+		// ---
+		//  type: string
+		//  managed: no
+		//  shortdesc: I/O limit in bit/s for outgoing traffic (various suffixes supported, see {ref}`instances-limit-units`)
+		"limits.egress",
+
+		// gendoc:generate(entity=devices, group=nic_ovn, key=limits.max)
+		//
+		// ---
+		//  type: string
+		//  managed: no
+		//  shortdesc: I/O limit in bit/s for both incoming and outgoing traffic. (same as setting both limits.ingress and limits.egress / mutually exclusive with limits.ingress and limits.egress)
+		"limits.max",
+
+		// gendoc:generate(entity=devices, group=nic_ovn, key=limits.priority)
+		//
+		// ---
+		//  default: 100
+		//  type: integer
+		//  managed: no
+		//  shortdesc: The priority for outgoing traffic, to be used by the kernel queuing discipline to prioritize network packets
+		"limits.priority",
+
+		// gendoc:generate(entity=devices, group=nic_ovn, key=attached)
+		//
+		// ---
+		//  type: bool
+		//  default: `true`
+		//  required: no
+		//  shortdesc: Whether the NIC is plugged in or not
+		"attached",
+
+		// gendoc:generate(entity=devices, group=nic_ovn, key=connected)
+		//
+		// ---
+		//  type: bool
+		//  default: `true`
+		//  required: no
+		//  shortdesc: Whether the NIC is connected to the host network (requires `acceleration` set to `none`)
+		"connected",
 	}
 
 	// The NIC's network may be a non-default project, so lookup project and get network's project name.
@@ -488,6 +540,63 @@ func (d *nicOVN) validateConfig(instConf instance.ConfigReader) error {
 		}
 	}
 
+	// Avoid setting both ingress/egress and max to avoid confusion or implicit behavior.
+	if d.config["limits.max"] != "" && (d.config["limits.ingress"] != "" || d.config["limits.egress"] != "") {
+		return errors.New("limits.max is mutually exclusive with limits.ingress and limits.egress")
+	}
+
+	if d.config["limits.priority"] != "" {
+		priority, err := strconv.Atoi(d.config["limits.priority"])
+		if err != nil {
+			return errors.New("limits.priority must be an integer")
+		}
+
+		if priority < 0 || priority > 32767 {
+			return errors.New("limits.priority must be between 0 an 32767, inclusive")
+		}
+	}
+
+	if d.config["limits.max"] != "" {
+		limitsMax, err := units.ParseBitSizeString(d.config["limits.max"])
+		if err != nil {
+			return errors.New("limits.max must be an integer")
+		}
+
+		limitsMax /= 1000 // Convert to kbps
+		if limitsMax < 1 || limitsMax > 4294967295 {
+			return errors.New("limits.max must be between 1 an 4294967295 bps, inclusive")
+		}
+	}
+
+	if d.config["limits.ingress"] != "" {
+		ingress, err := units.ParseBitSizeString(d.config["limits.ingress"])
+		if err != nil {
+			return errors.New("limits.ingress must be an integer")
+		}
+
+		ingress /= 1000 // Convert to kbps
+		if ingress < 1 || ingress > 4294967295 {
+			return errors.New("limits.ingress must be between 1 an 4294967295 bps, inclusive")
+		}
+	}
+
+	if d.config["limits.egress"] != "" {
+		egress, err := units.ParseBitSizeString(d.config["limits.egress"])
+		if err != nil {
+			return errors.New("limits.egress must be an integer")
+		}
+
+		egress /= 1000 // Convert to kbps
+		if egress < 1 || egress > 4294967295 {
+			return errors.New("limits.egress must be between 1 an 4294967295 bps, inclusive")
+		}
+	}
+
+	// The connected option can only be handled properly if acceleration is set to none.
+	if d.config["connected"] != "" && !d.canSetLink() {
+		return errors.New("The \"connected\" option requires setting acceleration=none for OVN NICs")
+	}
+
 	return nil
 }
 
@@ -606,6 +715,11 @@ func (d *nicOVN) init(inst instance.Instance, s *state.State, name string, conf 
 
 // Start is run when the device is added to a running instance or instance is starting up.
 func (d *nicOVN) Start() (*deviceConfig.RunConfig, error) {
+	// Ignore detached NICs.
+	if !util.IsTrueOrEmpty(d.config["attached"]) {
+		return nil, nil
+	}
+
 	err := d.validateEnvironment()
 	if err != nil {
 		return nil, err
@@ -693,7 +807,7 @@ func (d *nicOVN) Start() (*deviceConfig.RunConfig, error) {
 
 			// Setup the guest network interface.
 			if d.inst.Type() == instancetype.Container {
-				err := networkSRIOVSetupContainerVFNIC(saveData["host_name"], d.config)
+				err := networkSRIOVSetupContainerVFNIC(saveData["host_name"], d.inst.MACPattern(), d.config)
 				if err != nil {
 					return nil, fmt.Errorf("Failed setting up container VF NIC: %w", err)
 				}
@@ -900,15 +1014,22 @@ func (d *nicOVN) Start() (*deviceConfig.RunConfig, error) {
 			{Key: "link", Value: peerName},
 		}
 
+		if d.canSetLink() {
+			runConf.NetworkInterface = append(runConf.NetworkInterface, deviceConfig.RunConfigItem{Key: "connected", Value: d.config["connected"]})
+		}
+
 		instType := d.inst.Type()
 		if instType == instancetype.VM {
+			runConf.NetworkInterface = append(runConf.NetworkInterface,
+				[]deviceConfig.RunConfigItem{
+					{Key: "devName", Value: d.name},
+					{Key: "mtu", Value: fmt.Sprintf("%d", mtu)},
+				}...)
 			if d.config["acceleration"] == "sriov" {
 				runConf.NetworkInterface = append(runConf.NetworkInterface,
 					[]deviceConfig.RunConfigItem{
-						{Key: "devName", Value: d.name},
 						{Key: "pciSlotName", Value: vfPCIDev.SlotName},
 						{Key: "pciIOMMUGroup", Value: fmt.Sprintf("%d", pciIOMMUGroup)},
-						{Key: "mtu", Value: fmt.Sprintf("%d", mtu)},
 					}...)
 			} else if d.config["acceleration"] == "vdpa" {
 				if vDPADevice == nil {
@@ -917,20 +1038,16 @@ func (d *nicOVN) Start() (*deviceConfig.RunConfig, error) {
 
 				runConf.NetworkInterface = append(runConf.NetworkInterface,
 					[]deviceConfig.RunConfigItem{
-						{Key: "devName", Value: d.name},
 						{Key: "pciSlotName", Value: vfPCIDev.SlotName},
 						{Key: "pciIOMMUGroup", Value: fmt.Sprintf("%d", pciIOMMUGroup)},
 						{Key: "maxVQP", Value: fmt.Sprintf("%d", vDPADevice.MaxVQs/2)},
 						{Key: "vDPADevName", Value: vDPADevice.Name},
 						{Key: "vhostVDPAPath", Value: vDPADevice.VhostVDPA.Path},
-						{Key: "mtu", Value: fmt.Sprintf("%d", mtu)},
 					}...)
 			} else {
 				runConf.NetworkInterface = append(runConf.NetworkInterface,
 					[]deviceConfig.RunConfigItem{
-						{Key: "devName", Value: d.name},
 						{Key: "hwaddr", Value: d.config["hwaddr"]},
-						{Key: "mtu", Value: fmt.Sprintf("%d", mtu)},
 					}...)
 			}
 		} else if instType == instancetype.Container {
@@ -1042,6 +1159,10 @@ func (d *nicOVN) Update(oldDevices deviceConfig.Devices, isRunning bool) error {
 	err = bgpAddPrefix(&d.deviceCommon, d.network, d.config)
 	if err != nil {
 		return err
+	}
+
+	if isRunning && d.canSetLink() {
+		return d.setNICLink()
 	}
 
 	return nil
@@ -1235,7 +1356,7 @@ func (d *nicOVN) Remove() error {
 		}
 	}
 
-	return d.network.InstanceDevicePortRemove(d.inst.LocalConfig()["volatile.uuid"], d.name, d.config)
+	return d.network.InstanceDevicePortRemove(d.inst.LocalConfig()["volatile.uuid"], d.name, d.config, d.checkAddressConflict() != nil)
 }
 
 // State gets the state of an OVN NIC by querying the OVN Northbound logical switch port record.
@@ -1323,40 +1444,45 @@ func (d *nicOVN) State() (*api.InstanceStateNetwork, error) {
 		}
 	}
 
-	// Get MTU of host interface that connects to OVN integration bridge if exists.
-	iface, err := net.InterfaceByName(d.config["host_name"])
-	if err != nil {
-		d.logger.Warn("Failed getting host interface state for MTU", logger.Ctx{"host_name": d.config["host_name"], "err": err})
-	}
-
-	mtu := -1
-	if iface != nil {
-		mtu = iface.MTU
-	}
-
-	// Retrieve the host counters, as we report the values from the instance's point of view,
-	// those counters need to be reversed below.
-	hostCounters, err := resources.GetNetworkCounters(d.config["host_name"])
-	if err != nil {
-		return nil, fmt.Errorf("Failed getting network interface counters: %w", err)
-	}
-
-	network := api.InstanceStateNetwork{
+	n := api.InstanceStateNetwork{
 		Addresses: addresses,
-		Counters: api.InstanceStateNetworkCounters{
+		Hwaddr:    d.config["hwaddr"],
+		State:     "up",
+		Type:      "broadcast",
+	}
+
+	// When not on a nested NIC, fetch some details from the host.
+	if d.config["nested"] == "" {
+		// Get MTU of host interface that connects to OVN integration bridge if exists.
+		iface, err := net.InterfaceByName(d.config["host_name"])
+		if err != nil {
+			d.logger.Warn("Failed getting host interface state for MTU", logger.Ctx{"host_name": d.config["host_name"], "err": err})
+		}
+
+		mtu := -1
+		if iface != nil {
+			mtu = iface.MTU
+		}
+
+		// Retrieve the host counters, as we report the values from the instance's point of view,
+		// those counters need to be reversed below.
+		hostCounters, err := resources.GetNetworkCounters(d.config["host_name"])
+		if err != nil {
+			return nil, fmt.Errorf("Failed getting network interface counters: %w", err)
+		}
+
+		n.Counters = api.InstanceStateNetworkCounters{
 			BytesReceived:   hostCounters.BytesSent,
 			BytesSent:       hostCounters.BytesReceived,
 			PacketsReceived: hostCounters.PacketsSent,
 			PacketsSent:     hostCounters.PacketsReceived,
-		},
-		Hwaddr:   d.config["hwaddr"],
-		HostName: d.config["host_name"],
-		Mtu:      mtu,
-		State:    "up",
-		Type:     "broadcast",
+		}
+
+		n.HostName = d.config["host_name"]
+		n.Mtu = mtu
 	}
 
-	return &network, nil
+	return &n, nil
 }
 
 // Register sets up anything needed on startup.
@@ -1435,4 +1561,9 @@ func (d *nicOVN) setupHostNIC(hostName string, ovnPortName ovn.OVNSwitchPort) (r
 	reverter.Success()
 
 	return cleanup, err
+}
+
+// canSetLink determines whether the device supports setting a link state.
+func (d *nicOVN) canSetLink() bool {
+	return slices.Contains([]string{"", "none"}, d.config["acceleration"])
 }

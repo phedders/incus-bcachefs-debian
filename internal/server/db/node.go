@@ -34,6 +34,9 @@ const ClusterRoleDatabaseStandBy = ClusterRole("database-standby")
 // ClusterRoleDatabaseLeader represents the database leader role in a cluster.
 const ClusterRoleDatabaseLeader = ClusterRole("database-leader")
 
+// ClusterRoleDatabaseClient represents a cluster member that prevents the affected member from being elected as a voter or stand-by in the cowsql cluster.
+const ClusterRoleDatabaseClient = ClusterRole("database-client")
+
 // ClusterRoleEventHub represents a cluster member who operates as an event hub.
 const ClusterRoleEventHub = ClusterRole("event-hub")
 
@@ -48,13 +51,16 @@ const ClusterRoleOVNChassis = ClusterRole("ovn-chassis")
 var ClusterRoles = map[int]ClusterRole{
 	1: ClusterRoleEventHub,
 	2: ClusterRoleOVNChassis,
+	3: ClusterRoleDatabaseClient,
 }
 
 // Numeric type codes identifying different cluster member states.
 const (
-	ClusterMemberStateCreated   = 0
-	ClusterMemberStatePending   = 1
-	ClusterMemberStateEvacuated = 2
+	ClusterMemberStateCreated    = 0
+	ClusterMemberStatePending    = 1
+	ClusterMemberStateEvacuated  = 2
+	ClusterMemberStateEvacuating = 3
+	ClusterMemberStateRestoring  = 4
 )
 
 // NodeInfo holds information about a single member in a cluster.
@@ -148,9 +154,18 @@ func (n NodeInfo) ToAPI(ctx context.Context, tx *ClusterTx, args NodeInfoArgs) (
 	result.Status = "Online"
 	result.Message = "Fully operational"
 
-	if n.State == ClusterMemberStateEvacuated {
-		result.Status = "Evacuated"
+	if slices.Contains([]int{ClusterMemberStateEvacuated, ClusterMemberStateEvacuating, ClusterMemberStateRestoring}, n.State) {
 		result.Message = "Unavailable due to maintenance"
+
+		switch n.State {
+		case ClusterMemberStateEvacuated:
+			result.Status = "Evacuated"
+		case ClusterMemberStateEvacuating:
+			result.Status = "Evacuating"
+		case ClusterMemberStateRestoring:
+			result.Status = "Restoring"
+		default:
+		}
 	} else if n.IsOffline(args.OfflineThreshold) {
 		result.Status = "Offline"
 		result.Message = fmt.Sprintf("No heartbeat for %s (%s)", time.Since(n.Heartbeat), n.Heartbeat)
@@ -722,6 +737,21 @@ func (c *ClusterTx) UpdateNodeClusterGroups(ctx context.Context, id int64, group
 			continue
 		}
 
+		// Get the cluster group.
+		clusterGroup, err := cluster.GetClusterGroup(ctx, c.Tx(), oldGroup)
+		if err != nil {
+			return err
+		}
+
+		memberInstances, err := c.GetClusterGroupMemberInstances(ctx, clusterGroup, nodeInfo.Name)
+		if err != nil {
+			return err
+		}
+
+		if len(memberInstances) > 0 {
+			return fmt.Errorf("Cluster group member is currently in use")
+		}
+
 		// Remove node from group.
 		err = c.RemoveNodeFromClusterGroup(ctx, oldGroup, nodeInfo.Name)
 		if err != nil {
@@ -1207,7 +1237,7 @@ func (c *Cluster) LocalNodeIsEvacuated() bool {
 			return nil
 		}
 
-		isEvacuated = node.State == ClusterMemberStateEvacuated
+		isEvacuated = slices.Contains([]int{ClusterMemberStateEvacuated, ClusterMemberStateEvacuating, ClusterMemberStateRestoring}, node.State)
 		return nil
 	})
 	if err != nil {

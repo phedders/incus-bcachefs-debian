@@ -32,6 +32,14 @@ func (d *pci) validateConfig(instConf instance.ConfigReader) error {
 		//  required: yes
 		//  shortdesc: PCI address of the device
 		"address": validate.IsPCIAddress,
+		// gendoc:generate(entity=devices, group=pci, key=firmware)
+		//
+		// ---
+		//  type: bool
+		//  required: no
+		//  default: true
+		//  shortdesc: Whether to expose the device's option ROM to the VM
+		"firmware": validate.Optional(validate.IsBool),
 	}
 
 	err := d.config.Validate(rules)
@@ -93,6 +101,7 @@ func (d *pci) Start() (*deviceConfig.RunConfig, error) {
 	runConf.PCIDevice = append(runConf.PCIDevice,
 		[]deviceConfig.RunConfigItem{
 			{Key: "devName", Value: d.name},
+			{Key: "firmware", Value: d.config["firmware"]},
 			{Key: "pciSlotName", Value: saveData["last_state.pci.slot.name"]},
 			{Key: "pciIOMMUGroup", Value: fmt.Sprintf("%d", pciIOMMUGroup)},
 		}...)

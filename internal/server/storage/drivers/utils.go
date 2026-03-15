@@ -30,6 +30,9 @@ import (
 // MinBlockBoundary minimum block boundary size to use.
 const MinBlockBoundary = 8192
 
+// MaxValue represents the maximum possible value.
+const MaxValue = "max"
+
 // blockBackedAllowedFilesystems allowed filesystems for block volumes.
 var blockBackedAllowedFilesystems = []string{"btrfs", "ext4", "xfs"}
 
@@ -948,38 +951,32 @@ type SparseFileWrapper struct {
 
 // Write performs the write but skips null bytes.
 func (sfw *SparseFileWrapper) Write(p []byte) (n int, err error) {
-	originalLength := len(p)
-	start := 0
+	// We only support comparing up to 4MB at a time.
+	if len(p) > 4*1024*1024 {
+		return sfw.w.Write(p)
+	}
 
-	for start < len(p) {
-		end := start
-		if p[start] == 0 {
-			for end < len(p) && p[end] == 0 {
-				end++
-			}
-
-			_, err := sfw.w.Seek(int64(end-start), io.SeekCurrent)
-			if err != nil {
-				return start, err
-			}
-
-			start = end
-		} else {
-			// Write non-zero bytes
-			for end < len(p) && p[end] != 0 {
-				end++
-			}
-
-			written, err := sfw.w.Write(p[start:end])
-			if err != nil {
-				return start + written, err
-			}
-
-			start = end
+	// Check if all zeroes.
+	isZero := true
+	for _, v := range p {
+		if v != 0 {
+			isZero = false
+			break
 		}
 	}
 
-	return originalLength, nil
+	// If not all zero, use normal writer.
+	if !isZero {
+		return sfw.w.Write(p)
+	}
+
+	// Otherwise, poke a hole in the target file.
+	_, err = sfw.w.Seek(int64(len(p)), io.SeekCurrent)
+	if err != nil {
+		return -1, err
+	}
+
+	return len(p), nil
 }
 
 // sliceAny returns true when any element in a slice satisfy a predicate.
@@ -987,8 +984,8 @@ func sliceAny[T any](slice []T, predicate func(T) bool) bool {
 	return slices.ContainsFunc(slice, predicate)
 }
 
-// roundAbove returns the next multiple of `above` greater than `val`.
-func roundAbove(above, val int64) int64 {
+// RoundAbove returns the next multiple of `above` greater than `val`.
+func RoundAbove(above, val int64) int64 {
 	if val < above {
 		val = above
 	}

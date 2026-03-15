@@ -107,12 +107,17 @@ func eventsPost(d *Daemon, r *http.Request) response.Response {
 	}
 
 	// Handle device related actions locally.
-	go eventsProcess(event)
+	go eventsProcess(d, event)
 
 	return response.SyncResponse(true, nil)
 }
 
-func eventsProcess(event api.Event) {
+func eventsProcess(d *Daemon, event api.Event) {
+	// As we only handle mounts, skip if disabled.
+	if d.Features != nil && !d.Features["mounts"] {
+		return
+	}
+
 	// We currently only need to react to device events.
 	if event.Type != "device" {
 		return
@@ -161,6 +166,6 @@ func eventsProcess(event api.Event) {
 		logger.Infof("Mounted hotplug %q (Type: %q) to %q", mntSource, "virtiofs", e.Config["path"])
 	} else if e.Action == "removed" {
 		// Attempt to unmount the disk.
-		_ = osUmount(mntSource)
+		_ = osUmount(mntSource, e.Config["path"], "virtiofs")
 	}
 }

@@ -7,8 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	cli "github.com/lxc/incus/v6/internal/cmd"
+	u "github.com/lxc/incus/v6/cmd/incus/usage"
 	"github.com/lxc/incus/v6/internal/i18n"
+	cli "github.com/lxc/incus/v6/shared/cmd"
 )
 
 type cmdDebug struct {
@@ -19,7 +20,7 @@ type cmdDebug struct {
 func (c *cmdDebug) Command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Hidden = true
-	cmd.Use = usage("debug")
+	cmd.Use = cli.U("debug")
 	cmd.Short = i18n.G("Debug commands")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Debug commands for instances`))
@@ -40,7 +41,7 @@ type cmdDebugMemory struct {
 // Command returns command definition for the memory debug command.
 func (c *cmdDebugMemory) Command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = usage("dump-memory", i18n.G("[<remote>:]<instance> [target] [--format]"))
+	cmd.Use = cli.U("dump-memory", u.Instance.Remote(), u.Target(u.File).Optional(), u.Dash("format"))
 	cmd.Short = i18n.G("Export a virtual machine's memory state")
 	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
 		`Export the current memory state of a running virtual machine into a dump file.

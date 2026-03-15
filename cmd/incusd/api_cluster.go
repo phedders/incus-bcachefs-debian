@@ -511,6 +511,13 @@ func clusterPutJoin(d *Daemon, r *http.Request, req api.ClusterPut) response.Res
 		UserAgent:     version.UserAgent,
 	}
 
+	// Always set a proxy function to have cluster traffic bypass any configured HTTP proxy.
+	proxy := func(req *http.Request) (*url.URL, error) {
+		return nil, nil
+	}
+
+	args.Proxy = proxy
+
 	// Asynchronously join the cluster.
 	run := func(op *operations.Operation) error {
 		logger.Debug("Running cluster join operation")
@@ -656,7 +663,7 @@ func clusterPutJoin(d *Daemon, r *http.Request, req api.ClusterPut) response.Res
 		}
 
 		// Update our TLS configuration using the returned cluster certificate.
-		err = internalUtil.WriteCert(s.OS.VarDir, "cluster", []byte(req.ClusterCertificate), info.PrivateKey, nil)
+		err = internalUtil.WriteCert(s.OS.VarDir, "cluster", info.PublicKey, info.PrivateKey, nil)
 		if err != nil {
 			return fmt.Errorf("Failed to save cluster certificate: %w", err)
 		}
@@ -956,6 +963,7 @@ func clusterInitMember(d incus.InstanceServer, client incus.InstanceServer, memb
 		delete(post.Config, "zfs.pool_name")
 
 		// Apply the node-specific config supplied by the user.
+		nodeSpecificConfig := db.NodeSpecificStorageConfig(pool.Driver)
 		for _, config := range memberConfig {
 			if config.Entity != "storage-pool" {
 				continue
@@ -965,7 +973,7 @@ func clusterInitMember(d incus.InstanceServer, client incus.InstanceServer, memb
 				continue
 			}
 
-			if !slices.Contains(db.NodeSpecificStorageConfig, config.Key) {
+			if !slices.Contains(nodeSpecificConfig, config.Key) {
 				logger.Warnf("Ignoring config key %q for storage pool %q", config.Key, config.Name)
 				continue
 			}
@@ -1057,7 +1065,7 @@ func clusterInitMember(d incus.InstanceServer, client incus.InstanceServer, memb
 		}
 	}
 
-	err = d.ApplyServerPreseed(api.InitPreseed{Server: data})
+	err = d.ApplyServerPreseed(api.InitPreseed{InitLocalPreseed: data})
 	if err != nil {
 		return fmt.Errorf("Failed to initialize storage pools and networks: %w", err)
 	}
@@ -1359,21 +1367,76 @@ func clusterNodesPost(d *Daemon, r *http.Request) response.Response {
 	// retrieving remote operations.
 	onlineNodeAddresses := make([]any, 0)
 
+	// Get cluster database state.
+	leaderAddress, err := s.Cluster.LeaderAddress()
+	if err != nil {
+		return response.InternalError(err)
+	}
+
+	var raftNodes []db.RaftNode
+	err = s.DB.Node.Transaction(r.Context(), func(ctx context.Context, tx *db.NodeTx) error {
+		raftNodes, err = tx.GetRaftNodes(ctx)
+		if err != nil {
+			return fmt.Errorf("Failed loading RAFT nodes: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return response.SmartError(err)
+	}
+
 	err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
+		// Get global cluster state.
+		failureDomains, err := tx.GetFailureDomainsNames(ctx)
+		if err != nil {
+			return fmt.Errorf("Failed loading failure domains names: %w", err)
+		}
+
+		memberFailureDomains, err := tx.GetNodesFailureDomains(ctx)
+		if err != nil {
+			return fmt.Errorf("Failed loading member failure domains: %w", err)
+		}
+
+		maxVersion, err := tx.GetNodeMaxVersion(ctx)
+		if err != nil {
+			return fmt.Errorf("Failed getting max member version: %w", err)
+		}
+
 		// Get the nodes.
 		members, err := tx.GetNodes(ctx)
 		if err != nil {
 			return fmt.Errorf("Failed getting cluster members: %w", err)
 		}
 
+		args := db.NodeInfoArgs{
+			LeaderAddress:        leaderAddress,
+			FailureDomains:       failureDomains,
+			MemberFailureDomains: memberFailureDomains,
+			OfflineThreshold:     s.GlobalConfig.OfflineThreshold(),
+			MaxMemberVersion:     maxVersion,
+			RaftNodes:            raftNodes,
+		}
+
 		// Filter to online members.
 		for _, member := range members {
+			memberInfo, err := member.ToAPI(ctx, tx, args)
+			if err != nil {
+				return err
+			}
+
 			// Verify if a node with the same name already exists in the cluster.
 			if member.Name == req.ServerName {
 				return fmt.Errorf("The cluster already has a member with name: %s", req.ServerName)
 			}
 
-			if member.State == db.ClusterMemberStateEvacuated || member.IsOffline(s.GlobalConfig.OfflineThreshold()) {
+			// Skip servers that are offline.
+			if slices.Contains([]int{db.ClusterMemberStateEvacuated, db.ClusterMemberStateEvacuating, db.ClusterMemberStateRestoring}, member.State) || member.IsOffline(s.GlobalConfig.OfflineThreshold()) {
+				continue
+			}
+
+			// Only include servers that have a one of the database roles.
+			if !slices.Contains(memberInfo.Roles, "database") && !slices.Contains(memberInfo.Roles, "database-standby") {
 				continue
 			}
 
@@ -1723,6 +1786,43 @@ func updateClusterNode(s *state.State, gateway *cluster.Gateway, r *http.Request
 	// Nodes must belong to at least one group.
 	if len(req.Groups) == 0 {
 		return response.BadRequest(errors.New("Cluster members need to belong to at least one group"))
+	}
+
+	// Prevent assigning all nodes the 'database-client' role.
+	if slices.Contains(req.Roles, string(db.ClusterRoleDatabaseClient)) {
+		clientNodes := 1
+		nodesCount := 0
+		err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
+			nodesCount, err = tx.GetNodesCount(ctx)
+			if err != nil {
+				return fmt.Errorf("Failed loading nodes count: %w", err)
+			}
+
+			nodes, err := tx.GetNodes(ctx)
+			if err != nil {
+				return fmt.Errorf("Failed loading nodes: %w", err)
+			}
+
+			for _, n := range nodes {
+				// Ignore the node currently being updated.
+				if n.Name == member.Name {
+					continue
+				}
+
+				if slices.Contains(n.Roles, db.ClusterRoleDatabaseClient) {
+					clientNodes++
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			return response.SmartError(err)
+		}
+
+		if clientNodes >= nodesCount {
+			return response.BadRequest(errors.New("Assigning the 'database-client' role to all nodes is not allowed"))
+		}
 	}
 
 	// Convert the roles.
@@ -2295,6 +2395,7 @@ func internalClusterPostAccept(d *Daemon, r *http.Request) response.Response {
 
 	accepted := internalClusterPostAcceptResponse{
 		RaftNodes:  make([]internalRaftNode, len(nodes)),
+		PublicKey:  s.Endpoints.NetworkPublicKey(),
 		PrivateKey: s.Endpoints.NetworkPrivateKey(),
 	}
 
@@ -2321,6 +2422,7 @@ type internalClusterPostAcceptRequest struct {
 // A Response for the /internal/cluster/accept endpoint.
 type internalClusterPostAcceptResponse struct {
 	RaftNodes  []internalRaftNode `json:"raft_nodes" yaml:"raft_nodes"`
+	PublicKey  []byte             `json:"public_key" yaml:"public_key"`
 	PrivateKey []byte             `json:"private_key" yaml:"private_key"`
 }
 
@@ -2678,7 +2780,7 @@ func clusterCheckStoragePoolsMatch(ctx context.Context, clusterDB *db.Cluster, r
 					return fmt.Errorf("Mismatching driver for storage pool %s", name)
 				}
 				// Exclude the keys which are node-specific.
-				exclude := db.NodeSpecificStorageConfig
+				exclude := db.NodeSpecificStorageConfig(pool.Driver)
 				err = localUtil.CompareConfigs(pool.Config, reqPool.Config, exclude)
 				if err != nil {
 					return fmt.Errorf("Mismatching config for storage pool %s: %w", name, err)
@@ -2881,13 +2983,41 @@ func clusterNodeStatePost(d *Daemon, r *http.Request) response.Response {
 		return response.BadRequest(err)
 	}
 
-	// Validate the overrides.
-	if req.Action == "evacuate" && req.Mode != "" {
-		// Use the validator from the instance logic.
-		validator := internalInstance.InstanceConfigKeysAny["cluster.evacuate"]
-		err = validator(req.Mode)
+	// Handling of evacuation mode.
+	if req.Action == "evacuate" {
+		// Validate the mode if provided.
+		if req.Mode != "" {
+			validator := internalInstance.InstanceConfigKeysAny["cluster.evacuate"]
+			err = validator(req.Mode)
+			if err != nil {
+				return response.BadRequest(err)
+			}
+		}
+
+		// Get a count of the cluster members.
+		var serverCount int
+
+		err := s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
+			nodes, err := tx.GetNodes(ctx)
+			if err != nil {
+				return fmt.Errorf("Failed getting cluster members: %w", err)
+			}
+
+			serverCount = len(nodes)
+
+			return nil
+		})
 		if err != nil {
-			return response.BadRequest(err)
+			return response.InternalError(err)
+		}
+
+		// Handle single node clusters.
+		if serverCount == 1 {
+			if req.Mode == "" || req.Mode == "auto" {
+				req.Mode = "stop"
+			} else if req.Mode != "stop" {
+				return response.BadRequest(fmt.Errorf("Can't perform %q evacuation on a single node cluster", req.Mode))
+			}
 		}
 	}
 
@@ -2937,7 +3067,7 @@ func clusterNodeStatePost(d *Daemon, r *http.Request) response.Response {
 			return nil
 		}
 
-		migrateFunc := func(ctx context.Context, s *state.State, inst instance.Instance, sourceMemberInfo *db.NodeInfo, targetMemberInfo *db.NodeInfo, live bool, startInstance bool, metadata map[string]any, op *operations.Operation) error {
+		migrateFunc := func(ctx context.Context, s *state.State, inst instance.Instance, sourceMemberInfo *db.NodeInfo, targetMemberInfo *db.NodeInfo, live bool, startInstance bool, op *operations.Operation) error {
 			// Migrate the instance.
 			req := api.InstancePost{
 				Migration: true,
@@ -2961,9 +3091,8 @@ func clusterNodeStatePost(d *Daemon, r *http.Request) response.Response {
 
 			dest = dest.UseProject(inst.Project().Name)
 
-			if metadata != nil && op != nil {
-				metadata["evacuation_progress"] = fmt.Sprintf("Starting %q in project %q", inst.Name(), inst.Project().Name)
-				_ = op.UpdateMetadata(metadata)
+			if op != nil {
+				_ = op.ExtendMetadata(map[string]any{"evacuation_progress": fmt.Sprintf("Starting %q in project %q", inst.Name(), inst.Project().Name)})
 			}
 
 			startOp, err := dest.UpdateInstanceState(inst.Name(), api.InstanceStatePut{Action: "start"}, "")
@@ -2990,7 +3119,11 @@ func clusterNodeStatePost(d *Daemon, r *http.Request) response.Response {
 
 		return operations.OperationResponse(op)
 	} else if req.Action == "restore" {
-		return restoreClusterMember(d, r)
+		if req.Mode != "" && req.Mode != "skip" {
+			return response.BadRequest(fmt.Errorf("Invalid restore mode %q", req.Mode))
+		}
+
+		return restoreClusterMember(d, r, req.Mode == "skip")
 	}
 
 	return response.BadRequest(fmt.Errorf("Unknown action %q", req.Action))

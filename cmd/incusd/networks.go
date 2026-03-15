@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	osapi "github.com/lxc/incus-os/incus-osd/api"
 
 	incus "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/internal/filter"
@@ -242,41 +241,8 @@ func networksGet(d *Daemon, r *http.Request) response.Response {
 
 	// Get list of actual network interfaces on the host as well if the effective project is Default.
 	if projectName == api.ProjectDefaultName {
-		if s.OS.IncusOS {
-			// When running on Incus OS, limit the list to those with the "instances" role.
-			client := &http.Client{
-				Transport: &http.Transport{
-					DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-						return net.Dial("unix", "/run/incus-os/unix.socket")
-					},
-				},
-			}
-
-			// Query the OS network state.
-			resp, err := client.Get("http://incus-os/1.0/system/network")
-			if err != nil {
-				return response.InternalError(err)
-			}
-
-			defer resp.Body.Close()
-
-			// Convert to an Incus response struct.
-			apiResp := &api.Response{}
-
-			err = json.NewDecoder(resp.Body).Decode(apiResp)
-			if err != nil {
-				return response.InternalError(err)
-			}
-
-			// Quick validation.
-			if apiResp.Type != "sync" || apiResp.StatusCode != http.StatusOK {
-				return response.InternalError(errors.New("Bad network state from Incus OS"))
-			}
-
-			// Parse the response.
-			ns := &osapi.SystemNetwork{}
-
-			err = apiResp.MetadataAsStruct(ns)
+		if s.OS.IncusOS != nil {
+			ns, err := s.OS.IncusOS.GetSystemNetwork()
 			if err != nil {
 				return response.InternalError(err)
 			}
@@ -520,6 +486,11 @@ func networksPost(d *Daemon, r *http.Request) response.Response {
 			}
 		}
 
+		// Make sure that no description is set through the member-specific path.
+		if req.Description != "" {
+			return response.BadRequest(errors.New("The network description cannot be set for a specific member"))
+		}
+
 		exists := false
 		err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
 			_, err := tx.GetNetworkID(ctx, projectName, req.Name)
@@ -542,14 +513,6 @@ func networksPost(d *Daemon, r *http.Request) response.Response {
 			if err != nil {
 				logger.Error("Failed to add network to authorizer", logger.Ctx{"name": req.Name, "project": projectName, "error": err})
 			}
-
-			n, err := network.LoadByName(s, projectName, req.Name)
-			if err != nil {
-				return response.SmartError(fmt.Errorf("Failed loading network: %w", err))
-			}
-
-			requestor := request.CreateRequestor(r)
-			s.Events.SendLifecycle(projectName, lifecycle.NetworkCreated.Event(n, requestor, nil))
 		}
 
 		return resp
@@ -588,7 +551,7 @@ func networksPost(d *Daemon, r *http.Request) response.Response {
 				for _, member := range members {
 					// Don't pass in any config, as these nodes don't have any node-specific
 					// config and we don't want to create duplicate global config.
-					err = tx.CreatePendingNetwork(ctx, member.Name, projectName, req.Name, req.Description, netType.DBType(), nil)
+					err = tx.CreatePendingNetwork(ctx, member.Name, projectName, req.Name, "", netType.DBType(), nil)
 					if err != nil && !errors.Is(err, db.ErrAlreadyDefined) {
 						return fmt.Errorf("Failed creating pending network for member %q: %w", member.Name, err)
 					}
@@ -605,20 +568,20 @@ func networksPost(d *Daemon, r *http.Request) response.Response {
 			if err != nil {
 				logger.Error("Failed to add network to authorizer", logger.Ctx{"name": req.Name, "project": projectName, "error": err})
 			}
-
-			n, err := network.LoadByName(s, projectName, req.Name)
-			if err != nil {
-				return response.SmartError(fmt.Errorf("Failed loading network: %w", err))
-			}
-
-			requestor := request.CreateRequestor(r)
-			s.Events.SendLifecycle(projectName, lifecycle.NetworkCreated.Event(n, requestor, nil))
 		}
 
 		err = networksPostCluster(r.Context(), s, projectName, netInfo, req, clientType, netType)
 		if err != nil {
 			return response.SmartError(err)
 		}
+
+		n, err := network.LoadByName(s, projectName, req.Name)
+		if err != nil {
+			return response.SmartError(fmt.Errorf("Failed loading network: %w", err))
+		}
+
+		requestor := request.CreateRequestor(r)
+		s.Events.SendLifecycle(projectName, lifecycle.NetworkCreated.Event(n, requestor, nil))
 
 		return resp
 	}
@@ -754,6 +717,12 @@ func networksPostCluster(ctx context.Context, s *state.State, projectName string
 
 		// Insert the global config keys.
 		err = tx.CreateNetworkConfig(networkID, 0, req.Config)
+		if err != nil {
+			return err
+		}
+
+		// Set the network description if provided
+		err = tx.UpdateNetworkDescription(networkID, req.Description)
 		if err != nil {
 			return err
 		}
@@ -1482,9 +1451,11 @@ func networkPut(d *Daemon, r *http.Request) response.Response {
 		return response.BadRequest(err)
 	}
 
+	clientType := clusterRequest.UserAgentClientType(r.Header.Get("User-Agent"))
+
 	// In clustered mode, we differentiate between node specific and non-node specific config keys based on
 	// whether the user has specified a target to apply the config to.
-	if s.ServerClustered {
+	if s.ServerClustered && clientType == clusterRequest.ClientTypeNormal {
 		curConfig := n.Config()
 		changedConfig := make(map[string]string, len(req.Config))
 		for key, value := range req.Config {
@@ -1512,12 +1483,13 @@ func networkPut(d *Daemon, r *http.Request) response.Response {
 		}
 	}
 
-	clientType := clusterRequest.UserAgentClientType(r.Header.Get("User-Agent"))
-
 	resp = doNetworkUpdate(n, req, targetNode, clientType, r.Method, s.ServerClustered)
 
-	requestor := request.CreateRequestor(r)
-	s.Events.SendLifecycle(projectName, lifecycle.NetworkUpdated.Event(n, requestor, nil))
+	// Send a single update event when the server is clustered.
+	if !s.ServerClustered || (s.ServerClustered && clientType == clusterRequest.ClientTypeNormal) {
+		requestor := request.CreateRequestor(r)
+		s.Events.SendLifecycle(projectName, lifecycle.NetworkUpdated.Event(n, requestor, nil))
+	}
 
 	return resp
 }

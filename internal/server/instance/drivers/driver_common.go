@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -311,6 +312,16 @@ func (d *common) DeferTemplateApply(trigger instance.TemplateTrigger) error {
 	return nil
 }
 
+// MACPattern computes the most specific MAC address pattern for this instance.
+func (d *common) MACPattern() string {
+	macPattern, ok := d.project.Config["network.hwaddr_pattern"]
+	if !ok {
+		return d.state.GlobalConfig.NetworkHWAddrPattern()
+	}
+
+	return macPattern
+}
+
 // SetOperation sets the current operation.
 func (d *common) SetOperation(op *operations.Operation) {
 	d.op = op
@@ -470,6 +481,11 @@ func (d *common) DevicesPath() string {
 // LogPath returns the instance's log path.
 func (d *common) LogPath() string {
 	name := project.Instance(d.project.Name, d.name)
+
+	if d.state.LocalConfig != nil && d.state.LocalConfig.StorageLogsVolume() != "" {
+		return internalUtil.VarPath("logs", name)
+	}
+
 	return internalUtil.LogPath(name)
 }
 
@@ -794,6 +810,7 @@ func (d *common) snapshotCommon(inst instance.Instance, name string, expiry time
 		Project:      inst.Project().Name,
 		Architecture: inst.Architecture(),
 		Config:       inst.LocalConfig(),
+		Description:  inst.Description(),
 		Type:         inst.Type(),
 		Snapshot:     true,
 		Devices:      inst.LocalDevices(),
@@ -856,8 +873,7 @@ func (d *common) updateProgress(progress string) {
 	}
 
 	if meta["container_progress"] != progress {
-		meta["container_progress"] = progress
-		_ = d.op.UpdateMetadata(meta)
+		_ = d.op.ExtendMetadata(map[string]any{"container_progress": progress})
 	}
 }
 
@@ -1690,4 +1706,74 @@ func (d *common) ClearLimitsCPUNodes(changedConfig []string) {
 	}
 
 	d.localConfig["volatile.cpu.nodes"] = ""
+}
+
+// setOOMPriority applies the OOM score adjustment to the instance.
+func (d *common) setOOMPriority(pid int) error {
+	oomPriority := d.expandedConfig["limits.memory.oom_priority"]
+
+	score := int64(0)
+	var err error
+	if oomPriority != "" {
+		score, err = strconv.ParseInt(oomPriority, 10, 64)
+		if err != nil {
+			return fmt.Errorf("Invalid OOM priority value %q: %w", oomPriority, err)
+		}
+	}
+
+	if pid <= 0 {
+		return fmt.Errorf("Failed to set OOM priority: instance not running or PID not found")
+	}
+
+	err = os.WriteFile(fmt.Sprintf("/proc/%d/oom_score_adj", pid), []byte(fmt.Sprintf("%d", score)), 0o644)
+	if err != nil {
+		return fmt.Errorf("Failed to set OOM priority: %w", err)
+	}
+
+	return nil
+}
+
+// selinuxContext returns the SELinux context for the instance.
+func (d *common) selinuxContext(baseContext string) (string, error) {
+	// Get all local instances.
+	instances, err := instance.LoadNodeAll(d.state, instancetype.Any)
+	if err != nil {
+		return "", fmt.Errorf("Failed loading local instances: %w", err)
+	}
+
+	// Get all current values.
+	seContexts := make([]string, 0, len(instances))
+	for _, inst := range instances {
+		if !inst.IsRunning() {
+			continue
+		}
+
+		val, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(inst.InitPID()), "attr", "current"))
+		if err != nil {
+			return "", err
+		}
+
+		seContexts = append(seContexts, strings.TrimSuffix(string(val), "\x00"))
+	}
+
+	// Generate a random set of categories.
+	for {
+		c1 := rand.IntN(1023)
+		c2 := rand.IntN(1023)
+
+		if c1 == c2 {
+			continue
+		}
+
+		if c1 > c2 {
+			c1, c2 = c2, c1
+		}
+
+		seContext := baseContext + ":c" + strconv.Itoa(c1) + ",c" + strconv.Itoa(c2)
+		if slices.Contains(seContexts, seContext) {
+			continue
+		}
+
+		return seContext, nil
+	}
 }

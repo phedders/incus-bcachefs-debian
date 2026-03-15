@@ -967,6 +967,7 @@ func projectDelete(d *Daemon, r *http.Request) response.Response {
 	}
 
 	var id int64
+	var projectConfig map[string]string
 	var usedBy []string
 	err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
 		project, err := cluster.GetProject(ctx, tx.Tx(), name)
@@ -993,6 +994,11 @@ func projectDelete(d *Daemon, r *http.Request) response.Response {
 		id, err = cluster.GetProjectID(ctx, tx.Tx(), name)
 		if err != nil {
 			return fmt.Errorf("Fetch project id %q: %w", name, err)
+		}
+
+		projectConfig, err = cluster.GetProjectConfig(ctx, tx.Tx(), int(id))
+		if err != nil {
+			return fmt.Errorf("Fetch project config %q: %w", name, err)
 		}
 
 		return nil
@@ -1143,10 +1149,12 @@ func projectDelete(d *Daemon, r *http.Request) response.Response {
 			count--
 		}
 
-		// Empty the default profile.
-		err = target.UpdateProfile("default", api.ProfilePut{}, "")
-		if err != nil {
-			return response.InternalError(err)
+		// Empty the default profile, if the project owns one.
+		if util.IsTrue(projectConfig["features.profiles"]) {
+			err = target.UpdateProfile("default", api.ProfilePut{}, "")
+			if err != nil {
+				return response.InternalError(err)
+			}
 		}
 
 		// Delete images.
@@ -1502,6 +1510,16 @@ func projectValidateConfig(s *state.State, config map[string]string) error {
 		//  shortdesc: Maximum number of networks that the project can have
 		"limits.networks": validate.Optional(validate.IsUint32),
 
+		// gendoc:generate(entity=project, group=specific, key=network.hwaddr_pattern)
+		// Specify a MAC address template, e.g. `10:66:6a:xx:xx:xx`, to use within the cluster.
+		// Every `x` in the template will be replaced by a random character in `0`–`f`.
+		// Beware of the birthday paradox! A single `xx` block leads to a 10% collision probability with only 8 addresses; for a double `xx:xx` block, 118 addresses; for a triple `xx:xx:xx` block, 1881; for a quadruple `xx:xx:xx:xx` block, 30084. We provide absolutely no guardrail against that.
+		// ---
+		// type: string
+		// scope: global
+		// shortdesc: MAC address template
+		"network.hwaddr_pattern": validate.Optional(validate.IsMACPattern),
+
 		// gendoc:generate(entity=project, group=restricted, key=restricted)
 		// This option must be enabled to allow the `restricted.*` keys to take effect.
 		// To temporarily remove the restrictions, you can disable this option instead of clearing the related keys.
@@ -1727,6 +1745,14 @@ func projectValidateConfig(s *state.State, config map[string]string) error {
 		//  type: string
 		//  shortdesc: Which host GID ranges are allowed in `raw.idmap`
 		"restricted.idmap.gid": validate.Optional(validate.IsListOf(validate.IsUint32Range)),
+
+		// gendoc:generate(entity=project, group=restricted, key=restricted.images.servers)
+		// Specify a comma-delimited list of image servers domains that are allowed for use in this project.
+		// If this option is not set, all image servers are accessible.
+		// ---
+		//  type: string
+		//  shortdesc: Which image servers (HTTP host) are allowed for us in this project
+		"restricted.images.servers": validate.Optional(validate.IsListOf(validate.IsAny)),
 
 		// gendoc:generate(entity=project, group=restricted, key=restricted.networks.access)
 		// Specify a comma-delimited list of network names that are allowed for use in this project.

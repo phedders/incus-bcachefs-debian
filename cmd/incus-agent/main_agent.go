@@ -46,10 +46,14 @@ func (c *cmdAgent) Command() *cobra.Command {
 }
 
 func (c *cmdAgent) Run(cmd *cobra.Command, args []string) error {
+	if c.global.flagService {
+		return runService("Incus-Agent", c)
+	}
+
 	// Setup logger.
 	err := logger.InitLogger("", "", c.global.flagLogVerbose, c.global.flagLogDebug, nil)
 	if err != nil {
-		os.Exit(1)
+		return fmt.Errorf("could not initialize logger: %w", err)
 	}
 
 	logger.Info("Starting")
@@ -116,10 +120,18 @@ func (c *cmdAgent) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Mount shares from host.
-	c.mountHostShares()
+	d := newDaemon(c.global.flagLogDebug, c.global.flagLogVerbose, c.global.flagSecretsLocation)
 
-	d := newDaemon(c.global.flagLogDebug, c.global.flagLogVerbose)
+	// Load the agent configuration.
+	err = loadAgentConfig(d)
+	if err != nil {
+		return err
+	}
+
+	// Mount shares from host.
+	if d.Features == nil || d.Features["mounts"] {
+		c.mountHostShares()
+	}
 
 	// Start the server.
 	err = startHTTPServer(d, c.global.flagLogDebug)
@@ -174,19 +186,17 @@ func (c *cmdAgent) Run(cmd *cobra.Command, args []string) error {
 	chSignal := make(chan os.Signal, 1)
 	signal.Notify(chSignal, osShutdownSignal)
 
-	exitStatus := 0
-
 	select {
 	case <-chSignal:
 	case err := <-errChan:
-		fmt.Fprintln(os.Stderr, err)
-		exitStatus = 1
+		cancelStatusNotifier() // Ensure STOPPED status is written to QEMU status ringbuffer.
+		cancelFunc()
+
+		return err
 	}
 
 	cancelStatusNotifier() // Ensure STOPPED status is written to QEMU status ringbuffer.
 	cancelFunc()
-
-	os.Exit(exitStatus)
 
 	return nil
 }
@@ -229,8 +239,8 @@ func (c *cmdAgent) startStatusNotifier(ctx context.Context, chConnected <-chan s
 
 // writeStatus writes a status code to the vserial ring buffer used to detect agent status on host.
 func (c *cmdAgent) writeStatus(status string) error {
-	if util.PathExists("/dev/virtio-ports/org.linuxcontainers.incus") {
-		vSerial, err := os.OpenFile("/dev/virtio-ports/org.linuxcontainers.incus", os.O_RDWR, 0o600)
+	if util.PathExists(osVioSerialPath) {
+		vSerial, err := os.OpenFile(osVioSerialPath, os.O_RDWR, 0o600)
 		if err != nil {
 			return err
 		}

@@ -9,6 +9,7 @@ allocator
 AMD
 Ansible
 Ansible's
+API
 APIs
 AppArmor
 ARMv
@@ -219,6 +220,7 @@ Podman
 Pongo
 POSIX
 pre
+preselects
 preseed
 proxied
 proxying
@@ -248,6 +250,7 @@ scalable
 scriptlet
 SDN
 Seccomp
+SELinux
 SEV
 SFTP
 SHA
@@ -258,6 +261,7 @@ simplestreams
 SLAAC
 SMTP
 Snapcraft
+snapshotted
 SNAT
 Solaris
 SPAs
@@ -292,6 +296,7 @@ syscall
 syscalls
 sysfs
 syslog
+systemd
 Tbit
 TCP
 Telegraf

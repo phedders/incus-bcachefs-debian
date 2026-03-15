@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -364,9 +365,15 @@ func genericVFSCreateVolumeFromMigration(d Driver, initVolume func(vol Volume) (
 			toPipe = NewSparseFileWrapper(to)
 		}
 
-		_, err = io.Copy(toPipe, fromPipe)
-		if err != nil {
-			return fmt.Errorf("Error copying from migration connection to %q: %w", path, err)
+		for {
+			_, err = io.CopyN(toPipe, fromPipe, 4*1024*1024)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+
+				return fmt.Errorf("Error copying from migration connection to %q: %w", path, err)
+			}
 		}
 
 		return to.Close()
@@ -454,7 +461,7 @@ func genericVFSCreateVolumeFromMigration(d Driver, initVolume func(vol Volume) (
 		}
 
 		// Receive the final main volume sync if needed.
-		if volTargetArgs.Live && (!IsContentBlock(vol.contentType) || vol.volType != VolumeTypeCustom) {
+		if volTargetArgs.Live && (!IsContentBlock(vol.contentType) || (vol.volType != VolumeTypeCustom && vol.volType != VolumeTypeVM)) {
 			d.Logger().Debug("Starting main volume final sync", logger.Ctx{"volName": vol.name, "path": path})
 			err = recvFSVol(vol.name, conn, path)
 			if err != nil {
@@ -521,7 +528,7 @@ func genericVFSGetVolumeDiskPath(vol Volume) (string, error) {
 }
 
 // genericVFSBackupVolume is a generic BackupVolume implementation for VFS-only drivers.
-func genericVFSBackupVolume(d Driver, vol Volume, tarWriter *instancewriter.InstanceTarWriter, snapshots []string, op *operations.Operation) error {
+func genericVFSBackupVolume(d Driver, vol Volume, writer instancewriter.InstanceWriter, snapshots []string, op *operations.Operation) error {
 	if len(snapshots) > 0 {
 		// Check requested snapshot match those in storage.
 		err := vol.SnapshotsMatch(snapshots, op)
@@ -534,9 +541,9 @@ func genericVFSBackupVolume(d Driver, vol Volume, tarWriter *instancewriter.Inst
 	backupVolume := func(v Volume, prefix string) error {
 		return v.MountTask(func(mountPath string, op *operations.Operation) error {
 			// Reset hard link cache as we are copying a new volume (instance or snapshot).
-			tarWriter.ResetHardLinkMap()
+			writer.ResetHardLinkMap()
 
-			if v.contentType == ContentTypeBlock {
+			if v.contentType == ContentTypeBlock || v.contentType == ContentTypeISO {
 				blockPath, err := d.GetVolumeDiskPath(v)
 				if err != nil {
 					errMsg := "Error getting VM block volume disk path"
@@ -575,7 +582,7 @@ func genericVFSBackupVolume(d Driver, vol Volume, tarWriter *instancewriter.Inst
 						}
 
 						name := filepath.Join(prefix, strings.TrimPrefix(srcPath, mountPath))
-						err = tarWriter.WriteFile(name, srcPath, fi, false)
+						err = writer.WriteFile(name, srcPath, fi, false)
 						if err != nil {
 							return fmt.Errorf("Error adding %q as %q to tarball: %w", srcPath, name, err)
 						}
@@ -602,14 +609,20 @@ func genericVFSBackupVolume(d Driver, vol Volume, tarWriter *instancewriter.Inst
 
 				defer func() { _ = from.Close() }()
 
+				var fileSize int64
+				fileSize, err = strconv.ParseInt(vol.config["size"], 10, 64)
+				if err != nil {
+					fileSize = blockDiskSize
+				}
+
 				fi := instancewriter.FileInfo{
 					FileName:    name,
-					FileSize:    blockDiskSize,
+					FileSize:    fileSize,
 					FileMode:    0o600,
 					FileModTime: time.Now(),
 				}
 
-				err = tarWriter.WriteFileFromReader(from, &fi)
+				err = writer.WriteFileFromReader(from, &fi)
 				if err != nil {
 					return fmt.Errorf("Error copying %q as %q to tarball: %w", blockPath, name, err)
 				}
@@ -618,50 +631,50 @@ func genericVFSBackupVolume(d Driver, vol Volume, tarWriter *instancewriter.Inst
 				if err != nil {
 					return fmt.Errorf("Failed to close file %q: %w", blockPath, err)
 				}
-			} else {
-				logMsg := "Copying container filesystem volume"
-				if vol.volType == VolumeTypeCustom {
-					logMsg = "Copying custom filesystem volume"
-				}
 
-				d.Logger().Debug(logMsg, logger.Ctx{"sourcePath": mountPath, "prefix": prefix})
-
-				// Follow the target if mountPath is a symlink.
-				// Functions like filepath.Walk() won't list any directory content otherwise.
-				target, err := os.Readlink(mountPath)
-				if err == nil {
-					// Make sure the target is valid before return it.
-					_, err = os.Stat(target)
-					if err == nil {
-						mountPath = target
-					}
-				}
-
-				return filepath.Walk(mountPath, func(srcPath string, fi os.FileInfo, err error) error {
-					if err != nil {
-						if errors.Is(err, fs.ErrNotExist) {
-							logger.Warnf("File vanished during export: %q, skipping", srcPath)
-							return nil
-						}
-
-						return fmt.Errorf("Error walking file during export: %q: %w", srcPath, err)
-					}
-
-					name := filepath.Join(prefix, strings.TrimPrefix(srcPath, mountPath))
-
-					// Write the file to the tarball with ignoreGrowth enabled so that if the
-					// source file grows during copy we only copy up to the original size.
-					// This means that the file in the tarball may be inconsistent.
-					err = tarWriter.WriteFile(name, srcPath, fi, true)
-					if err != nil {
-						return fmt.Errorf("Error adding %q as %q to tarball: %w", srcPath, name, err)
-					}
-
-					return nil
-				})
+				return nil
 			}
 
-			return nil
+			logMsg := "Copying container filesystem volume"
+			if vol.volType == VolumeTypeCustom {
+				logMsg = "Copying custom filesystem volume"
+			}
+
+			d.Logger().Debug(logMsg, logger.Ctx{"sourcePath": mountPath, "prefix": prefix})
+
+			// Follow the target if mountPath is a symlink.
+			// Functions like filepath.Walk() won't list any directory content otherwise.
+			target, err := os.Readlink(mountPath)
+			if err == nil {
+				// Make sure the target is valid before return it.
+				_, err = os.Stat(target)
+				if err == nil {
+					mountPath = target
+				}
+			}
+
+			return filepath.Walk(mountPath, func(srcPath string, fi os.FileInfo, err error) error {
+				if err != nil {
+					if errors.Is(err, fs.ErrNotExist) {
+						logger.Warnf("File vanished during export: %q, skipping", srcPath)
+						return nil
+					}
+
+					return fmt.Errorf("Error walking file during export: %q: %w", srcPath, err)
+				}
+
+				name := filepath.Join(prefix, strings.TrimPrefix(srcPath, mountPath))
+
+				// Write the file to the tarball with ignoreGrowth enabled so that if the
+				// source file grows during copy we only copy up to the original size.
+				// This means that the file in the tarball may be inconsistent.
+				err = writer.WriteFile(name, srcPath, fi, true)
+				if err != nil {
+					return fmt.Errorf("Error adding %q as %q to tarball: %w", srcPath, name, err)
+				}
+
+				return nil
+			})
 		}, op)
 	}
 
@@ -846,9 +859,16 @@ func genericVFSBackupUnpack(d Driver, sysOS *sys.OS, vol Volume, snapshots []str
 					}
 
 					d.Logger().Debug(logMsg, logger.Ctx{"source": srcFile, "target": targetPath})
-					_, err = io.Copy(toPipe, tr)
-					if err != nil {
-						return err
+
+					for {
+						_, err = io.CopyN(toPipe, tr, 4*1024*1024)
+						if err != nil {
+							if errors.Is(err, io.EOF) {
+								break
+							}
+
+							return err
+						}
 					}
 
 					cancelFunc()
@@ -1151,11 +1171,11 @@ func genericVFSListVolumes(d Driver) ([]Volume, error) {
 	poolMountPath := GetPoolMountPath(poolName)
 
 	for _, volType := range d.Info().VolumeTypes {
-		if len(BaseDirectories[volType]) < 1 {
+		if len(BaseDirectories[volType].Paths) < 1 {
 			return nil, fmt.Errorf("Cannot get base directory name for volume type %q", volType)
 		}
 
-		volTypePath := filepath.Join(poolMountPath, BaseDirectories[volType][0])
+		volTypePath := filepath.Join(poolMountPath, BaseDirectories[volType].Paths[0])
 		ents, err := os.ReadDir(volTypePath)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to list directory %q for volume type %q: %w", volTypePath, volType, err)
@@ -1181,4 +1201,21 @@ func genericVFSListVolumes(d Driver) ([]Volume, error) {
 	}
 
 	return vols, nil
+}
+
+// genericRunFiller runs the supplied filler, and setting the returned volume size back into filler.
+func genericRunFiller(d Driver, vol Volume, devPath string, filler *VolumeFiller, allowUnsafeResize bool) error {
+	if filler == nil || filler.Fill == nil {
+		return nil
+	}
+
+	vol.driver.Logger().Debug("Running filler function", logger.Ctx{"dev": devPath, "path": vol.MountPath()})
+	volSize, err := filler.Fill(vol, devPath, allowUnsafeResize, !d.Info().ZeroUnpack, d.Info().TargetFormat)
+	if err != nil {
+		return err
+	}
+
+	filler.Size = volSize
+
+	return nil
 }

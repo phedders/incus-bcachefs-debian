@@ -34,6 +34,7 @@ import (
 	"github.com/lxc/incus/v6/shared/api"
 	"github.com/lxc/incus/v6/shared/idmap"
 	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v6/shared/osarch"
 	"github.com/lxc/incus/v6/shared/revert"
 	"github.com/lxc/incus/v6/shared/subprocess"
 	"github.com/lxc/incus/v6/shared/units"
@@ -46,6 +47,12 @@ const diskSourceCloudInit = "cloud-init:config"
 
 // Special disk "source" value used for generating a VM agent ISO.
 const diskSourceAgent = "agent:config"
+
+// Special disk "source" identifier used for tmpfs mounts.
+const diskSourceTmpfs = "tmpfs:"
+
+// Special disk "source" identifier for tmpfs in overlayfs mounts.
+const diskSourceTmpfsOverlay = "tmpfs-overlay:"
 
 // DiskVirtiofsdSockMountOpt indicates the mount option prefix used to provide the virtiofsd socket path to
 // the QEMU driver.
@@ -66,6 +73,11 @@ const DiskIOUring = "io_uring"
 
 // DiskLoopBacked is used to indicate disk is backed onto a loop device.
 const DiskLoopBacked = "loop"
+
+// IsSpecialDisk checks whether the provided source is a special disk.
+func IsSpecialDisk(source string) bool {
+	return slices.Contains([]string{diskSourceCloudInit, diskSourceAgent, diskSourceTmpfs, diskSourceTmpfsOverlay}, source)
+}
 
 type diskBlockLimit struct {
 	readBps   int64
@@ -111,7 +123,7 @@ func (d *disk) CanMigrate() bool {
 	}
 
 	// Virtual disks are migratable.
-	if slices.Contains([]string{diskSourceCloudInit, diskSourceAgent}, d.config["source"]) {
+	if IsSpecialDisk(d.config["source"]) {
 		return true
 	}
 
@@ -130,6 +142,10 @@ func (d *disk) sourceIsCeph() bool {
 
 // CanHotPlug returns whether the device can be managed whilst the instance is running.
 func (d *disk) CanHotPlug() bool {
+	if d.config["source"] == diskSourceTmpfs || d.config["source"] == diskSourceTmpfsOverlay {
+		return false
+	}
+
 	// 9p mounts cannot be hotplugged. However, with io.bus=auto, we can't know at startup time
 	// if we are dealing with a 9p mount. Still, it's better to fail early. At stop time, we can
 	// extract the info from the volatile key. All other disks can be hotplugged.
@@ -150,6 +166,53 @@ func (d *disk) isRequired(devConfig deviceConfig.Device) bool {
 	return false
 }
 
+// isAvailable checks whether the source is currently available.
+func (d *disk) isAvailable() bool {
+	if d.config["pool"] == "" {
+		// We only check managed volumes.
+		return true
+	}
+
+	if d.config["path"] == "/" {
+		// Root disks are always considered available.
+		return true
+	}
+
+	// Load the pool if missing.
+	var err error
+	d.pool, err = storagePools.LoadByName(d.state, d.config["pool"])
+	if err != nil {
+		// If we can't load the pool, the volume isn't available.
+		return false
+	}
+
+	// We need instance data for further checks.
+	if d.inst == nil {
+		return true
+	}
+
+	// Check if the volume exists.
+	storageProjectName, err := project.StorageVolumeProject(d.state.DB.Cluster, d.inst.Project().Name, db.StoragePoolVolumeTypeCustom)
+	if err != nil {
+		return false
+	}
+
+	// Parse the volume name and path.
+	volName, _ := internalInstance.SplitVolumeSource(d.config["source"])
+
+	// GetStoragePoolVolume returns a volume with an empty Location field for remote drivers.
+	err = d.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+		_, err = tx.GetStoragePoolVolume(ctx, d.pool.ID(), storageProjectName, db.StoragePoolVolumeTypeCustom, volName, true)
+		return err
+	})
+	if err != nil {
+		return false
+	}
+
+	// We managed to get the entry from the database, consider it available.
+	return true
+}
+
 // sourceIsLocalPath returns true if the source supplied should be considered a local path on the host.
 // It returns false if the disk source is empty, a VM cloud-init config drive, or a remote ceph/cephfs path.
 func (d *disk) sourceIsLocalPath(source string) bool {
@@ -162,6 +225,10 @@ func (d *disk) sourceIsLocalPath(source string) bool {
 	}
 
 	if source == diskSourceAgent {
+		return false
+	}
+
+	if source == diskSourceTmpfs || source == diskSourceTmpfsOverlay {
 		return false
 	}
 
@@ -437,8 +504,8 @@ func (d *disk) validateConfig(instConf instance.ConfigReader) error {
 		return errors.New(`Root disk entry must have a "pool" property set`)
 	}
 
-	if d.config["size"] != "" && d.config["path"] != "/" {
-		return errors.New("Only the root disk may have a size quota")
+	if d.config["size"] != "" && d.config["path"] != "/" && d.config["source"] != diskSourceTmpfs && d.config["source"] != diskSourceTmpfsOverlay {
+		return errors.New("Only root or tmpfs disks can have a size quota")
 	}
 
 	if d.config["size.state"] != "" && d.config["path"] != "/" {
@@ -456,6 +523,10 @@ func (d *disk) validateConfig(instConf instance.ConfigReader) error {
 	// Check ceph options are only used when ceph or cephfs type source is specified.
 	if !(d.sourceIsCeph() || d.sourceIsCephFs()) && (d.config["ceph.cluster_name"] != "" || d.config["ceph.user_name"] != "") {
 		return fmt.Errorf("Invalid options ceph.cluster_name/ceph.user_name for source %q", d.config["source"])
+	}
+
+	if (d.config["source"] == diskSourceTmpfs || d.config["source"] == diskSourceTmpfsOverlay) && d.config["path"] == "" {
+		return errors.New(`Missing mount "path" setting`)
 	}
 
 	// Check no other devices also have the same path as us. Use LocalDevices for this check so
@@ -501,7 +572,7 @@ func (d *disk) validateConfig(instConf instance.ConfigReader) error {
 		var dbVolume *db.StorageVolume
 		var storageProjectName string
 
-		if d.inst != nil && !d.inst.IsSnapshot() && d.config["source"] != "" && d.config["path"] != "/" {
+		if d.inst != nil && !d.inst.IsSnapshot() && d.config["source"] != "" && d.config["path"] != "/" && (d.isRequired(d.config) || d.isAvailable()) {
 			d.pool, err = storagePools.LoadByName(d.state, d.config["pool"])
 			if err != nil {
 				return fmt.Errorf("Failed to get storage pool %q: %w", d.config["pool"], err)
@@ -574,7 +645,7 @@ func (d *disk) validateConfig(instConf instance.ConfigReader) error {
 			}
 
 			// Custom volume validation.
-			if d.config["source"] != "" && d.config["path"] != "/" {
+			if d.config["source"] != "" && d.config["path"] != "/" && (d.isRequired(d.config) || d.isAvailable()) {
 				if storageProjectName == "" {
 					// Derive the effective storage project name from the instance config's project.
 					storageProjectName, err = project.StorageVolumeProject(d.state.DB.Cluster, instConf.Project().Name, db.StoragePoolVolumeTypeCustom)
@@ -771,6 +842,10 @@ func (d *disk) validateEnvironment() error {
 		return fmt.Errorf("disks with source=%s are only supported by virtual machines", d.config["source"])
 	}
 
+	if d.inst.Type() != instancetype.Container && slices.Contains([]string{diskSourceTmpfs, diskSourceTmpfsOverlay}, d.config["source"]) {
+		return fmt.Errorf("disks with source=%s are only supported by containers", d.config["source"])
+	}
+
 	err := d.validateEnvironmentSourcePath()
 	if err != nil {
 		return err
@@ -847,7 +922,7 @@ func (d *disk) PreStartCheck() error {
 
 	// Custom volume disks that are not required don't need to be checked as if the pool is
 	// not available we should still start the instance.
-	if d.config["path"] != "/" && util.IsFalse(d.config["required"]) {
+	if d.config["path"] != "/" && !d.isRequired(d.config) {
 		return nil
 	}
 
@@ -861,6 +936,16 @@ func (d *disk) PreStartCheck() error {
 
 // Start is run when the device is added to the instance.
 func (d *disk) Start() (*deviceConfig.RunConfig, error) {
+	// Ignore detached disks.
+	if !util.IsTrueOrEmpty(d.config["attached"]) {
+		return nil, nil
+	}
+
+	// Ignore missing disks.
+	if !d.isRequired(d.config) && !d.isAvailable() {
+		return nil, nil
+	}
+
 	var runConfig *deviceConfig.RunConfig
 
 	err := d.validateEnvironment()
@@ -929,6 +1014,118 @@ func (d *disk) startContainer() (*deviceConfig.RunConfig, error) {
 		}
 
 		runConf.RootFS = rootfs
+	} else if d.config["source"] == diskSourceTmpfs || d.config["source"] == diskSourceTmpfsOverlay {
+		srcPath := d.config["source"]
+
+		destPath := d.config["path"]
+		relativeDestPath := strings.TrimPrefix(destPath, "/")
+
+		options := []string{}
+		if d.config["size"] != "" {
+			size, err := units.ParseByteSizeString(d.config["size"])
+			if err != nil {
+				return nil, err
+			}
+
+			options = append(options, fmt.Sprintf("size=%d", size))
+		}
+
+		if d.config["initial.mode"] != "" {
+			options = append(options, fmt.Sprintf("mode=%s", d.config["initial.mode"]))
+		}
+
+		if d.config["initial.uid"] != "" {
+			options = append(options, fmt.Sprintf("uid=%s", d.config["initial.uid"]))
+		}
+
+		if d.config["initial.gid"] != "" {
+			options = append(options, fmt.Sprintf("gid=%s", d.config["initial.gid"]))
+		}
+
+		if srcPath == diskSourceTmpfsOverlay {
+			procUpperPath := "proc/upper"
+			procWorkPath := "proc/work"
+			overlayPath := relativeDestPath
+
+			rootFsPaths := []string{
+				"/opt/incus/lib/lxc/rootfs/",
+				"/usr/lib/x86_64-linux-gnu/lxc/rootfs/",
+				"/usr/lib/aarch64-linux-gnu/lxc/rootfs/",
+			}
+
+			rootFsPath := ""
+			for _, path := range rootFsPaths {
+				if util.PathExists(path) {
+					rootFsPath = path
+					break
+				}
+			}
+
+			if rootFsPath == "" {
+				return nil, fmt.Errorf("Cannot find rootfs path for container")
+			}
+
+			lowerDirOpt := fmt.Sprintf("lowerdir=%s", filepath.Join(rootFsPath, overlayPath))
+			upperDirOpt := fmt.Sprintf("upperdir=%s", filepath.Join(rootFsPath, procUpperPath))
+			workDirOpt := fmt.Sprintf("workdir=%s", filepath.Join(rootFsPath, procWorkPath))
+
+			mounts := []deviceConfig.MountEntryItem{
+				{
+					DevName:    d.name,
+					DevPath:    "none",
+					TargetPath: "proc",
+					FSType:     "tmpfs",
+					Opts:       append(options, "defaults"),
+				},
+				{
+					DevName:    d.name,
+					DevPath:    "none",
+					TargetPath: procUpperPath,
+					FSType:     "invalid",
+					Opts:       []string{"defaults", "create=dir", "optional"},
+				},
+				{
+					DevName:    d.name,
+					DevPath:    "none",
+					TargetPath: procWorkPath,
+					FSType:     "invalid",
+					Opts:       []string{"defaults", "create=dir", "optional"},
+				},
+				{
+					DevName:    d.name,
+					DevPath:    "none",
+					TargetPath: "sys",
+					FSType:     "overlay",
+					Opts:       []string{"userxattr", lowerDirOpt, upperDirOpt, workDirOpt},
+				},
+				{
+					DevName:    d.name,
+					DevPath:    filepath.Join(rootFsPath, "proc"),
+					TargetPath: overlayPath,
+					FSType:     "none",
+					Opts:       []string{"move"},
+				},
+				{
+					DevName:    d.name,
+					DevPath:    filepath.Join(rootFsPath, "sys"),
+					TargetPath: overlayPath,
+					FSType:     "none",
+					Opts:       []string{"move"},
+				},
+			}
+
+			runConf.Mounts = append(runConf.Mounts, mounts...)
+		} else {
+			options := append(options, "create=dir")
+
+			runConf.Mounts = append(runConf.Mounts, deviceConfig.MountEntryItem{
+				DevName:    d.name,
+				DevPath:    "tmpfs",
+				TargetPath: relativeDestPath,
+				FSType:     "tmpfs",
+				Opts:       options,
+			})
+		}
 	} else {
 		// Source path.
 		srcPath := d.config["source"]
@@ -1106,9 +1303,6 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 		opts = append(opts, fmt.Sprintf("wwn=%s", d.config["wwn"]))
 	}
 
-	// Setup the attached status.
-	attached := util.IsTrueOrEmpty(d.config["attached"])
-
 	// Add I/O limits if set.
 	var diskLimits *deviceConfig.DiskLimits
 	if d.config["limits.read"] != "" || d.config["limits.write"] != "" || d.config["limits.max"] != "" {
@@ -1168,11 +1362,10 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 
 		// Encode the file descriptor and original isoPath into the DevPath field.
 		mount := deviceConfig.MountEntryItem{
-			DevPath:  fmt.Sprintf("%s:%d:%s", DiskFileDescriptorMountPrefix, f.Fd(), isoPath),
-			DevName:  d.name,
-			FSType:   "iso9660",
-			Opts:     opts,
-			Attached: attached,
+			DevPath: fmt.Sprintf("%s:%d:%s", DiskFileDescriptorMountPrefix, f.Fd(), isoPath),
+			DevName: d.name,
+			FSType:  "iso9660",
+			Opts:    opts,
 		}
 
 		err = d.setBus(&mount)
@@ -1203,11 +1396,10 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 
 		// Encode the file descriptor and original isoPath into the DevPath field.
 		mount := deviceConfig.MountEntryItem{
-			DevPath:  fmt.Sprintf("%s:%d:%s", DiskFileDescriptorMountPrefix, f.Fd(), isoPath),
-			DevName:  d.name,
-			FSType:   "iso9660",
-			Opts:     opts,
-			Attached: attached,
+			DevPath: fmt.Sprintf("%s:%d:%s", DiskFileDescriptorMountPrefix, f.Fd(), isoPath),
+			DevName: d.name,
+			FSType:  "iso9660",
+			Opts:    opts,
 		}
 
 		err = d.setBus(&mount)
@@ -1226,11 +1418,10 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 			fields = strings.SplitN(fields[1], "/", 2)
 			clusterName, userName := d.cephCreds()
 			mount := deviceConfig.MountEntryItem{
-				DevPath:  DiskGetRBDFormat(clusterName, userName, fields[0], fields[1]),
-				DevName:  d.name,
-				Opts:     opts,
-				Limits:   diskLimits,
-				Attached: attached,
+				DevPath: DiskGetRBDFormat(clusterName, userName, fields[0], fields[1]),
+				DevName: d.name,
+				Opts:    opts,
+				Limits:  diskLimits,
 			}
 
 			err := d.setBus(&mount)
@@ -1242,11 +1433,10 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 		} else {
 			// Default to block device or image file passthrough first.
 			mount := deviceConfig.MountEntryItem{
-				DevPath:  d.config["source"],
-				DevName:  d.name,
-				Opts:     opts,
-				Limits:   diskLimits,
-				Attached: attached,
+				DevPath: d.config["source"],
+				DevName: d.name,
+				Opts:    opts,
+				Limits:  diskLimits,
 			}
 
 			err := d.setBus(&mount)
@@ -1259,6 +1449,7 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 			// be returned as the path to the block device).
 			if d.config["pool"] != "" {
 				var revertFunc func()
+				var mountInfo *storagePools.MountInfo
 
 				// Derive the effective storage project name from the instance config's project.
 				storageProjectName, err := project.StorageVolumeProject(d.state.DB.Cluster, d.inst.Project().Name, db.StoragePoolVolumeTypeCustom)
@@ -1305,11 +1496,10 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 					}
 
 					mount := deviceConfig.MountEntryItem{
-						DevPath:  DiskGetRBDFormat(clusterName, userName, poolName, d.config["source"]),
-						DevName:  d.name,
-						Opts:     opts,
-						Limits:   diskLimits,
-						Attached: attached,
+						DevPath: DiskGetRBDFormat(clusterName, userName, poolName, d.config["source"]),
+						DevName: d.name,
+						Opts:    opts,
+						Limits:  diskLimits,
 					}
 
 					err = d.setBus(&mount)
@@ -1326,7 +1516,7 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 					return &runConf, nil
 				}
 
-				revertFunc, mount.DevPath, _, err = d.mountPoolVolume()
+				revertFunc, mount.DevPath, mountInfo, err = d.mountPoolVolume()
 				if err != nil {
 					return nil, diskSourceNotFoundError{msg: "Failed mounting volume", err: err}
 				}
@@ -1334,6 +1524,7 @@ func (d *disk) startVM() (*deviceConfig.RunConfig, error) {
 				reverter.Add(revertFunc)
 
 				mount.Opts = append(mount.Opts, d.detectVMPoolMountOpts()...)
+				mount.BackingPath = append(mount.BackingPath, mountInfo.BackingPath...)
 			}
 
 			if util.IsTrue(d.config["readonly"]) {
@@ -1637,20 +1828,6 @@ func (d *disk) Update(oldDevices deviceConfig.Devices, isRunning bool) error {
 				runConf.Mounts = append(runConf.Mounts, deviceConfig.MountEntryItem{
 					DevName: d.name,
 					Limits:  diskLimits,
-				})
-			}
-
-			oldAttached := util.IsTrueOrEmpty(oldDevices[d.name]["attached"])
-			newAttached := util.IsTrueOrEmpty(expandedDevices[d.name]["attached"])
-			if !oldAttached && newAttached {
-				runConf.Mounts = append(runConf.Mounts, deviceConfig.MountEntryItem{
-					DevName:  d.name,
-					Attached: true,
-				})
-			} else if oldAttached && !newAttached {
-				runConf.Mounts = append(runConf.Mounts, deviceConfig.MountEntryItem{
-					DevName:  d.name,
-					Attached: false,
 				})
 			}
 		}
@@ -1995,6 +2172,17 @@ func (d *disk) createDevice(srcPath string) (func(), string, bool, error) {
 			srcPathFd := os.NewFile(uintptr(fd), volPath)
 			defer func() { _ = srcPathFd.Close() }()
 
+			// Check if the sub-path is a file or a directory.
+			fullSubPath := filepath.Join(srcPath, volPath)
+			volSubPathInfo, err := os.Stat(fullSubPath)
+			if err != nil {
+				return nil, "", false, fmt.Errorf("Failed accessing volume sub-path %q: %w", fullSubPath, err)
+			}
+
+			if !volSubPathInfo.IsDir() {
+				isFile = true
+			}
+
 			srcPath = fmt.Sprintf("/proc/self/fd/%d", srcPathFd.Fd())
 		}
 	}
@@ -2263,6 +2451,11 @@ func (d *disk) storagePoolVolumeAttachShift(projectName, poolName, volumeName st
 
 // Stop is run when the device is removed from the instance.
 func (d *disk) Stop() (*deviceConfig.RunConfig, error) {
+	// Ignore missing disks.
+	if !d.isRequired(d.config) && !d.isAvailable() {
+		return nil, nil
+	}
+
 	if d.inst.Type() == instancetype.VM {
 		return d.stopVM()
 	}
@@ -2757,16 +2950,22 @@ func (d *disk) generateVMAgentDrive() (string, error) {
 
 	// Include the most likely agent.
 	if util.PathExists(os.Getenv("INCUS_AGENT_PATH")) {
-		var srcFilename string
-		var dstFilename string
+		dstFilename := "incus-agent"
+		guestOS := d.inst.GuestOS()
 
-		if strings.Contains(strings.ToLower(d.inst.ExpandedConfig()["image.os"]), "windows") {
-			srcFilename = fmt.Sprintf("incus-agent.windows.%s", d.state.OS.Uname.Machine)
+		switch guestOS {
+		case "unknown":
+			guestOS = "linux"
+		case "windows":
 			dstFilename = "incus-agent.exe"
-		} else {
-			srcFilename = fmt.Sprintf("incus-agent.linux.%s", d.state.OS.Uname.Machine)
-			dstFilename = "incus-agent"
 		}
+
+		archName, err := osarch.ArchitectureName(d.inst.Architecture())
+		if err != nil {
+			return "", err
+		}
+
+		srcFilename := fmt.Sprintf("incus-agent.%s.%s", guestOS, archName)
 
 		agentInstallPath := filepath.Join(scratchDir, dstFilename)
 		os.Remove(agentInstallPath)

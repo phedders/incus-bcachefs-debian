@@ -215,7 +215,7 @@ type ClusterMemberPut struct {
 	// Example: {"scheduler.instance": "all"}
 	//
 	// API extension: clustering_config
-	Config map[string]string `json:"config" yaml:"config"`
+	Config ConfigMap `json:"config" yaml:"config"`
 
 	// List of cluster groups this member belongs to
 	// Example: ["group1", "group2"]
@@ -262,7 +262,7 @@ type ClusterMemberStatePost struct {
 //
 // API extension: clustering_groups.
 type ClusterGroupsPost struct {
-	ClusterGroupPut
+	ClusterGroupPut `yaml:",inline"`
 
 	// The new name of the cluster group
 	// Example: group1
@@ -277,6 +277,13 @@ type ClusterGroupsPost struct {
 type ClusterGroup struct {
 	ClusterGroupPut  `yaml:",inline"`
 	ClusterGroupPost `yaml:",inline"`
+
+	// List of URLs of objects using this cluster group
+	// Read only: true
+	// Example: ["/1.0/cluster/members/server01", "/1.0/project/default"]
+	//
+	// API extension: cluster_group_usedby.
+	UsedBy []string `json:"used_by" yaml:"used_by"`
 }
 
 // ClusterGroupPost represents the fields required to rename a cluster group.

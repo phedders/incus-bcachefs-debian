@@ -2,7 +2,6 @@ package cluster
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -18,7 +17,6 @@ import (
 	storagePools "github.com/lxc/incus/v6/internal/server/storage"
 	"github.com/lxc/incus/v6/internal/version"
 	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/proxy"
 	localtls "github.com/lxc/incus/v6/shared/tls"
 )
 
@@ -45,20 +43,23 @@ func Connect(address string, networkCert *localtls.CertInfo, serverCert *localtl
 	}
 
 	args := &incus.ConnectionArgs{
-		TLSServerCert: string(networkCert.PublicKey()),
-		TLSClientCert: string(serverCert.PublicKey()),
-		TLSClientKey:  string(serverCert.PrivateKey()),
-		SkipGetServer: true,
-		SkipGetEvents: true,
-		UserAgent:     version.UserAgent,
+		IdenticalCertificate: true,
+		TLSServerCert:        string(networkCert.PublicKey()),
+		TLSClientCert:        string(serverCert.PublicKey()),
+		TLSClientKey:         string(serverCert.PrivateKey()),
+		SkipGetServer:        true,
+		SkipGetEvents:        true,
+		UserAgent:            version.UserAgent,
 	}
 
 	if notify {
 		args.UserAgent = clusterRequest.UserAgentNotifier
 	}
 
-	if r != nil {
-		proxy := func(req *http.Request) (*url.URL, error) {
+	// Always set a proxy function to have cluster traffic bypass any configured HTTP proxy.
+	proxy := func(req *http.Request) (*url.URL, error) {
+		// If dealing with a user request, proxy through the requestor.
+		if r != nil {
 			ctx := r.Context()
 
 			val, ok := ctx.Value(request.CtxUsername).(string)
@@ -72,13 +73,14 @@ func Connect(address string, networkCert *localtls.CertInfo, serverCert *localtl
 			}
 
 			req.Header.Add(request.HeaderForwardedAddress, r.RemoteAddr)
-
-			return proxy.FromEnvironment(req)
 		}
 
-		args.Proxy = proxy
+		return nil, nil
 	}
 
+	args.Proxy = proxy
+
+	// Connect to the target server.
 	url := fmt.Sprintf("https://%s", address)
 	return incus.ConnectIncus(url, args)
 }
@@ -203,7 +205,14 @@ func ConnectIfVolumeIsRemote(s *state.State, poolName string, projectName string
 	}
 
 	// Connect to remote cluster member.
-	return Connect(node.Address, networkCert, serverCert, r, false)
+	client, err := Connect(node.Address, networkCert, serverCert, r, false)
+	if err != nil {
+		return nil, err
+	}
+
+	client = client.UseProject(projectName)
+
+	return client, nil
 }
 
 // SetupTrust is a convenience around InstanceServer.CreateCertificate that adds the given server certificate to
@@ -218,6 +227,13 @@ func SetupTrust(serverCert *localtls.CertInfo, serverName string, targetAddress 
 		SkipGetEvents: true,
 		SkipGetServer: true,
 	}
+
+	// Always set a proxy function to have cluster traffic bypass any configured HTTP proxy.
+	proxy := func(req *http.Request) (*url.URL, error) {
+		return nil, nil
+	}
+
+	args.Proxy = proxy
 
 	target, err := incus.ConnectIncus(fmt.Sprintf("https://%s", targetAddress), args)
 	if err != nil {
@@ -258,6 +274,13 @@ func UpdateTrust(serverCert *localtls.CertInfo, serverName string, targetAddress
 		SkipGetServer: true,
 	}
 
+	// Always set a proxy function to have cluster traffic bypass any configured HTTP proxy.
+	proxy := func(req *http.Request) (*url.URL, error) {
+		return nil, nil
+	}
+
+	args.Proxy = proxy
+
 	target, err := incus.ConnectIncus(fmt.Sprintf("https://%s", targetAddress), args)
 	if err != nil {
 		return fmt.Errorf("Failed to connect to target cluster node %q: %w", targetAddress, err)
@@ -292,6 +315,7 @@ func UpdateTrust(serverCert *localtls.CertInfo, serverName string, targetAddress
 
 // HasConnectivity probes the member with the given address for connectivity.
 func HasConnectivity(networkCert *localtls.CertInfo, serverCert *localtls.CertInfo, address string, apiCheck bool) bool {
+	// Check if the main server endpoint is functional.
 	if apiCheck {
 		c, err := Connect(address, networkCert, serverCert, nil, true)
 		if err != nil {
@@ -302,14 +326,19 @@ func HasConnectivity(networkCert *localtls.CertInfo, serverCert *localtls.CertIn
 		return err == nil
 	}
 
-	config, err := tlsClientConfig(networkCert, serverCert)
+	// Get the transport.
+	transport, cleanup, err := tlsTransport(networkCert, serverCert)
 	if err != nil {
 		return false
 	}
 
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
 	var conn net.Conn
-	dialer := &net.Dialer{Timeout: time.Second}
-	conn, err = tls.DialWithDialer(dialer, "tcp", address, config)
+	conn, err = transport.DialTLSContext(ctx, "tcp", address)
 	if err == nil {
 		_ = conn.Close()
 		return true
