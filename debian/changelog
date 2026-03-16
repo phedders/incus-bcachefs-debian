@@ -1,6 +1,7 @@
 incus (6.0.6-1) unstable; urgency=medium
 
   * New upstream release:
+    - Includes fix for CVE-2026-28384 / GHSA-4rmf-rcp8-2r9g
     - Update Build-Depends and Depends
     - Rebase patches as needed
     - Drop patches applied upstream
@@ -33,13 +34,13 @@ incus (6.0.5-6) unstable; urgency=medium
 
 incus (6.0.5-5) unstable; urgency=high
 
-  * Cherry-pick small update for GHSA-56mx-8g9f-5crf fix
+  * Cherry-pick small update for CVE-2025-64507 / GHSA-56mx-8g9f-5crf fix
 
  -- Mathias Gibbens <gibmat@debian.org>  Mon, 10 Nov 2025 13:25:31 +0000
 
 incus (6.0.5-4) unstable; urgency=high
 
-  * Cherry-pick upstream fix for GHSA-56mx-8g9f-5crf
+  * Cherry-pick upstream fix for CVE-2025-64507 / GHSA-56mx-8g9f-5crf
 
  -- Mathias Gibbens <gibmat@debian.org>  Mon, 10 Nov 2025 04:06:47 +0000
 
@@ -61,6 +62,14 @@ incus (6.0.5-2) unstable; urgency=medium
 incus (6.0.5-1) unstable; urgency=medium
 
   * New upstream release:
+    - Includes fixes for the following security issues:
+      * CVE-2025-54293 / GHSA-472f-vmf2-pr3h
+      * CVE-2025-54287 / GHSA-w2hg-2v4p-vmh6
+      * CVE-2025-54288 / GHSA-7232-97c6-j525
+      * CVE-2025-54286 / GHSA-p8hw-rfjg-689h
+      * CVE-2025-54290 / GHSA-p3x5-mvmp-5f35
+      * CVE-2025-54291 / GHSA-xch9-h8qw-85c7
+      * CVE-2025-54289 / GHSA-3g72-chj4-2228
     - Add patch to import IncusOS network struct definitions
     - Rebase d/p/002-adjust-import-paths.patch
     - Drop custom userns patch
