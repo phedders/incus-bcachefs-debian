@@ -4,3 +4,8 @@
 004-include-incusos-network-structs.patch
 005-revert-4e828ca.patch
 006-cherry-pick-gobgpv4.patch
+110-CVE-2026-33542.patch
+111-CVE-2026-33743.patch
+112-CVE-2026-33897.patch
+113-CVE-2026-33711.patch
+114-CVE-2026-33945.patch

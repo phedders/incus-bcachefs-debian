@@ -1,5 +1,11 @@
-incus (6.0.6-2) UNRELEASED; urgency=medium
+incus (6.0.6-2) UNRELEASED; urgency=high
 
+  * Cherry-pick fixes for the following security issues:
+    - CVE-2026-33542 / GHSA-p8mm-23gg-jc9r
+    - CVE-2026-33743 / GHSA-vg76-xmhg-j5x3
+    - CVE-2026-33897 / GHSA-83xr-5xxr-mh92
+    - CVE-2026-33711 / GHSA-q9vp-3wcg-8p4x
+    - CVE-2026-33945 / GHSA-q4q8-7f2j-9h9f
   * Cherry-pick changes for building with gobgp v4
 
  -- Mathias Gibbens <gibmat@debian.org>  Tue, 24 Mar 2026 21:51:04 +0000
