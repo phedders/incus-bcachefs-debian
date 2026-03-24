@@ -1,3 +1,9 @@
+incus (6.0.6-2) UNRELEASED; urgency=medium
+
+  * Cherry-pick changes for building with gobgp v4
+
+ -- Mathias Gibbens <gibmat@debian.org>  Tue, 24 Mar 2026 21:51:04 +0000
+
 incus (6.0.6-1) unstable; urgency=medium
 
   * New upstream release:
