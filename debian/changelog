@@ -1,3 +1,25 @@
+incus (6.0.6-2) unstable; urgency=high
+
+  * Cherry-pick fixes for the following security issues:
+    - CVE-2026-33542 / GHSA-p8mm-23gg-jc9r
+    - CVE-2026-33743 / GHSA-vg76-xmhg-j5x3
+    - CVE-2026-33897 / GHSA-83xr-5xxr-mh92
+    - CVE-2026-33711 / GHSA-q9vp-3wcg-8p4x
+    - CVE-2026-33945 / GHSA-q4q8-7f2j-9h9f
+  * Cherry-pick changes for building with gobgp v4
+
+ -- Mathias Gibbens <gibmat@debian.org>  Thu, 26 Mar 2026 22:06:37 +0000
+
+incus (6.0.6-1) unstable; urgency=medium
+
+  * New upstream release:
+    - Includes fix for CVE-2026-28384 / GHSA-4rmf-rcp8-2r9g
+    - Update Build-Depends and Depends
+    - Rebase patches as needed
+    - Drop patches applied upstream
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 15 Mar 2026 16:06:22 +0000
+
 incus (6.22.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release:
