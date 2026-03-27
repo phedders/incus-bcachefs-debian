@@ -2,7 +2,7 @@ From: Mathias Gibbens <gibmat@debian.org>
 Description: Temporarily revert commit that broke running `incus exec` for VMs
 Forwarded: https://github.com/lxc/incus/issues/2513
 diff --git a/cmd/incus-agent/dev_incus.go b/cmd/incus-agent/dev_incus.go
-index dedaffd6c..868e64962 100644
+index a90b8eaf8..419277429 100644
 --- a/cmd/incus-agent/dev_incus.go
 +++ b/cmd/incus-agent/dev_incus.go
 @@ -4,11 +4,14 @@ import (
@@ -20,7 +20,7 @@ index dedaffd6c..868e64962 100644
  	incus "github.com/lxc/incus/v6/client"
  	"github.com/lxc/incus/v6/internal/server/daemon"
  	"github.com/lxc/incus/v6/internal/server/device/config"
-@@ -83,8 +86,8 @@ var DevIncusConfigGet = devIncusHandler{"/1.0/config", func(d *Daemon, w http.Re
+@@ -86,8 +89,8 @@ var DevIncusConfigGet = devIncusHandler{"/1.0/config", func(d *Daemon, w http.Re
  }}
  
  var DevIncusConfigKeyGet = devIncusHandler{"/1.0/config/{key}", func(d *Daemon, w http.ResponseWriter, r *http.Request) *devIncusResponse {
@@ -31,7 +31,7 @@ index dedaffd6c..868e64962 100644
  		return &devIncusResponse{"bad request", http.StatusBadRequest, "raw"}
  	}
  
-@@ -249,7 +252,8 @@ func hoistReq(f func(*Daemon, http.ResponseWriter, *http.Request) *devIncusRespo
+@@ -252,7 +255,8 @@ func hoistReq(f func(*Daemon, http.ResponseWriter, *http.Request) *devIncusRespo
  }
  
  func devIncusAPI(d *Daemon) http.Handler {
@@ -127,19 +127,19 @@ index a35d34b04..021ee8465 100644
  
  	var ctx context.Context
 diff --git a/cmd/incus-agent/server.go b/cmd/incus-agent/server.go
-index 0f4d512e7..baf34c8c1 100644
+index c133c8690..acb809c44 100644
 --- a/cmd/incus-agent/server.go
 +++ b/cmd/incus-agent/server.go
-@@ -9,6 +9,8 @@ import (
- 	"io"
+@@ -10,6 +10,8 @@ import (
  	"net/http"
+ 	"time"
  
 +	"github.com/gorilla/mux"
 +
  	internalIO "github.com/lxc/incus/v6/internal/io"
  	"github.com/lxc/incus/v6/internal/server/response"
  	localUtil "github.com/lxc/incus/v6/internal/server/util"
-@@ -16,7 +18,9 @@ import (
+@@ -17,7 +19,9 @@ import (
  )
  
  func restServer(tlsConfig *tls.Config, cert *x509.Certificate, debug bool, d *Daemon) *http.Server {
@@ -148,10 +148,10 @@ index 0f4d512e7..baf34c8c1 100644
 +	router.StrictSlash(false) // Don't redirect to URL with trailing slash.
 +	router.UseEncodedPath()   // Allow encoded values in path segments.
  
- 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+ 	router.HandleFunc("/{$}", func(w http.ResponseWriter, r *http.Request) {
  		w.Header().Set("Content-Type", "application/json")
-@@ -30,7 +34,7 @@ func restServer(tlsConfig *tls.Config, cert *x509.Certificate, debug bool, d *Da
- 	return &http.Server{Handler: router, TLSConfig: tlsConfig}
+@@ -36,7 +40,7 @@ func restServer(tlsConfig *tls.Config, cert *x509.Certificate, debug bool, d *Da
+ 	}
  }
  
 -func createCmd(restAPI *http.ServeMux, version string, c APIEndpoint, cert *x509.Certificate, debug bool, d *Daemon) {
@@ -159,7 +159,7 @@ index 0f4d512e7..baf34c8c1 100644
  	var uri string
  	if c.Path == "" {
  		uri = fmt.Sprintf("/%s", version)
-@@ -38,7 +42,7 @@ func createCmd(restAPI *http.ServeMux, version string, c APIEndpoint, cert *x509
+@@ -44,7 +48,7 @@ func createCmd(restAPI *http.ServeMux, version string, c APIEndpoint, cert *x509
  		uri = fmt.Sprintf("/%s/%s", version, c.Path)
  	}
  
@@ -168,7 +168,7 @@ index 0f4d512e7..baf34c8c1 100644
  		w.Header().Set("Content-Type", "application/json")
  
  		if !authenticate(r, cert) {
-@@ -97,6 +101,12 @@ func createCmd(restAPI *http.ServeMux, version string, c APIEndpoint, cert *x509
+@@ -103,6 +107,12 @@ func createCmd(restAPI *http.ServeMux, version string, c APIEndpoint, cert *x509
  			}
  		}
  	})

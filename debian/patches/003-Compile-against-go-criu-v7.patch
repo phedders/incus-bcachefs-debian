@@ -14,7 +14,7 @@ index e2e71b1f6..5ee7a2448 100644
  	"syscall"
  	"time"
  
--	"github.com/checkpoint-restore/go-criu/v6/crit"
+-	"github.com/checkpoint-restore/go-criu/v8/crit"
 +	"github.com/checkpoint-restore/go-criu/v7/crit"
  	"github.com/flosch/pongo2"
  	"github.com/google/uuid"

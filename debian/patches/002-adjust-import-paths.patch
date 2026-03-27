@@ -2,7 +2,7 @@ From: Mathias Gibbens <gibmat@debian.org>
 Description: Adjust import paths to reflect Debian packaging
 Forwarded: not-needed
 diff --git a/cmd/incusd/daemon.go b/cmd/incusd/daemon.go
-index ade6c66b3..5cb235446 100644
+index 5ddb5f2ba..c98ebd3b9 100644
 --- a/cmd/incusd/daemon.go
 +++ b/cmd/incusd/daemon.go
 @@ -23,7 +23,7 @@ import (
@@ -15,7 +15,7 @@ index ade6c66b3..5cb235446 100644
  
  	internalIO "github.com/lxc/incus/v6/internal/io"
 diff --git a/cmd/incusd/instance_console.go b/cmd/incusd/instance_console.go
-index 5c1b291ce..1d134c905 100644
+index 9395975d0..becb69288 100644
 --- a/cmd/incusd/instance_console.go
 +++ b/cmd/incusd/instance_console.go
 @@ -17,7 +17,7 @@ import (
@@ -67,7 +67,7 @@ index f6f3fb2d0..2c6973fa0 100644
  	"golang.org/x/sys/unix"
  
 diff --git a/cmd/incusd/storage_volumes_snapshot.go b/cmd/incusd/storage_volumes_snapshot.go
-index d16b81f28..647a6bcca 100644
+index cedbd4c86..c169efe8d 100644
 --- a/cmd/incusd/storage_volumes_snapshot.go
 +++ b/cmd/incusd/storage_volumes_snapshot.go
 @@ -13,7 +13,7 @@ import (
@@ -119,7 +119,7 @@ index 1d0752de5..320ea1852 100644
  
  func networkGet(container *liblxc.Container, index int, configKey string) map[string]string {
 diff --git a/internal/server/device/proxy.go b/internal/server/device/proxy.go
-index eb8293bf6..13661598e 100644
+index d3858a763..b17d38ed6 100644
 --- a/internal/server/device/proxy.go
 +++ b/internal/server/device/proxy.go
 @@ -13,7 +13,7 @@ import (
@@ -132,13 +132,13 @@ index eb8293bf6..13661598e 100644
  	"github.com/lxc/incus/v6/internal/linux"
  	"github.com/lxc/incus/v6/internal/server/apparmor"
 diff --git a/internal/server/instance/drivers/driver_lxc.go b/internal/server/instance/drivers/driver_lxc.go
-index 4a280e4bb..0219b76e9 100644
+index 81995e2a7..4c8280402 100644
 --- a/internal/server/instance/drivers/driver_lxc.go
 +++ b/internal/server/instance/drivers/driver_lxc.go
 @@ -28,11 +28,11 @@ import (
  	"time"
  
- 	"github.com/checkpoint-restore/go-criu/v6/crit"
+ 	"github.com/checkpoint-restore/go-criu/v8/crit"
 -	"github.com/flosch/pongo2/v6"
 +	"github.com/flosch/pongo2"
  	"github.com/google/uuid"
@@ -150,7 +150,7 @@ index 4a280e4bb..0219b76e9 100644
  	"github.com/pkg/sftp"
  	"golang.org/x/sync/errgroup"
 diff --git a/internal/server/instance/drivers/driver_qemu.go b/internal/server/instance/drivers/driver_qemu.go
-index 0e5262786..4d55d8d87 100644
+index 5c4a1623b..1756284ad 100644
 --- a/internal/server/instance/drivers/driver_qemu.go
 +++ b/internal/server/instance/drivers/driver_qemu.go
 @@ -31,7 +31,7 @@ import (
@@ -163,7 +163,7 @@ index 0e5262786..4d55d8d87 100644
  	"github.com/gorilla/websocket"
  	"github.com/kballard/go-shellquote"
 diff --git a/internal/server/instance/instance_interface.go b/internal/server/instance/instance_interface.go
-index 4716d3868..9362b6e67 100644
+index af806362e..4a687f0b7 100644
 --- a/internal/server/instance/instance_interface.go
 +++ b/internal/server/instance/instance_interface.go
 @@ -8,7 +8,7 @@ import (
@@ -176,7 +176,7 @@ index 4716d3868..9362b6e67 100644
  	"google.golang.org/protobuf/proto"
  
 diff --git a/internal/server/instance/instance_utils.go b/internal/server/instance/instance_utils.go
-index 15b2a9af1..7c441a060 100644
+index 137f8b135..bc94e873d 100644
 --- a/internal/server/instance/instance_utils.go
 +++ b/internal/server/instance/instance_utils.go
 @@ -16,7 +16,7 @@ import (
@@ -189,7 +189,7 @@ index 15b2a9af1..7c441a060 100644
  
  	incus "github.com/lxc/incus/v6/client"
 diff --git a/internal/server/network/driver_ovn.go b/internal/server/network/driver_ovn.go
-index 4bc0deea2..91f89a1ad 100644
+index 0309b121b..3b9bdb330 100644
 --- a/internal/server/network/driver_ovn.go
 +++ b/internal/server/network/driver_ovn.go
 @@ -18,7 +18,7 @@ import (
@@ -202,7 +202,7 @@ index 4bc0deea2..91f89a1ad 100644
  	ovsClient "github.com/ovn-kubernetes/libovsdb/client"
  	ovsdbModel "github.com/ovn-kubernetes/libovsdb/model"
 diff --git a/internal/server/seccomp/seccomp.go b/internal/server/seccomp/seccomp.go
-index b0bb47596..b760a1a98 100644
+index f2be6a4bb..4cb56e09c 100644
 --- a/internal/server/seccomp/seccomp.go
 +++ b/internal/server/seccomp/seccomp.go
 @@ -465,7 +465,7 @@ import (
@@ -215,15 +215,15 @@ index b0bb47596..b760a1a98 100644
  
  	"github.com/lxc/incus/v6/internal/linux"
 diff --git a/internal/util/template.go b/internal/util/template.go
-index 29eaa6675..132915654 100644
+index 3e9c1fa43..3d5b3e1ba 100644
 --- a/internal/util/template.go
 +++ b/internal/util/template.go
-@@ -5,7 +5,7 @@ import (
- 	"fmt"
+@@ -6,7 +6,7 @@ import (
+ 	"io"
  	"strings"
  
 -	"github.com/flosch/pongo2/v6"
 +	"github.com/flosch/pongo2"
  )
  
- // RenderTemplate renders a pongo2 template with nesting support.
+ var bannedTemplateTags = []string{"extends", "import", "include", "ssi"}

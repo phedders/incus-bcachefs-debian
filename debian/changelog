@@ -1,3 +1,16 @@
+incus (6.23.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Includes fixes for the following security issues: CVE-2026-33542,
+      CVE-2026-33743, CVE-2026-33897, CVE-2026-33711, CVE-2026-33945,
+      CVE-2026-33898
+    - Build FreeBSD version of incus-agent
+    - Rebase patches as needed
+    - Update IncusOS network struct and cli patch
+  * Update Build-Depends and Depends in d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 27 Mar 2026 14:30:24 +0000
+
 incus (6.0.6-2) unstable; urgency=high
 
   * Cherry-pick fixes for the following security issues:
