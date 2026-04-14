@@ -3,7 +3,7 @@ incus (6.23.0-1~exp1) experimental; urgency=medium
   * New upstream feature release:
     - Includes fixes for the following security issues: CVE-2026-33542,
       CVE-2026-33743, CVE-2026-33897, CVE-2026-33711, CVE-2026-33945,
-      CVE-2026-33898
+      CVE-2026-33898, CVE-2026-34178, CVE-2026-34179
     - Build FreeBSD version of incus-agent
     - Rebase patches as needed
     - Update IncusOS network struct and cli patch
