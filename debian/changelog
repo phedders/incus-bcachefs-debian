@@ -206,6 +206,7 @@ incus (6.0.3-1) unstable; urgency=medium
 incus (6.0.2-1) unstable; urgency=medium
 
   * New upstream release
+    - Includes fix for CVE-2026-34177 / GHSA-fm2x-c5qw-4h6f
     - Rebase d/p/002-adjust-import-paths.patch
   * d/control:
     - Bump minimum required version of golang-any to 1.22 per go.mod
