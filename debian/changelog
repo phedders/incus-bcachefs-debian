@@ -1,3 +1,14 @@
+incus (6.0.6-3) unstable; urgency=high
+
+  * Cherry-pick fixes for the following security issues:
+    - CVE-2026-34178 / GHSA-q96j-3fmm-7fv4
+    - CVE-2026-34179 / GHSA-c3h3-89qf-jqm5
+  * Update Standards-Version to 4.7.4 in d/control (no changes needed)
+  * Remove "systemd-service-file-missing-hardening-features" lintian overrides
+  * Update d/watch to v5
+
+ -- Mathias Gibbens <gibmat@debian.org>  Tue, 14 Apr 2026 15:50:47 +0000
+
 incus (6.0.6-2) unstable; urgency=high
 
   * Cherry-pick fixes for the following security issues:
