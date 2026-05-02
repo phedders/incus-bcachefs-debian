@@ -9,6 +9,19 @@ incus (6.0.6-3) unstable; urgency=high
 
  -- Mathias Gibbens <gibmat@debian.org>  Tue, 14 Apr 2026 15:50:47 +0000
 
+incus (6.23.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Includes fixes for the following security issues: CVE-2026-33542,
+      CVE-2026-33743, CVE-2026-33897, CVE-2026-33711, CVE-2026-33945,
+      CVE-2026-33898, CVE-2026-34178, CVE-2026-34179
+    - Build FreeBSD version of incus-agent
+    - Rebase patches as needed
+    - Update IncusOS network struct and cli patch
+  * Update Build-Depends and Depends in d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 27 Mar 2026 14:30:24 +0000
+
 incus (6.0.6-2) unstable; urgency=high
 
   * Cherry-pick fixes for the following security issues:
@@ -31,6 +44,26 @@ incus (6.0.6-1) unstable; urgency=medium
 
  -- Mathias Gibbens <gibmat@debian.org>  Sun, 15 Mar 2026 16:06:22 +0000
 
+incus (6.22.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Includes fix for CVE-2026-28384 / GHSA-4rmf-rcp8-2r9g
+    - Build MacOS version of incus-agent
+    - Rebase patches as needed
+    - Update IncusOS network struct and cli patch
+  * Update Build-Depends and Depends in d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 28 Feb 2026 15:26:15 +0000
+
+incus (6.21.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Includes fixes for CVE-2026-23953 and CVE-2026-23954
+    - Update IncusOS network struct and cli patch
+  * Update Build-Depends and Depends in d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 23 Jan 2026 14:16:05 +0000
+
 incus (6.0.5-8) unstable; urgency=high
 
   * Cherry-pick fixes for the following security issues:
@@ -41,6 +74,17 @@ incus (6.0.5-8) unstable; urgency=high
   * Update years in d/copyright
 
  -- Mathias Gibbens <gibmat@debian.org>  Thu, 22 Jan 2026 04:04:24 +0000
+
+incus (6.20.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Includes fix for CVE-2025-64507 / GHSA-56mx-8g9f-5crf (fixed in
+      Incus 6.19)
+    - Rebase patches
+    - Update IncusOS network struct and cli patch
+  * Update Build-Depends and Depends in d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 20 Dec 2025 16:52:10 +0000
 
 incus (6.0.5-7) unstable; urgency=medium
 
@@ -73,6 +117,13 @@ incus (6.0.5-3) unstable; urgency=medium
 
  -- Mathias Gibbens <gibmat@debian.org>  Sun, 19 Oct 2025 23:28:28 +0000
 
+incus (6.17.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release
+    - Rebase IncusOS network struct patch
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 27 Sep 2025 19:49:39 +0000
+
 incus (6.0.5-2) unstable; urgency=medium
 
   * Temporarily revert commit that broke running `incus exec` for VMs
@@ -81,6 +132,23 @@ incus (6.0.5-2) unstable; urgency=medium
   * Drop redundant Rules-Requires-Root from d/control
 
  -- Mathias Gibbens <gibmat@debian.org>  Sat, 27 Sep 2025 19:35:06 +0000
+
+incus (6.16.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Update minimum version of golang
+    - Add patch to import IncusOS network struct definitions
+    - Drop custom userns patch
+  * Update paths in d/copyright
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 29 Aug 2025 12:57:42 +0000
+
+incus (6.15.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release
+    - Rebase d/p/002-adjust-import-paths.patch
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sat, 16 Aug 2025 02:15:17 +0000
 
 incus (6.0.5-1) unstable; urgency=medium
 
@@ -119,6 +187,18 @@ incus (6.0.4-3) unstable; urgency=medium
   * Update d/README.Debian
 
  -- Mathias Gibbens <gibmat@debian.org>  Sun, 10 Aug 2025 15:56:48 +0000
+
+incus (6.14.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release
+    - Add dependency for running OCI (docker) images
+    - Update logic for building incus-agent binaries, including ones for
+      Windows
+    - Update Build-Depends and Depends
+    - Drop patches applied upstream
+    - Rebase d/p/002-adjust-import-paths.patch
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 27 Jun 2025 17:30:50 +0000
 
 incus (6.0.4-2) unstable; urgency=medium
 
