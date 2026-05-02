@@ -85,7 +85,15 @@ User keys can be used in search.
 :required: "no"
 :shortdesc: "Initial volume configuration for instance root disk devices"
 :type: "string"
+For root disk devices, this is used to override the storage pool's default volume
+configuration when creating the instance's root volume.
 
+For custom volumes, only `initial.uid`, `initial.gid` and `initial.mode` are
+accepted and they are used when auto-creating sub-directories inside the custom
+volume (when the `source` includes a sub-path that doesn't exist).
+
+`initial.uid`, `initial.gid` and `initial.mode` are also used to set the ownership
+and mode of the file system when the `source` is `tmpfs:` or `tmpfs-overlay:`.
 ```
 
 ```{config:option} io.bus devices-disk
@@ -1224,6 +1232,7 @@ With VMs, this option supports mounting file system disk devices and paths withi
 ```
 
 ```{config:option} gvrp devices-nic_physical
+:condition: "container"
 :default: "false"
 :managed: "no"
 :shortdesc: "Register VLAN using GARP VLAN Registration Protocol"
@@ -1232,6 +1241,7 @@ With VMs, this option supports mounting file system disk devices and paths withi
 ```
 
 ```{config:option} hwaddr devices-nic_physical
+:condition: "container"
 :default: "randomly assigned"
 :managed: "no"
 :shortdesc: "The MAC address of the new interface"
@@ -1240,6 +1250,7 @@ With VMs, this option supports mounting file system disk devices and paths withi
 ```
 
 ```{config:option} mtu devices-nic_physical
+:condition: "container"
 :default: "MTU of the parent device"
 :managed: "no"
 :shortdesc: "The Maximum Transmit Unit (MTU) of the new interface"
@@ -1270,6 +1281,7 @@ With VMs, this option supports mounting file system disk devices and paths withi
 ```
 
 ```{config:option} vlan devices-nic_physical
+:condition: "container"
 :managed: "no"
 :shortdesc: "The VLAN ID to attach to"
 :type: "integer"
@@ -1277,6 +1289,7 @@ With VMs, this option supports mounting file system disk devices and paths withi
 ```
 
 ```{config:option} vlan.tagged devices-nic_physical
+:condition: "container"
 :managed: "no"
 :shortdesc: "Comma-delimited list of VLAN IDs or VLAN ranges to join for tagged traffic"
 :type: "integer"
@@ -3105,14 +3118,8 @@ The instance generation UUID changes whenever the instance's place in time moves
 It is globally unique across all servers and projects.
 ```
 
-```{config:option} volatile.vm.definition instance-volatile
-:shortdesc: "QEMU VM definition name (used for migration between versions)"
-:type: "string"
-
-```
-
-```{config:option} volatile.vm.hotplug.memory instance-volatile
-:shortdesc: "Memory setup of the VM as needed for state restoration"
+```{config:option} volatile.vm.boot_state instance-volatile
+:shortdesc: "JSON encoded VM properties used during live migration and other state restoration."
 :type: "string"
 
 ```
@@ -4706,6 +4713,13 @@ Specify a comma-delimited list of network zones that can be used (or something u
 
 ```
 
+```{config:option} restricted.storage-pools.access project-restricted
+:shortdesc: "Which storage pool names are allowed for use in this project"
+:type: "string"
+Specify a comma-delimited list of storage pool names that are allowed for use in this project.
+If this option is not set, all storage pools are accessible.
+```
+
 ```{config:option} restricted.virtual-machines.lowlevel project-restricted
 :defaultdesc: "`block`"
 :shortdesc: "Whether to prevent using low-level VM options"
@@ -5058,6 +5072,15 @@ If this option is not specified, the daemon falls back to the `NO_PROXY` environ
 :shortdesc: "Time after which a remote add token expires"
 :type: "string"
 
+```
+
+```{config:option} core.shutdown_action server-core
+:defaultdesc: "`shutdown`"
+:scope: "global"
+:shortdesc: "Action to perform on server shutdown"
+:type: "string"
+Specify the action to take when the daemon is being shut down.
+Supported values are `shutdown` (stop all instances) and `evacuate` (attempt to evacuate the clustered server).
 ```
 
 ```{config:option} core.shutdown_timeout server-core
@@ -5472,7 +5495,7 @@ This value is required by some providers.
 :scope: "global"
 :shortdesc: "OpenID Connect claim to use as the username"
 :type: "string"
-
+Note that the claim must be contained in the access token.
 ```
 
 ```{config:option} oidc.client.id server-oidc
