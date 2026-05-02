@@ -2,7 +2,7 @@ From: Mathias Gibbens <gibmat@debian.org>
 Description: Incus now consumes the IncusOS network API and cli package. This causes a dependency loop, so extract the relevant structs needed by Incus.
 Forwarded: not-needed
 diff --git a/cmd/incus/admin_os.go b/cmd/incus/admin_os.go
-index 36a6e73d2..4ad31af10 100644
+index 12a8baf06..35cb3385d 100644
 --- a/cmd/incus/admin_os.go
 +++ b/cmd/incus/admin_os.go
 @@ -7,7 +7,7 @@ import (
@@ -16,10 +16,10 @@ index 36a6e73d2..4ad31af10 100644
  // IncusOS management command.
 diff --git a/incus-osd/api/system_network.go b/incus-osd/api/system_network.go
 new file mode 100644
-index 000000000..933940b9b
+index 000000000..51f7161ac
 --- /dev/null
 +++ b/incus-osd/api/system_network.go
-@@ -0,0 +1,300 @@
+@@ -0,0 +1,301 @@
 +package api
 +
 +import (
@@ -165,6 +165,7 @@ index 000000000..933940b9b
 +	Hostname      string   `json:"hostname"                 yaml:"hostname"`
 +	Nameservers   []string `json:"nameservers,omitempty"    yaml:"nameservers,omitempty"`
 +	SearchDomains []string `json:"search_domains,omitempty" yaml:"search_domains,omitempty"`
++	DNSOverTLS    bool     `json:"dns_over_tls,omitempty"   yaml:"dns_over_tls,omitempty"`
 +}
 +
 +// SystemNetworkTime defines various time related configuration options (NTP servers, timezone, etc).
@@ -322,14 +323,14 @@ index 000000000..933940b9b
 +}
 diff --git a/incus-osd/cli/cli_applications.go b/incus-osd/cli/cli_applications.go
 new file mode 100644
-index 000000000..5e25a174b
+index 000000000..5caa09d23
 --- /dev/null
 +++ b/incus-osd/cli/cli_applications.go
-@@ -0,0 +1,114 @@
+@@ -0,0 +1,137 @@
 +package cli
 +
 +import (
-+	cli "github.com/lxc/incus/v6/shared/cmd"
++	cli "github.com/lxc/incus/v7/shared/cmd"
 +	"github.com/spf13/cobra"
 +)
 +
@@ -366,6 +367,16 @@ index 000000000..5e25a174b
 +		hasFileOutput: true,
 +	}
 +	cmd.AddCommand(backupCmd.command())
++
++	// Check update.
++	checkUpdateCmd := cmdGenericRun{
++		os:          c.os,
++		action:      "check-update",
++		description: "Check for application update",
++		endpoint:    "applications",
++		entity:      "application",
++	}
++	cmd.AddCommand(checkUpdateCmd.command())
 +
 +	// Debug.
 +	debugCmd := cmdGenericRun{
@@ -430,6 +441,19 @@ index 000000000..5e25a174b
 +	}
 +	cmd.AddCommand(restoreCmd.command())
 +
++	// Switch version.
++	switchVersionCmd := cmdGenericRun{
++		os:          c.os,
++		action:      "switch-version",
++		description: "Change application version",
++		endpoint:    "applications",
++		entity:      "application",
++		hasData:     true,
++		defaultData: "{}",
++		confirm:     "change the running version of the application",
++	}
++	cmd.AddCommand(switchVersionCmd.command())
++
 +	// Show.
 +	showCmd := cmdGenericShow{os: c.os, entity: "application", entityShort: "application", endpoint: "applications"}
 +	cmd.AddCommand(showCmd.command())
@@ -454,7 +478,7 @@ index 000000000..78ac4a153
 +	"strconv"
 +	"time"
 +
-+	cli "github.com/lxc/incus/v6/shared/cmd"
++	cli "github.com/lxc/incus/v7/shared/cmd"
 +	"github.com/spf13/cobra"
 +)
 +
@@ -728,7 +752,7 @@ index 000000000..2fdd471a7
 +	"fmt"
 +	"os"
 +
-+	cli "github.com/lxc/incus/v6/shared/cmd"
++	cli "github.com/lxc/incus/v7/shared/cmd"
 +	"github.com/spf13/cobra"
 +)
 +
@@ -785,7 +809,7 @@ index 000000000..05cc5dade
 +package cli
 +
 +import (
-+	cli "github.com/lxc/incus/v6/shared/cmd"
++	cli "github.com/lxc/incus/v7/shared/cmd"
 +	"github.com/spf13/cobra"
 +)
 +
@@ -831,14 +855,14 @@ index 000000000..05cc5dade
 +}
 diff --git a/incus-osd/cli/cli_system.go b/incus-osd/cli/cli_system.go
 new file mode 100644
-index 000000000..e56fe8a34
+index 000000000..04195fe1d
 --- /dev/null
 +++ b/incus-osd/cli/cli_system.go
-@@ -0,0 +1,290 @@
+@@ -0,0 +1,302 @@
 +package cli
 +
 +import (
-+	cli "github.com/lxc/incus/v6/shared/cmd"
++	cli "github.com/lxc/incus/v7/shared/cmd"
 +	"github.com/spf13/cobra"
 +)
 +
@@ -957,7 +981,15 @@ index 000000000..e56fe8a34
 +					endpoint:    "system/network",
 +				}
 +
-+				return []*cobra.Command{networkConfirmCmd.command()}
++				// Flush DNS cache.
++				flushDNSCmd := cmdGenericRun{
++					os:          c.os,
++					action:      "flush-dns",
++					description: "Flush the DNS cache",
++					endpoint:    "system/network",
++				}
++
++				return []*cobra.Command{networkConfirmCmd.command(), flushDNSCmd.command()}
 +			},
 +		},
 +		{
@@ -981,6 +1013,7 @@ index 000000000..e56fe8a34
 +					action:      "tpm-rebind",
 +					description: "Rebind the TPM (after using recovery key)",
 +					endpoint:    "system/security",
++					confirm:     "rebind the TPM and reboot the system",
 +				}
 +
 +				return []*cobra.Command{tpmRebindCmd.command()}
@@ -1084,8 +1117,11 @@ index 000000000..e56fe8a34
 +					os:          c.os,
 +					action:      "check",
 +					name:        "check",
-+					description: "Check for updates",
++					description: "Check for updates and apply them",
 +					endpoint:    "system/update",
++					hasData:     true,
++					confirm:     "apply any pending update",
++					defaultData: "{}",
 +				}
 +
 +				return []*cobra.Command{checkUpdatesCmd.command()}
@@ -1135,10 +1171,10 @@ index 000000000..611ab0017
 +package cli
 diff --git a/incus-osd/cli/generic.go b/incus-osd/cli/generic.go
 new file mode 100644
-index 000000000..0857d9375
+index 000000000..ee4383c37
 --- /dev/null
 +++ b/incus-osd/cli/generic.go
-@@ -0,0 +1,578 @@
+@@ -0,0 +1,597 @@
 +package cli
 +
 +import (
@@ -1153,11 +1189,11 @@ index 000000000..0857d9375
 +	"sort"
 +	"strings"
 +
-+	"github.com/lxc/incus/v6/shared/ask"
-+	cli "github.com/lxc/incus/v6/shared/cmd"
-+	"github.com/lxc/incus/v6/shared/termios"
++	"github.com/lxc/incus/v7/shared/ask"
++	cli "github.com/lxc/incus/v7/shared/cmd"
++	"github.com/lxc/incus/v7/shared/termios"
 +	"github.com/spf13/cobra"
-+	"gopkg.in/yaml.v2"
++	"go.yaml.in/yaml/v4"
 +)
 +
 +// Edit.
@@ -1235,8 +1271,13 @@ index 000000000..0857d9375
 +	if !termios.IsTerminal(getStdinFd()) {
 +		var newdata any
 +
-+		err := yaml.NewDecoder(os.Stdin).Decode(&newdata)
++		loader, err := yaml.NewLoader(os.Stdin)
 +		if err != nil {
++			return err
++		}
++
++		err = loader.Load(&newdata)
++		if err != nil && !errors.Is(err, io.EOF) {
 +			return err
 +		}
 +
@@ -1258,7 +1299,7 @@ index 000000000..0857d9375
 +		return err
 +	}
 +
-+	data, err := yaml.Marshal(rawData)
++	data, err := yaml.Dump(rawData, yaml.V2)
 +	if err != nil {
 +		return err
 +	}
@@ -1273,7 +1314,7 @@ index 000000000..0857d9375
 +		// Parse the text received from the editor
 +		var newdata any
 +
-+		err = yaml.Unmarshal(content, &newdata)
++		err = yaml.Load(content, &newdata)
 +		if err == nil {
 +			_, _, err = doQuery(c.os.args.DoHTTP, remote, "PUT", apiURL, makeJsonable(newdata), nil, "")
 +		}
@@ -1429,7 +1470,7 @@ index 000000000..0857d9375
 +	}
 +
 +	if c.hasFileOutput || c.hasFileInput {
-+		usage += " <file>"
++		usage += " <file|->"
 +	}
 +
 +	if c.name == "" {
@@ -1548,12 +1589,19 @@ index 000000000..0857d9375
 +
 +	// Set source file.
 +	if c.hasFileInput {
-+		f, err := os.Open(args[len(args)-1])
-+		if err != nil {
-+			return err
-+		}
++		var f *os.File
 +
-+		defer func() { _ = f.Close() }()
++		path := args[len(args)-1]
++		if path == "-" {
++			f = os.Stdin
++		} else {
++			f, err = os.Open(args[len(args)-1])
++			if err != nil {
++				return err
++			}
++
++			defer func() { _ = f.Close() }()
++		}
 +
 +		inData = f
 +	}
@@ -1562,12 +1610,19 @@ index 000000000..0857d9375
 +	var outData io.Writer
 +
 +	if c.hasFileOutput {
-+		f, err := os.Create(args[len(args)-1])
-+		if err != nil {
-+			return err
-+		}
++		var f *os.File
 +
-+		defer func() { _ = f.Close() }()
++		path := args[len(args)-1]
++		if path == "-" {
++			f = os.Stdout
++		} else {
++			f, err = os.Open(args[len(args)-1])
++			if err != nil {
++				return err
++			}
++
++			defer func() { _ = f.Close() }()
++		}
 +
 +		outData = f
 +	}
@@ -1705,7 +1760,7 @@ index 000000000..0857d9375
 +		data = append(data, '\n')
 +
 +	case "yaml":
-+		data, err = yaml.Marshal(rawData)
++		data, err = yaml.Dump(rawData, yaml.V2)
 +		if err != nil {
 +			return err
 +		}
@@ -1766,7 +1821,7 @@ index 000000000..6a075b05c
 +	"strconv"
 +	"strings"
 +
-+	"github.com/lxc/incus/v6/shared/api"
++	"github.com/lxc/incus/v7/shared/api"
 +)
 +
 +const dateLayoutSecond = "2006/01/02 15:04:05 MST"
@@ -1955,13 +2010,13 @@ index 000000000..432ce2703
 +	return int(windows.Stdin)
 +}
 diff --git a/internal/incusos/api_system.go b/internal/incusos/api_system.go
-index 4fdc7d848..1f904cecf 100644
+index b655bf10e..2eb0b4840 100644
 --- a/internal/incusos/api_system.go
 +++ b/internal/incusos/api_system.go
-@@ -1,7 +1,7 @@
- package incusos
+@@ -4,7 +4,7 @@ import (
+ 	"errors"
+ 	"net/http"
  
- import (
 -	osapi "github.com/lxc/incus-os/incus-osd/api"
 +	osapi "github.com/lxc/incus/incus-osd/api"
  )
