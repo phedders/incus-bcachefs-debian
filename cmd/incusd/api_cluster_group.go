@@ -8,21 +8,25 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 
 	"github.com/gorilla/mux"
 
-	"github.com/lxc/incus/v6/internal/server/auth"
-	"github.com/lxc/incus/v6/internal/server/db"
-	dbCluster "github.com/lxc/incus/v6/internal/server/db/cluster"
-	"github.com/lxc/incus/v6/internal/server/lifecycle"
-	"github.com/lxc/incus/v6/internal/server/project"
-	"github.com/lxc/incus/v6/internal/server/request"
-	"github.com/lxc/incus/v6/internal/server/response"
-	localUtil "github.com/lxc/incus/v6/internal/server/util"
-	"github.com/lxc/incus/v6/internal/version"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/validate"
+	"github.com/lxc/incus/v7/internal/server/auth"
+	"github.com/lxc/incus/v7/internal/server/db"
+	dbCluster "github.com/lxc/incus/v7/internal/server/db/cluster"
+	instanceDrivers "github.com/lxc/incus/v7/internal/server/instance/drivers"
+	"github.com/lxc/incus/v7/internal/server/lifecycle"
+	"github.com/lxc/incus/v7/internal/server/project"
+	"github.com/lxc/incus/v7/internal/server/request"
+	"github.com/lxc/incus/v7/internal/server/response"
+	"github.com/lxc/incus/v7/internal/server/state"
+	localUtil "github.com/lxc/incus/v7/internal/server/util"
+	"github.com/lxc/incus/v7/internal/version"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/osarch"
+	"github.com/lxc/incus/v7/shared/validate"
 )
 
 var targetGroupPrefix = "@"
@@ -92,6 +96,17 @@ func clusterGroupsPost(d *Daemon, r *http.Request) response.Response {
 		return response.BadRequest(fmt.Errorf("Invalid cluster group name: %w", err))
 	}
 
+	err = clusterGroupValidate(req.Config)
+	if err != nil {
+		return response.BadRequest(err)
+	}
+
+	// Fill in the auto values.
+	err = clusterGroupFill(r.Context(), s, nil, &req.ClusterGroupPut)
+	if err != nil {
+		return response.BadRequest(err)
+	}
+
 	err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
 		obj := dbCluster.ClusterGroup{
 			Name:        req.Name,
@@ -109,6 +124,11 @@ func clusterGroupsPost(d *Daemon, r *http.Request) response.Response {
 			if err != nil {
 				return err
 			}
+		}
+
+		err = dbCluster.CreateClusterGroupConfig(ctx, tx.Tx(), groupID, req.Config)
+		if err != nil {
+			return err
 		}
 
 		return nil
@@ -269,6 +289,12 @@ func clusterGroupsGet(d *Daemon, r *http.Request) response.Response {
 //	---
 //	produces:
 //	  - application/json
+//	parameters:
+//	  - in: path
+//	    name: name
+//	    description: Cluster group name
+//	    type: string
+//	    required: true
 //	responses:
 //	  "200":
 //	    description: Cluster group
@@ -307,7 +333,6 @@ func clusterGroupGet(d *Daemon, r *http.Request) response.Response {
 	}
 
 	var apiGroup *api.ClusterGroup
-
 	err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
 		// Get the cluster group.
 		group, err := dbCluster.GetClusterGroup(ctx, tx.Tx(), name)
@@ -325,7 +350,7 @@ func clusterGroupGet(d *Daemon, r *http.Request) response.Response {
 			group.Nodes = append(group.Nodes, node.Node)
 		}
 
-		apiGroup, err = group.ToAPI()
+		apiGroup, err = group.ToAPI(ctx, tx.Tx())
 		if err != nil {
 			return err
 		}
@@ -356,6 +381,11 @@ func clusterGroupGet(d *Daemon, r *http.Request) response.Response {
 //	produces:
 //	  - application/json
 //	parameters:
+//	  - in: path
+//	    name: name
+//	    description: Cluster group name
+//	    type: string
+//	    required: true
 //	  - in: body
 //	    name: name
 //	    description: Cluster group rename request
@@ -451,6 +481,11 @@ func clusterGroupPost(d *Daemon, r *http.Request) response.Response {
 //	produces:
 //	  - application/json
 //	parameters:
+//	  - in: path
+//	    name: name
+//	    description: Cluster group name
+//	    type: string
+//	    required: true
 //	  - in: body
 //	    name: cluster group
 //	    description: cluster group configuration
@@ -488,6 +523,43 @@ func clusterGroupPut(d *Daemon, r *http.Request) response.Response {
 		return response.BadRequest(err)
 	}
 
+	// Validate the config.
+	err = clusterGroupValidate(req.Config)
+	if err != nil {
+		return response.BadRequest(err)
+	}
+
+	// Get the current state.
+	var dbClusterGroup *dbCluster.ClusterGroup
+	err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
+		dbClusterGroup, err = dbCluster.GetClusterGroup(ctx, tx.Tx(), name)
+		if err != nil {
+			return err
+		}
+
+		nodeClusterGroups, err := dbCluster.GetNodeClusterGroups(ctx, tx.Tx(), dbCluster.NodeClusterGroupFilter{GroupID: &dbClusterGroup.ID})
+		if err != nil {
+			return err
+		}
+
+		dbClusterGroup.Nodes = make([]string, 0, len(nodeClusterGroups))
+		for _, node := range nodeClusterGroups {
+			dbClusterGroup.Nodes = append(dbClusterGroup.Nodes, node.Node)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return response.SmartError(err)
+	}
+
+	// Fill in the auto values.
+	err = clusterGroupFill(r.Context(), s, dbClusterGroup.Nodes, &req)
+	if err != nil {
+		return response.BadRequest(err)
+	}
+
+	// Update the database.
 	err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
 		group, err := dbCluster.GetClusterGroup(ctx, tx.Tx(), name)
 		if err != nil {
@@ -500,6 +572,11 @@ func clusterGroupPut(d *Daemon, r *http.Request) response.Response {
 		}
 
 		err = dbCluster.UpdateClusterGroup(ctx, tx.Tx(), name, obj)
+		if err != nil {
+			return err
+		}
+
+		err = dbCluster.UpdateClusterGroupConfig(ctx, tx.Tx(), int64(group.ID), req.Config)
 		if err != nil {
 			return err
 		}
@@ -580,6 +657,11 @@ func clusterGroupPut(d *Daemon, r *http.Request) response.Response {
 //	produces:
 //	  - application/json
 //	parameters:
+//	  - in: path
+//	    name: name
+//	    description: Cluster group name
+//	    type: string
+//	    required: true
 //	  - in: body
 //	    name: cluster group
 //	    description: cluster group configuration
@@ -628,13 +710,13 @@ func clusterGroupPatch(d *Daemon, r *http.Request) response.Response {
 			dbClusterGroup.Nodes = append(dbClusterGroup.Nodes, node.Node)
 		}
 
+		clusterGroup, err = dbClusterGroup.ToAPI(ctx, tx.Tx())
+		if err != nil {
+			return err
+		}
+
 		return nil
 	})
-	if err != nil {
-		return response.SmartError(err)
-	}
-
-	clusterGroup, err = dbClusterGroup.ToAPI()
 	if err != nil {
 		return response.SmartError(err)
 	}
@@ -658,6 +740,29 @@ func clusterGroupPatch(d *Daemon, r *http.Request) response.Response {
 		req.Members = clusterGroup.Members
 	}
 
+	if req.Config == nil {
+		req.Config = clusterGroup.Config
+	} else {
+		for k, v := range clusterGroup.Config {
+			_, ok := req.Config[k]
+			if !ok {
+				req.Config[k] = v
+			}
+		}
+	}
+
+	// Validate the config.
+	err = clusterGroupValidate(req.Config)
+	if err != nil {
+		return response.BadRequest(err)
+	}
+
+	// Fill in the auto values.
+	err = clusterGroupFill(r.Context(), s, dbClusterGroup.Nodes, &req)
+	if err != nil {
+		return response.BadRequest(err)
+	}
+
 	err = s.DB.Cluster.Transaction(r.Context(), func(ctx context.Context, tx *db.ClusterTx) error {
 		obj := dbCluster.ClusterGroup{
 			Name:        dbClusterGroup.Name,
@@ -670,6 +775,11 @@ func clusterGroupPatch(d *Daemon, r *http.Request) response.Response {
 		}
 
 		groupID, err := dbCluster.GetClusterGroupID(ctx, tx.Tx(), obj.Name)
+		if err != nil {
+			return err
+		}
+
+		err = dbCluster.UpdateClusterGroupConfig(ctx, tx.Tx(), groupID, req.Config)
 		if err != nil {
 			return err
 		}
@@ -760,6 +870,12 @@ func clusterGroupPatch(d *Daemon, r *http.Request) response.Response {
 //	---
 //	produces:
 //	  - application/json
+//	parameters:
+//	  - in: path
+//	    name: name
+//	    description: Cluster group name
+//	    type: string
+//	    required: true
 //	responses:
 //	  "200":
 //	    $ref: "#/responses/EmptySyncResponse"
@@ -817,6 +933,94 @@ func clusterGroupDelete(d *Daemon, r *http.Request) response.Response {
 	s.Events.SendLifecycle(name, lifecycle.ClusterGroupDeleted.Event(name, requestor, nil))
 
 	return response.EmptySyncResponse
+}
+
+// clusterGroupValidate validates the configuration keys/values for cluster groups.
+func clusterGroupValidate(config map[string]string) error {
+	configKeys := map[string]func(value string) error{}
+
+	// Add architecture keys.
+	for _, arch := range osarch.SupportedArchitectures() {
+		// gendoc:generate(entity=cluster_group, group=common, key=instances.vm.cpu.ARCHITECTURE.baseline)
+		// The CPU base architecture name as can be found through `qemu -cpu ?`.
+		//
+		// This can be a generic definition like `qemu64` or `kvm64`, or it can be a specific hardware architecture like `EPYC-v2`.
+		// It's important to ensure that all servers in the group match that baseline.
+		// ---
+		//  type: string
+		//  shortdesc: CPU base architecture name
+		configKeys[fmt.Sprintf("instances.vm.cpu.%s.baseline", arch)] = validate.Optional(validate.IsAny)
+
+		// gendoc:generate(entity=cluster_group, group=common, key=instances.vm.cpu.ARCHITECTURE.flags)
+		// A comma separated list of CPU flags to add on top of CPU baseline or a list of flags to remove from it.
+		//
+		// To remove a flag, use `-flag`.
+		// ---
+		//  type: string
+		//  shortdesc: CPU flags to add/remove to/from the baseline
+		configKeys[fmt.Sprintf("instances.vm.cpu.%s.flags", arch)] = validate.Optional(validate.IsListOf(validate.IsAny))
+	}
+
+	for k, v := range config {
+		// User keys are free for all.
+
+		// gendoc:generate(entity=cluster_group, group=common, key=user.*)
+		// User keys can be used in search.
+		// ---
+		//  type: string
+		//  shortdesc: Free form user key/value storage
+		if strings.HasPrefix(k, "user.") {
+			continue
+		}
+
+		validator, ok := configKeys[k]
+		if !ok {
+			return fmt.Errorf("Invalid cluster group configuration key %q", k)
+		}
+
+		err := validator(v)
+		if err != nil {
+			return fmt.Errorf("Invalid cluster group configuration key %q value", k)
+		}
+	}
+
+	return nil
+}
+
+// clusterGroupFill fills in automatic values.
+func clusterGroupFill(ctx context.Context, s *state.State, servers []string, req *api.ClusterGroupPut) error {
+	// If no config, nothing to fill.
+	if req.Config == nil {
+		return nil
+	}
+
+	for _, arch := range osarch.SupportedArchitectures() {
+		baseline := req.Config[fmt.Sprintf("instances.vm.cpu.%s.baseline", arch)]
+		flags := req.Config[fmt.Sprintf("instances.vm.cpu.%s.flags", arch)]
+
+		// Check whether we need to fill in values.
+		if flags != "auto" {
+			continue
+		}
+
+		if baseline != "kvm64" || arch != "x86_64" {
+			return errors.New("Automatic CPU flags are currently only supported on \"x86_64\" with the \"kvm64\" baseline")
+		}
+
+		if len(servers) == 0 {
+			return errors.New("Can't compute automatic CPU flags when no servers are in the cluster group")
+		}
+
+		// Fill in the flags.
+		cpuFlags, err := instanceDrivers.GetClusterCPUFlags(ctx, s, servers, arch)
+		if err != nil {
+			return fmt.Errorf("Couldn't compute automatic CPU flags: %w", err)
+		}
+
+		req.Config[fmt.Sprintf("instances.vm.cpu.%s.flags", arch)] = strings.Join(cpuFlags, ",")
+	}
+
+	return nil
 }
 
 // clusterGroupUsedBy returns URLs of all instances and projects using the specified cluster group.

@@ -1,8 +1,8 @@
 package drivers
 
 import (
-	"github.com/lxc/incus/v6/internal/server/state"
-	"github.com/lxc/incus/v6/shared/logger"
+	"github.com/lxc/incus/v7/internal/server/state"
+	"github.com/lxc/incus/v7/shared/logger"
 )
 
 var drivers = map[string]func() driver{
@@ -13,7 +13,9 @@ var drivers = map[string]func() driver{
 	"dir":        func() driver { return &dir{} },
 	"lvm":        func() driver { return &lvm{} },
 	"lvmcluster": func() driver { return &lvm{clustered: true} },
+	"truenas":    func() driver { return &truenas{} },
 	"zfs":        func() driver { return &zfs{} },
+	"linstor":    func() driver { return &linstor{} },
 }
 
 // Validators contains functions used for validating a drivers's config.

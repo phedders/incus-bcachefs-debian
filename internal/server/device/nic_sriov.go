@@ -6,16 +6,16 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/lxc/incus/v6/internal/linux"
-	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
-	pcidev "github.com/lxc/incus/v6/internal/server/device/pci"
-	"github.com/lxc/incus/v6/internal/server/instance"
-	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
-	"github.com/lxc/incus/v6/internal/server/network"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/resources"
-	"github.com/lxc/incus/v6/shared/util"
+	"github.com/lxc/incus/v7/internal/linux"
+	deviceConfig "github.com/lxc/incus/v7/internal/server/device/config"
+	pcidev "github.com/lxc/incus/v7/internal/server/device/pci"
+	"github.com/lxc/incus/v7/internal/server/instance"
+	"github.com/lxc/incus/v7/internal/server/instance/instancetype"
+	"github.com/lxc/incus/v7/internal/server/network"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/resources"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 type nicSRIOV struct {
@@ -35,7 +35,7 @@ func (d *nicSRIOV) CanMigrate() bool {
 }
 
 // validateConfig checks the supplied config for correctness.
-func (d *nicSRIOV) validateConfig(instConf instance.ConfigReader) error {
+func (d *nicSRIOV) validateConfig(instConf instance.ConfigReader, partialValidation bool) error {
 	if !instanceSupported(instConf.Type(), instancetype.Container, instancetype.VM) {
 		return ErrUnsupportedDevType
 	}

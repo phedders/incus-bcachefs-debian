@@ -1,4 +1,7 @@
 test_snapshots() {
+    # shellcheck disable=2153
+    [ "${INCUS_BACKEND}" = "linstor" ] && echo "==> SKIP: Linstor can't currently handle copies with snapshots" && return
+
     snapshots
 
     if [ "$(storage_backend "$INCUS_DIR")" = "lvm" ]; then
@@ -44,7 +47,7 @@ snapshots() {
 
     incus copy foo/tester foosnap1
     # FIXME: make this backend agnostic
-    if [ "$incus_backend" != "lvm" ] && [ "${incus_backend}" != "zfs" ] && [ "$incus_backend" != "ceph" ]; then
+    if [ "$incus_backend" != "lvm" ] && [ "$incus_backend" != "zfs" ] && [ "$incus_backend" != "ceph" ] && [ "$incus_backend" != "linstor" ] && [ "$incus_backend" != "truenas" ]; then
         [ -d "${INCUS_DIR}/containers/foosnap1/rootfs" ]
     fi
 
@@ -97,6 +100,7 @@ snapshots() {
 }
 
 test_snap_restore() {
+    [ "${INCUS_BACKEND}" = "linstor" ] && echo "==> SKIP: Linstor can't currently handle copies with snapshots" && return
     snap_restore
 
     if [ "$(storage_backend "$INCUS_DIR")" = "lvm" ]; then
@@ -141,7 +145,7 @@ snap_restore() {
     incus storage volume set "${pool}" container/bar user.foo=snap0
 
     # Check parent volume.block.filesystem is copied to snapshot and not from pool.
-    if [ "$incus_backend" = "lvm" ] || [ "$incus_backend" = "ceph" ]; then
+    if [ "$incus_backend" = "lvm" ] || [ "$incus_backend" = "ceph" ] || [ "$incus_backend" = "truenas" ]; then
         # Change pool volume.block.filesystem setting after creation of instance and before snapshot.
         incus storage set "${pool}" volume.block.filesystem=xfs
     fi
@@ -173,7 +177,7 @@ snap_restore() {
     incus storage volume set "${pool}" container/bar user.foo=postsnaps
 
     # Check volume.block.filesystem on storage volume in parent and snapshot match.
-    if [ "${incus_backend}" = "lvm" ] || [ "${incus_backend}" = "ceph" ]; then
+    if [ "${incus_backend}" = "lvm" ] || [ "${incus_backend}" = "ceph" ] || [ "${incus_backend}" = "truenas" ]; then
         # Change pool volume.block.filesystem setting after creation of instance and before snapshot.
         pool=$(incus config profile device get default root pool)
         parentFS=$(incus storage volume get "${pool}" container/bar block.filesystem)
@@ -189,9 +193,9 @@ snap_restore() {
 
     ##########################################################
 
-    if [ "$incus_backend" != "zfs" ]; then
-        # The problem here is that you can't `zfs rollback` to a snapshot with a
-        # parent, which snap0 has (snap1).
+    # ZFS, LINSTOR and TrueNAS are limited to rollback only to the latest snapshots. Since
+    # in this case we have a more recent snap1, we can't restore to snap0.
+    if [ "$incus_backend" != "zfs" ] && [ "$incus_backend" != "linstor" ] && [ "$incus_backend" != "truenas" ]; then
         restore_and_compare_fs snap0
 
         # Check container config has been restored (limits.cpu is unset)
@@ -280,7 +284,7 @@ snap_restore() {
     # Start container and then restore snapshot to verify the running state after restore.
     incus start bar
 
-    if [ "$incus_backend" != "zfs" ]; then
+    if [ "$incus_backend" != "zfs" ] && [ "$incus_backend" != "linstor" ] && [ "$incus_backend" != "truenas" ]; then
         # see comment above about snap0
         restore_and_compare_fs snap0
 
@@ -315,6 +319,9 @@ restore_and_compare_fs() {
 }
 
 test_snap_expiry() {
+    # shellcheck disable=2153
+    [ "${INCUS_BACKEND}" = "linstor" ] && echo "==> SKIP: Linstor can't currently handle copies with snapshots" && return
+
     # shellcheck disable=2039,3043
     local incus_backend
     incus_backend=$(storage_backend "$INCUS_DIR")
@@ -341,6 +348,9 @@ test_snap_expiry() {
 }
 
 test_snap_schedule() {
+    # shellcheck disable=2153
+    [ "${INCUS_BACKEND}" = "linstor" ] && echo "==> SKIP: Linstor can't currently handle copies with snapshots" && return
+
     # shellcheck disable=2039,3043
     local incus_backend
     incus_backend=$(storage_backend "$INCUS_DIR")
@@ -364,7 +374,9 @@ test_snap_schedule() {
     incus restart c1 -f
     incus info c1 | grep -q snap1
 
-    incus rm -f c1 c2 c3 c4 c5
+    for i in c1 c2 c3 c4 c5; do
+        incus rm -f "$i"
+    done
 }
 
 test_snap_volume_db_recovery() {
@@ -387,8 +399,8 @@ test_snap_volume_db_recovery() {
     ! incus start c1 || false                                                                            # Shouldn't be able to start as backup.yaml generation checks for DB consistency.
     incus admin shutdown
     respawn_incus "${INCUS_DIR}" true
-    incus storage volume snapshot show "${poolName}" container/c1/snap0 | grep "Auto repaired"
-    incus storage volume snapshot show "${poolName}" container/c1/snap1 | grep "Auto repaired"
+    incus storage volume snapshot show "${poolName}" container/c1 snap0 | grep "Auto repaired"
+    incus storage volume snapshot show "${poolName}" container/c1 snap1 | grep "Auto repaired"
     incus start c1
     incus delete -f c1
 }

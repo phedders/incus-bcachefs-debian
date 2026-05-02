@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	cli "github.com/lxc/incus/v6/shared/cmd"
-	"github.com/lxc/incus/v6/shared/simplestreams"
+	cli "github.com/lxc/incus/v7/shared/cmd"
+	"github.com/lxc/incus/v7/shared/simplestreams"
 )
 
 type cmdRemove struct {
@@ -19,18 +19,17 @@ type cmdRemove struct {
 	flagVerbose bool
 }
 
-// Command generates the command definition.
-func (c *cmdRemove) Command() *cobra.Command {
+func (c *cmdRemove) command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Use = "remove <fingerprint>"
 	cmd.Aliases = []string{"rm", "delete"}
 	cmd.Short = "Remove an image"
-	cmd.Long = cli.FormatSection("Description",
+	cmd.Long = cli.FormatSection("Description:",
 		`Remove an image from the server
 
 This command locates the image from its fingerprint and removes it from the index.
 `)
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 	cmd.Flags().BoolVarP(&c.flagVerbose, "verbose", "v", false, "Show all information messages")
 
 	return cmd
@@ -49,8 +48,7 @@ func (c *cmdRemove) remove(path string) error {
 	return nil
 }
 
-// Run runs the actual command logic.
-func (c *cmdRemove) Run(cmd *cobra.Command, args []string) error {
+func (c *cmdRemove) run(cmd *cobra.Command, args []string) error {
 	// Quick checks.
 	exit, err := cli.CheckArgs(cmd, args, 1, 1)
 	if exit {

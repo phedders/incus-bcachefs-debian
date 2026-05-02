@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lxc/incus/v6/internal/linux"
-	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
-	"github.com/lxc/incus/v6/internal/server/instance"
-	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/subprocess"
-	"github.com/lxc/incus/v6/shared/util"
-	"github.com/lxc/incus/v6/shared/validate"
+	"github.com/lxc/incus/v7/internal/linux"
+	deviceConfig "github.com/lxc/incus/v7/internal/server/device/config"
+	"github.com/lxc/incus/v7/internal/server/instance"
+	"github.com/lxc/incus/v7/internal/server/instance/instancetype"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/subprocess"
+	"github.com/lxc/incus/v7/shared/util"
+	"github.com/lxc/incus/v7/shared/validate"
 )
 
 type tpm struct {
@@ -30,7 +30,7 @@ func (d *tpm) CanMigrate() bool {
 }
 
 // validateConfig checks the supplied config for correctness.
-func (d *tpm) validateConfig(instConf instance.ConfigReader) error {
+func (d *tpm) validateConfig(instConf instance.ConfigReader, partialValidation bool) error {
 	if !instanceSupported(instConf.Type(), instancetype.Container, instancetype.VM) {
 		return ErrUnsupportedDevType
 	}
@@ -303,7 +303,7 @@ func (d *tpm) Stop() (*deviceConfig.RunConfig, error) {
 }
 
 // Remove removes the TPM state file.
-func (d *tpm) Remove() error {
+func (d *tpm) Remove(cleanupDependencies bool) error {
 	tpmDevPath := filepath.Join(d.inst.Path(), fmt.Sprintf("tpm.%s", d.name))
 
 	return os.RemoveAll(tpmDevPath)

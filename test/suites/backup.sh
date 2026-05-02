@@ -97,7 +97,7 @@ EOF
         # Recover container and custom volume that isn't mounted.
         incus init testimage c1
         incus storage volume create "${poolName}" vol1_test
-        incus storage volume attach "${poolName}" vol1_test c1 /mnt
+        incus storage volume attach "${poolName}" vol1_test c1 vol1_test /mnt
         incus start c1
         incus exec c1 --project test -- mount | grep /mnt
         echo "hello world" | incus exec c1 --project test -- tee /mnt/test.txt
@@ -108,7 +108,7 @@ EOF
 
         incus storage volume snapshot create "${poolName}" vol1_test snap0
         incus storage volume show "${poolName}" vol1_test
-        incus storage volume snapshot show "${poolName}" vol1_test/snap0
+        incus storage volume snapshot show "${poolName}" vol1_test snap0
 
         # Remove container DB records and symlink.
         incus admin sql global "PRAGMA foreign_keys=ON; DELETE FROM instances WHERE name='c1'"
@@ -136,7 +136,7 @@ EOF
         ! ls "${INCUS_DIR}/containers/test_c1" || false
         ! incus info c1 || false
         ! incus storage volume show "${poolName}" container/c1 || false
-        ! incus storage volume snapshot show "${poolName}" container/c1/snap0 || false
+        ! incus storage volume snapshot show "${poolName}" container/c1 snap0 || false
 
         if [ "$poolDriver" != "dir" ] && [ "$poolDriver" != "btrfs" ] && [ "$poolDriver" != "cephfs" ]; then
             ! ls "${INCUS_DIR}/storage-pools/${poolName}/containers/test_c1" || false
@@ -145,7 +145,7 @@ EOF
 
         # Check custom volume appears removed.
         ! incus storage volume show "${poolName}" vol1_test || false
-        ! incus storage volume snapshot show "${poolName}" vol1_test/snap0 || false
+        ! incus storage volume snapshot show "${poolName}" vol1_test snap0 || false
 
         # Shutdown Incus so pools are unmounted.
         shutdown_incus "${INCUS_DIR}"
@@ -175,13 +175,13 @@ EOF
 
         # Check custom volume record exists with snapshot.
         incus storage volume show "${poolName}" vol1_test
-        incus storage volume snapshot show "${poolName}" vol1_test/snap0
+        incus storage volume snapshot show "${poolName}" vol1_test snap0
 
         # Check snapshot exists and container can be started.
         incus info c1 | grep snap0
         incus storage volume ls "${poolName}"
         incus storage volume show "${poolName}" container/c1
-        incus storage volume snapshot show "${poolName}" container/c1/snap0
+        incus storage volume snapshot show "${poolName}" container/c1 snap0
         incus start c1
         incus exec c1 --project test -- hostname
 
@@ -234,6 +234,18 @@ ceph.osd.pool_name=$(incus storage get "${poolName}" ceph.osd.pool_name)
 ceph.user.name=$(incus storage get "${poolName}" ceph.user.name)
 "
             ;;
+        linstor)
+            poolExtraConfig="linstor.resource_group.place_count=$(incus storage get "${poolName}" linstor.resource_group.place_count)
+linstor.volume.prefix=$(incus storage get "${poolName}" linstor.volume.prefix)
+linstor.resource_group.name=$(incus storage get "${poolName}" linstor.resource_group.name)
+"
+            ;;
+        truenas)
+            poolExtraConfig="$(truenas_config)
+$(truenas_allow_insecure)
+$(truenas_api_key)
+"
+            ;;
         esac
 
         incus admin sql global "PRAGMA foreign_keys=ON; DELETE FROM instances WHERE name='c1'"
@@ -280,11 +292,6 @@ EOF
 }
 
 test_bucket_recover() {
-    if ! command -v "minio" > /dev/null 2>&1; then
-        echo "==> SKIP: Skip bucket recovery test due to missing minio"
-        return
-    fi
-
     (
         set -e
 
@@ -292,21 +299,13 @@ test_bucket_recover() {
         poolDriver=$(incus storage show "${poolName}" | awk '/^driver:/ {print $2}')
         bucketName="bucket123"
 
-        # Skip ceph driver - ceph does not support storage buckets
-        if [ "${poolDriver}" = "ceph" ]; then
+        # Skip ceph, linstor and truenas drivers, as they do not support storage buckets
+        if [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "linstor" ] || [ "${poolDriver}" = "truenas" ]; then
             return 0
         fi
 
         # Create storage bucket
         incus storage bucket create "${poolName}" "${bucketName}"
-
-        # Create storage bucket keys
-        key1=$(incus storage bucket key create "${poolName}" "${bucketName}" key1 --role admin)
-        key2=$(incus storage bucket key create "${poolName}" "${bucketName}" key2 --role read-only)
-        key1_accessKey=$(echo "$key1" | awk '/^Access key/ { print $3 }')
-        key1_secretKey=$(echo "$key1" | awk '/^Secret key/ { print $3 }')
-        key2_accessKey=$(echo "$key2" | awk '/^Access key/ { print $3 }')
-        key2_secretKey=$(echo "$key2" | awk '/^Secret key/ { print $3 }')
 
         # Remove bucket from global DB
         incus admin sql global "delete from storage_buckets where name = '${bucketName}'"
@@ -320,18 +319,6 @@ EOF
 
         # Verify bucket is recovered
         incus storage bucket ls "${poolName}" --format compact | grep "${bucketName}"
-
-        # Verify bucket key with role admin is recovered
-        recoveredKey1=$(incus storage bucket key show "${poolName}" "${bucketName}" "${key1_accessKey}")
-        echo "${recoveredKey1}" | grep "role: admin"
-        echo "${recoveredKey1}" | grep "access-key: ${key1_accessKey}"
-        echo "${recoveredKey1}" | grep "secret-key: ${key1_secretKey}"
-
-        # Verify bucket key with role read-only is recovered
-        recoveredKey2=$(incus storage bucket key show "${poolName}" "${bucketName}" "${key2_accessKey}")
-        echo "${recoveredKey2}" | grep "role: read-only"
-        echo "${recoveredKey2}" | grep "access-key: ${key2_accessKey}"
-        echo "${recoveredKey2}" | grep "secret-key: ${key2_secretKey}"
     )
 }
 
@@ -507,6 +494,11 @@ test_backup_import_with_project() {
     incus import "${INCUS_DIR}/c3.tar.gz" -s pool_2
 
     incus rm -f c3
+
+    # Import from stdin
+    incus import - -s pool_2 < "${INCUS_DIR}/c3.tar.gz"
+    incus rm -f c3
+
     rm "${INCUS_DIR}/c3.tar.gz"
 
     # Reset default storage pool
@@ -606,6 +598,9 @@ test_backup_export_with_project() {
 
     incus export c1-foo "${INCUS_DIR}/c1-foo.tar.gz"
 
+    # Export to stdout
+    incus export c1-foo - > /dev/null
+
     incus delete --force c1-foo
     rm "${INCUS_DIR}/c1-foo.tar.gz"
 
@@ -702,7 +697,7 @@ test_backup_volume_export_with_project() {
     incus storage volume create "${custom_vol_pool}" testvol
 
     # Attach storage volume to the test container and start.
-    incus storage volume attach "${custom_vol_pool}" testvol c1 /mnt
+    incus storage volume attach "${custom_vol_pool}" testvol c1 testvol /mnt
     incus start c1
 
     # Create file on the custom volume.
@@ -793,13 +788,13 @@ test_backup_volume_export_with_project() {
     incus storage volume import "${custom_vol_pool}" "${INCUS_DIR}/testvol.tar.gz"
     incus storage volume ls "${custom_vol_pool}"
     incus storage volume get "${custom_vol_pool}" testvol user.foo | grep -Fx "post-test-snap1"
-    incus storage volume snapshot show "${custom_vol_pool}" testvol/test-snap0
+    incus storage volume snapshot show "${custom_vol_pool}" testvol test-snap0
     incus storage volume get "${custom_vol_pool}" testvol/test-snap0 user.foo | grep -Fx "test-snap0"
     incus storage volume get "${custom_vol_pool}" testvol/test-snap1 user.foo | grep -Fx "test-snap1"
 
     incus storage volume import "${custom_vol_pool}" "${INCUS_DIR}/testvol.tar.gz" testvol2
-    incus storage volume attach "${custom_vol_pool}" testvol c1 /mnt
-    incus storage volume attach "${custom_vol_pool}" testvol2 c1 /mnt2
+    incus storage volume attach "${custom_vol_pool}" testvol c1 testvol /mnt
+    incus storage volume attach "${custom_vol_pool}" testvol2 c1 testvol2 /mnt2
     incus start c1
     incus exec c1 --project "$project" -- stat /mnt/test
     incus exec c1 --project "$project" -- stat /mnt2/test
@@ -826,8 +821,8 @@ test_backup_volume_export_with_project() {
         incus storage volume get "${custom_vol_pool}" testvol/test-snap1 user.foo | grep -Fx "test-snap1"
 
         incus storage volume import "${custom_vol_pool}" "${INCUS_DIR}/testvol-optimized.tar.gz" testvol2
-        incus storage volume attach "${custom_vol_pool}" testvol c1 /mnt
-        incus storage volume attach "${custom_vol_pool}" testvol2 c1 /mnt2
+        incus storage volume attach "${custom_vol_pool}" testvol c1 testvol /mnt
+        incus storage volume attach "${custom_vol_pool}" testvol2 c1 testvol2 /mnt2
         incus start c1
         incus exec c1 --project "$project" -- stat /mnt/test
         incus exec c1 --project "$project" -- stat /mnt2/test
@@ -844,10 +839,15 @@ test_backup_volume_export_with_project() {
         rm "${INCUS_DIR}/testvol-optimized.tar.gz"
     fi
 
+    # Export to stdout / import from stdin
+    incus storage volume detach "${custom_vol_pool}" testvol2 c1
+    incus storage volume rm "${custom_vol_pool}" testvol2
+    incus storage volume import "${custom_vol_pool}" - testvol2 < "${INCUS_DIR}/testvol.tar.gz"
+    incus storage volume export "${custom_vol_pool}" testvol2 - > /dev/null
+
     # Clean up.
     rm -rf "${INCUS_DIR}/non-optimized/"* "${INCUS_DIR}/optimized/"*
     incus storage volume detach "${custom_vol_pool}" testvol c1
-    incus storage volume detach "${custom_vol_pool}" testvol2 c1
     incus storage volume rm "${custom_vol_pool}" testvol
     incus storage volume rm "${custom_vol_pool}" testvol2
     incus rm -f c1

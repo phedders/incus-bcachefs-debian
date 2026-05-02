@@ -23,32 +23,33 @@ import (
 	ovsClient "github.com/ovn-kubernetes/libovsdb/client"
 	ovsdbModel "github.com/ovn-kubernetes/libovsdb/model"
 
-	incus "github.com/lxc/incus/v6/client"
-	"github.com/lxc/incus/v6/internal/iprange"
-	"github.com/lxc/incus/v6/internal/server/cluster"
-	"github.com/lxc/incus/v6/internal/server/cluster/request"
-	"github.com/lxc/incus/v6/internal/server/db"
-	dbCluster "github.com/lxc/incus/v6/internal/server/db/cluster"
-	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
-	"github.com/lxc/incus/v6/internal/server/dnsmasq/dhcpalloc"
-	"github.com/lxc/incus/v6/internal/server/instance"
-	"github.com/lxc/incus/v6/internal/server/ip"
-	"github.com/lxc/incus/v6/internal/server/locking"
-	"github.com/lxc/incus/v6/internal/server/network/acl"
-	networkOVN "github.com/lxc/incus/v6/internal/server/network/ovn"
-	ovnNB "github.com/lxc/incus/v6/internal/server/network/ovn/schema/ovn-nb"
-	ovnSB "github.com/lxc/incus/v6/internal/server/network/ovn/schema/ovn-sb"
-	"github.com/lxc/incus/v6/internal/server/network/ovs"
-	"github.com/lxc/incus/v6/internal/server/project"
-	"github.com/lxc/incus/v6/internal/server/state"
-	localUtil "github.com/lxc/incus/v6/internal/server/util"
-	internalUtil "github.com/lxc/incus/v6/internal/util"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/units"
-	"github.com/lxc/incus/v6/shared/util"
-	"github.com/lxc/incus/v6/shared/validate"
+	incus "github.com/lxc/incus/v7/client"
+	"github.com/lxc/incus/v7/internal/iprange"
+	"github.com/lxc/incus/v7/internal/server/cluster"
+	"github.com/lxc/incus/v7/internal/server/cluster/request"
+	"github.com/lxc/incus/v7/internal/server/db"
+	dbCluster "github.com/lxc/incus/v7/internal/server/db/cluster"
+	deviceConfig "github.com/lxc/incus/v7/internal/server/device/config"
+	"github.com/lxc/incus/v7/internal/server/dnsmasq/dhcpalloc"
+	"github.com/lxc/incus/v7/internal/server/instance"
+	"github.com/lxc/incus/v7/internal/server/ip"
+	"github.com/lxc/incus/v7/internal/server/locking"
+	"github.com/lxc/incus/v7/internal/server/network/acl"
+	addressset "github.com/lxc/incus/v7/internal/server/network/address-set"
+	networkOVN "github.com/lxc/incus/v7/internal/server/network/ovn"
+	ovnNB "github.com/lxc/incus/v7/internal/server/network/ovn/schema/ovn-nb"
+	ovnSB "github.com/lxc/incus/v7/internal/server/network/ovn/schema/ovn-sb"
+	"github.com/lxc/incus/v7/internal/server/network/ovs"
+	"github.com/lxc/incus/v7/internal/server/project"
+	"github.com/lxc/incus/v7/internal/server/state"
+	localUtil "github.com/lxc/incus/v7/internal/server/util"
+	internalUtil "github.com/lxc/incus/v7/internal/util"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/units"
+	"github.com/lxc/incus/v7/shared/util"
+	"github.com/lxc/incus/v7/shared/validate"
 )
 
 const (
@@ -405,6 +406,64 @@ func (n *ovn) getExternalSubnetInUse(uplinkNetworkName string) ([]externalSubnet
 	return externalSubnets, nil
 }
 
+// validateUplinkAddressNotInUse checks for conflicting externAddresses in other networks/forwards/loadbalancers.
+func (n *ovn) validateUplinkAddressNotInUse(uplinkNetworkName string, ipAddress net.IP) error {
+	if ipAddress == nil {
+		return nil
+	}
+
+	return n.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+		projectNetworks, err := tx.GetCreatedNetworks(ctx)
+		if err != nil {
+			return fmt.Errorf("Failed to load all networks: %w", err)
+		}
+
+		for projectName, networks := range projectNetworks {
+			for _, netInfo := range networks {
+				if netInfo.Type != "ovn" || netInfo.Config["network"] != uplinkNetworkName {
+					continue
+				}
+
+				// Skip our own network so updates that keep the same IP don't conflict with themselves.
+				if projectName == n.project && netInfo.Name == n.name {
+					continue
+				}
+
+				for _, k := range []string{ovnVolatileUplinkIPv4, ovnVolatileUplinkIPv6} {
+					otherIP := net.ParseIP(netInfo.Config[k])
+					if otherIP != nil && otherIP.Equal(ipAddress) {
+						// Vague error to avoid leaking resources from other projects.
+						return fmt.Errorf("Uplink address %q is already in use by another OVN network", ipAddress.String())
+					}
+				}
+			}
+		}
+
+		// Check forward and load balancer listen addresses across networks connected to our uplink.
+		externalSubnetsInUse, err := n.common.getExternalSubnetInUse(ctx, tx, uplinkNetworkName, false)
+		if err != nil {
+			return fmt.Errorf("Failed getting external subnets in use: %w", err)
+		}
+
+		for _, externalSubnetUser := range externalSubnetsInUse {
+			if externalSubnetUser.usageType != subnetUsageNetworkForward && externalSubnetUser.usageType != subnetUsageNetworkLoadBalancer {
+				continue
+			}
+
+			if SubnetContainsIP(&externalSubnetUser.subnet, ipAddress) {
+				kind := "network forward"
+				if externalSubnetUser.usageType == subnetUsageNetworkLoadBalancer {
+					kind = "network load balancer"
+				}
+
+				return fmt.Errorf("Uplink address %q is already in use by a %s", ipAddress.String(), kind)
+			}
+		}
+
+		return nil
+	})
+}
+
 // Validate network config.
 func (n *ovn) Validate(config map[string]string, clientType request.ClientType) error {
 	rules := map[string]func(value string) error{
@@ -460,6 +519,21 @@ func (n *ovn) Validate(config map[string]string, clientType request.ClientType) 
 		//  condition: IPv4 address
 		//  default: `true`
 		"ipv4.dhcp": validate.Optional(validate.IsBool),
+
+		// gendoc:generate(entity=network_ovn, group=common, key=ipv4.dhcp.gateway)
+		//
+		// ---
+		//  type: string
+		//  condition: IPv4 DHCP
+		//  default: IPv4 address
+		//  shortdesc: Address of the gateway for the subnet (use `none` to turn off gateway announcement)
+		"ipv4.dhcp.gateway": validate.Optional(func(value string) error {
+			if value == "none" {
+				return nil
+			}
+
+			return validate.IsNetworkAddressV4(value)
+		}),
 
 		// gendoc:generate(entity=network_ovn, group=common, key=ipv4.dhcp.expiry)
 		//
@@ -895,6 +969,31 @@ func (n *ovn) Validate(config map[string]string, clientType request.ClientType) 
 		return nil
 	}
 
+	// If a caller has explicitly pinned the OVN router's external uplink IP via the volatile keys,
+	// make sure the chosen address isn't already used elsewhere on the same uplink. Without this
+	// check two networks (or a network and a forward/load balancer) can end up sharing the same
+	// external IP, which silently breaks routing.
+	for _, key := range []string{ovnVolatileUplinkIPv4, ovnVolatileUplinkIPv6} {
+		if config[key] == "" {
+			continue
+		}
+
+		// Skip if unchanged and already created
+		if config[key] == n.config[key] && n.status == api.NetworkStatusCreated {
+			continue
+		}
+
+		ipAddress := net.ParseIP(config[key])
+		if ipAddress == nil {
+			continue
+		}
+
+		err = n.validateUplinkAddressNotInUse(uplink.Name, ipAddress)
+		if err != nil {
+			return err
+		}
+	}
+
 	// If NAT disabled, parse the external subnets that are being requested.
 	var externalSubnets []*net.IPNet // Subnets to check for conflicts with other networks/NICs.
 	for _, keyPrefix := range []string{"ipv4", "ipv6"} {
@@ -1306,6 +1405,26 @@ func (n *ovn) getDomainName() string {
 	}
 
 	return "incus"
+}
+
+// getGateway returns OVN DHCP domain name.
+func (n *ovn) getGatewayIpv4() (net.IP, error) {
+	addr := n.config["ipv4.dhcp.gateway"]
+
+	if addr == "none" {
+		return nil, nil
+	}
+
+	if addr != "" {
+		return net.ParseIP(addr), nil
+	}
+
+	routerIntPortIPv4, _, err := n.parseRouterIntPortIPv4Net()
+	if err != nil {
+		return nil, err
+	}
+
+	return routerIntPortIPv4, nil
 }
 
 // getDNSSearchList returns OVN DHCP DNS search list. If no search list set returns getDomainName() as list.
@@ -2763,16 +2882,25 @@ func (n *ovn) setup(update bool) error {
 		deleteRoutes := []net.IPNet{defaultIPv4Route, defaultIPv6Route}
 		defaultRoutes := make([]networkOVN.OVNRouterRoute, 0, 2)
 
+		currentRoutes, err := n.ovnnb.GetLogicalRouterRoutes(context.TODO(), n.getRouterName())
+		if err != nil {
+			return fmt.Errorf("Failed to retrieve currently set routes on network %s", n.name)
+		}
+
 		if routerIntPortIPv4Net != nil {
 			// If l3only mode is enabled then each instance IPv4 will get its own /32 route added when
 			// the instance NIC starts. However to stop packets toward unknown IPs within the internal
 			// subnet escaping onto the uplink network we add a less specific discard route for the
 			// whole internal subnet.
 			if util.IsTrue(n.config["ipv4.l3only"]) {
-				defaultRoutes = append(defaultRoutes, networkOVN.OVNRouterRoute{
+				route := networkOVN.OVNRouterRoute{
 					Prefix:  *routerIntPortIPv4Net,
 					Discard: true,
-				})
+				}
+
+				if !ovnRouteExists(currentRoutes, route) {
+					defaultRoutes = append(defaultRoutes, route)
+				}
 			} else {
 				deleteRoutes = append(deleteRoutes, *routerIntPortIPv4Net)
 			}
@@ -2784,10 +2912,14 @@ func (n *ovn) setup(update bool) error {
 			// subnet escaping onto the uplink network we add a less specific discard route for the
 			// whole internal subnet.
 			if util.IsTrue(n.config["ipv6.l3only"]) {
-				defaultRoutes = append(defaultRoutes, networkOVN.OVNRouterRoute{
+				route := networkOVN.OVNRouterRoute{
 					Prefix:  *routerIntPortIPv6Net,
 					Discard: true,
-				})
+				}
+
+				if !ovnRouteExists(currentRoutes, route) {
+					defaultRoutes = append(defaultRoutes, route)
+				}
 			} else {
 				deleteRoutes = append(deleteRoutes, *routerIntPortIPv6Net)
 			}
@@ -3104,10 +3236,15 @@ func (n *ovn) setup(update bool) error {
 			leaseTime = duration
 		}
 
+		dhcpV4Gateway, err := n.getGatewayIpv4()
+		if err != nil {
+			return fmt.Errorf("Failed parsing router's internal port IPv4 Net: %w", err)
+		}
+
 		opts := &networkOVN.OVNDHCPv4Opts{
 			ServerID:           routerIntPortIPv4,
 			ServerMAC:          routerMAC,
-			Router:             routerIntPortIPv4,
+			Router:             dhcpV4Gateway,
 			DomainName:         n.getDomainName(),
 			LeaseTime:          leaseTime,
 			MTU:                bridgeMTU,
@@ -3275,7 +3412,14 @@ func (n *ovn) setup(update bool) error {
 			n.Name(): {Name: n.Name(), Type: n.Type(), ID: n.ID(), Config: n.Config()},
 		}
 
-		cleanup, err := acl.OVNEnsureACLs(n.state, n.logger, n.ovnnb, n.Project(), aclNameIDs, aclNets, securityACLS, false)
+		cleanup, err := addressset.OVNEnsureAddressSetsViaACLs(n.state, n.logger, n.ovnnb, n.Project(), securityACLS)
+		if err != nil {
+			return fmt.Errorf("Failed ensuring address sets for added ACLs are configured in OVN for network: %w", err)
+		}
+
+		reverter.Add(cleanup)
+
+		cleanup, err = acl.OVNEnsureACLs(n.state, n.logger, n.ovnnb, n.Project(), aclNameIDs, aclNets, securityACLS, false)
 		if err != nil {
 			return fmt.Errorf("Failed ensuring security ACLs are configured in OVN for network: %w", err)
 		}
@@ -3518,6 +3662,15 @@ func (n *ovn) Delete(clientType request.ClientType) error {
 		err = n.ovnnb.DeleteAddressSet(context.TODO(), acl.OVNIntSwitchPortGroupAddressSetPrefix(n.ID()))
 		if err != nil && !errors.Is(err, networkOVN.ErrNotFound) {
 			return err
+		}
+
+		// Delete address sets used in ACLs.
+		securityACLS := util.SplitNTrimSpace(n.config["security.acls"], ",", -1, true)
+
+		// Load address sets referenced by ACLs.
+		err = addressset.OVNDeleteAddressSetsViaACLs(n.state, n.logger, n.ovnnb, n.Project(), securityACLS)
+		if err != nil {
+			return fmt.Errorf("Failed deleting address sets for security ACLs in OVN for network: %w", err)
 		}
 
 		// Delete the chassis group for the network.
@@ -4055,6 +4208,23 @@ func (n *ovn) Update(newNetwork api.NetworkPut, targetNode string, clientType re
 
 			// Apply security ACL and default rule changes.
 			if aclConfigChanged {
+				// Update relevant address sets and Remove from removedACL.
+				if len(addedACLs) > 0 {
+					cleanup, err := addressset.OVNEnsureAddressSetsViaACLs(n.state, n.logger, n.ovnnb, n.Project(), addedACLs)
+					if err != nil {
+						return fmt.Errorf("Failed ensuring address sets for added ACLs are configured in OVN for network: %w", err)
+					}
+
+					reverter.Add(cleanup)
+				}
+
+				if len(removedACLs) > 0 {
+					err = addressset.OVNDeleteAddressSetsViaACLs(n.state, n.logger, n.ovnnb, n.Project(), removedACLs)
+					if err != nil {
+						return fmt.Errorf("Failed to delete address set for removed ACLs are configured in OVN for network: %w", err)
+					}
+				}
+
 				ingressAction, ingressLogged := n.instanceDeviceACLDefaults(nicConfig, "ingress")
 				egressAction, egressLogged := n.instanceDeviceACLDefaults(nicConfig, "egress")
 
@@ -4269,6 +4439,12 @@ func (n *ovn) Update(newNetwork api.NetworkPut, targetNode string, clientType re
 		if err != nil {
 			return err
 		}
+	}
+
+	// Delete any address set that is unused
+	err = addressset.OVNAddressSetsDeleteIfUnused(n.state, n.logger, n.ovnnb, n.Project())
+	if err != nil {
+		return fmt.Errorf("Failed removing unused OVN address sets: %w", err)
 	}
 
 	reverter.Success()
@@ -4989,7 +5165,13 @@ func (n *ovn) InstanceDevicePortStart(opts *OVNInstanceNICSetupOpts, securityACL
 				n.Name(): {Name: n.Name(), Type: n.Type(), ID: n.ID(), Config: n.Config()},
 			}
 
-			cleanup, err := acl.OVNEnsureACLs(n.state, n.logger, n.ovnnb, n.Project(), aclNameIDs, aclNets, nicACLNames, false)
+			cleanup, err := addressset.OVNEnsureAddressSetsViaACLs(n.state, n.logger, n.ovnnb, n.Project(), nicACLNames)
+			if err != nil {
+				return "", nil, fmt.Errorf("Failed ensuring address sets for nic ACLs are configured in OVN for network: %w", err)
+			}
+
+			reverter.Add(cleanup)
+			cleanup, err = acl.OVNEnsureACLs(n.state, n.logger, n.ovnnb, n.Project(), aclNameIDs, aclNets, nicACLNames, false)
 			if err != nil {
 				return "", nil, fmt.Errorf("Failed ensuring security ACLs are configured in OVN for instance: %w", err)
 			}
@@ -5069,6 +5251,11 @@ func (n *ovn) InstanceDevicePortStart(opts *OVNInstanceNICSetupOpts, securityACL
 		err = n.ovnnb.ClearPortGroupPortACLRules(context.TODO(), acl.OVNIntSwitchPortGroupName(n.ID()), instancePortName)
 		if err != nil {
 			return "", nil, fmt.Errorf("Failed clearing OVN default ACL rules for instance NIC: %w", err)
+		}
+
+		err := addressset.OVNAddressSetsDeleteIfUnused(n.state, n.logger, n.ovnnb, n.Project())
+		if err != nil {
+			return "", nil, fmt.Errorf("Failed removing unused OVN address sets: %w", err)
 		}
 
 		n.logger.Debug("Cleared NIC default rule", logger.Ctx{"port": instancePortName})
@@ -5231,6 +5418,30 @@ func (n *ovn) InstanceDevicePortStop(ovsExternalOVNPort networkOVN.OVNSwitchPort
 	dnsUUID, _, dnsIPs, err := n.ovnnb.GetLogicalSwitchPortDNS(context.TODO(), instancePortName)
 	if err != nil {
 		return err
+	}
+
+	portUUID, err := n.ovnnb.GetLogicalSwitchPortUUID(context.TODO(), instancePortName)
+	if err != nil {
+		return fmt.Errorf("Failed getting logical port UUID for port group removal: %w", err)
+	}
+
+	if portUUID != "" {
+		portGroups, err := n.ovnnb.GetPortGroupsByPort(context.TODO(), portUUID)
+		if err != nil {
+			return fmt.Errorf("Failed getting port groups for instance NIC port: %w", err)
+		}
+
+		if len(portGroups) > 0 {
+			removeChangeSet := map[networkOVN.OVNPortGroup][]networkOVN.OVNSwitchPortUUID{}
+			for _, pg := range portGroups {
+				acl.OVNPortGroupInstanceNICSchedule(portUUID, removeChangeSet, pg)
+			}
+
+			err = n.ovnnb.UpdatePortGroupMembers(context.TODO(), map[networkOVN.OVNPortGroup][]networkOVN.OVNSwitchPortUUID{}, removeChangeSet)
+			if err != nil {
+				return fmt.Errorf("Failed removing instance NIC port from port groups: %w", err)
+			}
+		}
 	}
 
 	// Cleanup logical switch port and associated config.
@@ -5918,6 +6129,31 @@ func (n *ovn) ForwardCreate(forward api.NetworkForwardsPost, clientType request.
 			return fmt.Errorf("Failed applying OVN load balancer: %w", err)
 		}
 
+		// Add internal static route to the network forward (helps with OVN IC).
+		var nexthop net.IP
+		if listenAddressNet.IP.To4() == nil {
+			routerV6, _, err := n.parseRouterIntPortIPv6Net()
+			if err == nil {
+				nexthop = routerV6
+			}
+		} else {
+			routerV4, _, err := n.parseRouterIntPortIPv4Net()
+			if err == nil {
+				nexthop = routerV4
+			}
+		}
+
+		if nexthop != nil {
+			err = n.ovnnb.CreateLogicalRouterRoute(context.TODO(), n.getRouterName(), true, networkOVN.OVNRouterRoute{NextHop: nexthop, Prefix: *listenAddressNet})
+			if err != nil {
+				return err
+			}
+
+			reverter.Add(func() {
+				_ = n.ovnnb.DeleteLogicalRouterRoute(context.TODO(), n.getRouterName(), *listenAddressNet)
+			})
+		}
+
 		// Notify all other members to refresh their BGP prefixes.
 		notifier, err := cluster.NewNotifier(n.state, n.state.Endpoints.NetworkCert(), n.state.ServerCert(), cluster.NotifyAll)
 		if err != nil {
@@ -6345,6 +6581,31 @@ func (n *ovn) LoadBalancerCreate(loadBalancer api.NetworkLoadBalancersPost, clie
 		err = n.ovnnb.CreateLoadBalancer(context.TODO(), n.getLoadBalancerName(loadBalancer.ListenAddress), n.getRouterName(), n.getIntSwitchName(), vips...)
 		if err != nil {
 			return fmt.Errorf("Failed applying OVN load balancer: %w", err)
+		}
+
+		// Add internal static route to the load-balancer (helps with OVN IC).
+		var nexthop net.IP
+		if listenAddressNet.IP.To4() == nil {
+			routerV6, _, err := n.parseRouterIntPortIPv6Net()
+			if err == nil {
+				nexthop = routerV6
+			}
+		} else {
+			routerV4, _, err := n.parseRouterIntPortIPv4Net()
+			if err == nil {
+				nexthop = routerV4
+			}
+		}
+
+		if nexthop != nil {
+			err = n.ovnnb.CreateLogicalRouterRoute(context.TODO(), n.getRouterName(), true, networkOVN.OVNRouterRoute{NextHop: nexthop, Prefix: *listenAddressNet})
+			if err != nil {
+				return err
+			}
+
+			reverter.Add(func() {
+				_ = n.ovnnb.DeleteLogicalRouterRoute(context.TODO(), n.getRouterName(), *listenAddressNet)
+			})
 		}
 
 		// Notify all other members to refresh their BGP prefixes.

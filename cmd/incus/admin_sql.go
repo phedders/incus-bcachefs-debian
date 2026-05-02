@@ -1,21 +1,18 @@
-//go:build linux
-
 package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"slices"
 
 	"github.com/spf13/cobra"
 
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	internalSQL "github.com/lxc/incus/v6/internal/sql"
-	cli "github.com/lxc/incus/v6/shared/cmd"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	internalSQL "github.com/lxc/incus/v7/internal/sql"
+	cli "github.com/lxc/incus/v7/shared/cmd"
 )
 
 type cmdAdminSQL struct {
@@ -24,12 +21,13 @@ type cmdAdminSQL struct {
 	flagFormat string
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdAdminSQL) Command() *cobra.Command {
+var cmdAdminSQLUsage = u.Usage{u.EitherVerbatim("local", "global").Remote(), u.Query}
+
+func (c *cmdAdminSQL) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("sql", u.EitherVerbatim("local", "global").Remote(), u.Query)
+	cmd.Use = cli.U("sql", cmdAdminSQLUsage...)
 	cmd.Short = i18n.G("Execute a SQL query against the local or global database")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(`Execute a SQL query against the local or global database
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Execute a SQL query against the local or global database
 
   The local database is specific to the cluster member you target the
   command to, and contains member-specific data (such as the member network
@@ -38,8 +36,7 @@ func (c *cmdAdminSQL) Command() *cobra.Command {
   The global database is common to all members in the cluster, and contains
   cluster-specific data (such as profiles, containers, etc).
 
-  If you are running a non-clustered server, the same applies, as that
-  instance is effectively a single-member cluster.
+  Non-clustered servers still have both local and global databases.
 
   If <query> is the special value "-", then the query is read from
   standard input.
@@ -56,8 +53,8 @@ func (c *cmdAdminSQL) Command() *cobra.Command {
   This internal command is mostly useful for debugging and disaster
   recovery. The development team will occasionally provide hotfixes to users as a
   set of database queries to fix some data inconsistency.`))
-	cmd.RunE = c.Run
-	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", c.global.defaultListFormat(), i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`)+"``")
+	cmd.RunE = c.run
+	cli.AddStringFlag(cmd.Flags(), &c.flagFormat, "format|f", c.global.defaultListFormat(), "", i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`))
 
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		return cli.ValidateFlagFormatForListOutput(cmd.Flag("format").Value.String())
@@ -66,33 +63,16 @@ func (c *cmdAdminSQL) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdAdminSQL) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
-		return err
-	}
-
-	// Parse remote.
-	remote := ""
-	if len(args) > 0 {
-		remote = args[0]
-	}
-
-	remoteName, database, err := c.global.conf.ParseRemote(remote)
+func (c *cmdAdminSQL) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdAdminSQLUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	// Parse request.
-	if !slices.Contains([]string{"local", "global"}, database) {
-		_ = cmd.Help()
+	d := parsed[0].RemoteServer
+	database := parsed[0].RemoteObject.String
+	query := parsed[1].String
 
-		return errors.New(i18n.G("Invalid database type"))
-	}
-
-	query := args[1]
 	if query == "-" {
 		// Read from stdin
 		bytes, err := io.ReadAll(os.Stdin)
@@ -101,12 +81,6 @@ func (c *cmdAdminSQL) Run(cmd *cobra.Command, args []string) error {
 		}
 
 		query = string(bytes)
-	}
-
-	// Connect to daemon
-	d, err := c.global.conf.GetInstanceServer(remoteName)
-	if err != nil {
-		return err
 	}
 
 	if query == ".dump" || query == ".schema" || query == ".tables" {

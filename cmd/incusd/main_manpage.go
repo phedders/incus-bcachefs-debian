@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 
-	cli "github.com/lxc/incus/v6/shared/cmd"
+	cli "github.com/lxc/incus/v7/shared/cmd"
 )
 
 type cmdManpage struct {
@@ -17,7 +17,7 @@ func (c *cmdManpage) command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Use = "manpage <target>"
 	cmd.Short = "Generate manpages for all commands"
-	cmd.Long = cli.FormatSection("Description",
+	cmd.Long = cli.FormatSection("Description:",
 		`Generate manpages for all commands`)
 	cmd.Hidden = true
 

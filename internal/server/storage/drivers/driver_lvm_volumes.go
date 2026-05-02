@@ -14,18 +14,18 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/lxc/incus/v6/internal/instancewriter"
-	"github.com/lxc/incus/v6/internal/linux"
-	"github.com/lxc/incus/v6/internal/rsync"
-	"github.com/lxc/incus/v6/internal/server/backup"
-	"github.com/lxc/incus/v6/internal/server/migration"
-	"github.com/lxc/incus/v6/internal/server/operations"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/subprocess"
-	"github.com/lxc/incus/v6/shared/util"
-	"github.com/lxc/incus/v6/shared/validate"
+	"github.com/lxc/incus/v7/internal/instancewriter"
+	"github.com/lxc/incus/v7/internal/linux"
+	"github.com/lxc/incus/v7/internal/rsync"
+	"github.com/lxc/incus/v7/internal/server/backup"
+	"github.com/lxc/incus/v7/internal/server/migration"
+	"github.com/lxc/incus/v7/internal/server/operations"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/subprocess"
+	"github.com/lxc/incus/v7/shared/util"
+	"github.com/lxc/incus/v7/shared/validate"
 )
 
 // CreateVolume creates an empty volume and can optionally fill it by executing the supplied filler function.
@@ -159,8 +159,8 @@ func (d *lvm) CreateVolume(vol Volume, filler *VolumeFiller, op *operations.Oper
 }
 
 // CreateVolumeFromBackup restores a backup tarball onto the storage device.
-func (d *lvm) CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcData io.ReadSeeker, op *operations.Operation) (VolumePostHook, revert.Hook, error) {
-	return genericVFSBackupUnpack(d, d.state.OS, vol, srcBackup.Snapshots, srcData, op)
+func (d *lvm) CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcData io.ReadSeeker, basePrefix string, op *operations.Operation) (VolumePostHook, revert.Hook, error) {
+	return genericVFSBackupUnpack(d, d.state.OS, vol, srcBackup.Snapshots, srcData, basePrefix, op)
 }
 
 // CreateVolumeFromCopy provides same-pool volume copying functionality.
@@ -543,6 +543,10 @@ func (d *lvm) ValidateVolume(vol Volume, removeUnknownKeys bool) error {
 		return errors.New("lvm.stripes.size cannot be used with thin pool volumes")
 	}
 
+	if vol.config["block.type"] == BlockVolumeTypeQcow2 && util.IsTrue(vol.config["security.shared"]) {
+		return errors.New("QCOW2 volume type is incompatible with the 'security.shared' option.")
+	}
+
 	return nil
 }
 
@@ -571,7 +575,7 @@ func (d *lvm) UpdateVolume(vol Volume, changedConfig map[string]string) error {
 		return errors.New("block.type cannot be changed after creation")
 	}
 
-	return nil
+	return d.updateVolume(vol, changedConfig)
 }
 
 // GetVolumeUsage returns the disk space used by the volume (this is not currently supported).
@@ -1220,7 +1224,7 @@ func (d *lvm) MigrateVolume(vol Volume, conn io.ReadWriteCloser, volSrcArgs *mig
 			}
 
 			if volDevPath != "" {
-				if vol.Type() == VolumeTypeVM || vol.ContentType() == ContentTypeBlock {
+				if vol.Type() == VolumeTypeVM || vol.ContentType() == ContentTypeBlock || vol.ContentType() == ContentTypeISO {
 					_, err := subprocess.RunCommand("lvchange", "--activate", "sy", "--ignoreactivationskip", volPath)
 					if err != nil {
 						return err
@@ -1260,8 +1264,8 @@ func (d *lvm) MigrateVolume(vol Volume, conn io.ReadWriteCloser, volSrcArgs *mig
 
 // BackupVolume copies a volume (and optionally its snapshots) to a specified target path.
 // This driver does not support optimized backups.
-func (d *lvm) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, _ bool, snapshots []string, op *operations.Operation) error {
-	return genericVFSBackupVolume(d, vol, writer, snapshots, op)
+func (d *lvm) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, basePrefix string, _ bool, snapshots []string, op *operations.Operation) error {
+	return genericVFSBackupVolume(d, vol, writer, basePrefix, snapshots, op)
 }
 
 // CreateVolumeSnapshot creates a snapshot of a volume.
@@ -1330,7 +1334,7 @@ func (d *lvm) CreateVolumeSnapshot(snapVol Volume, op *operations.Operation) err
 	}
 
 	// Create the parent directory.
-	err := createParentSnapshotDirIfMissing(d.name, snapVol.volType, parentName)
+	err := CreateParentSnapshotDirIfMissing(d.name, snapVol.volType, parentName)
 	if err != nil {
 		return err
 	}
@@ -1913,12 +1917,19 @@ func (d *lvm) Qcow2DeletionCleanup(snapVol Volume, childName string) error {
 		return err
 	}
 
-	_ = d.removeLogicalVolume(childVolPath)
+	defer func() {
+		// Deactivate volume if was not active before operation.
+		if activated {
+			_, _ = d.deactivateVolume(childVol)
+		}
+	}()
 
 	_, err = d.acquireExclusive(snapVol)
 	if err != nil {
 		return err
 	}
+
+	_ = d.removeLogicalVolume(childVolPath)
 
 	err = d.renameLogicalVolume(snapVolPath, childVolPath)
 	if err != nil {
@@ -1931,11 +1942,6 @@ func (d *lvm) Qcow2DeletionCleanup(snapVol Volume, childName string) error {
 	}
 
 	releaseParent()
-
-	// Deactivate volume if was not active before operation.
-	if activated {
-		_, _ = d.deactivateVolume(childVol)
-	}
 
 	return nil
 }

@@ -13,10 +13,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/shared/api"
-	cli "github.com/lxc/incus/v6/shared/cmd"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
 )
 
 type cmdQuery struct {
@@ -28,23 +29,24 @@ type cmdQuery struct {
 	flagData     string
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdQuery) Command() *cobra.Command {
+var cmdQueryUsage = u.Usage{u.Placeholder(i18n.G("API path")).Remote()}
+
+func (c *cmdQuery) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("query", u.Placeholder(i18n.G("API path")).Remote())
+	cmd.Use = cli.U("query", cmdQueryUsage...)
 	cmd.Short = i18n.G("Send a raw query to the server")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Send a raw query to the server`))
 	cmd.Example = cli.FormatSection("", i18n.G(
 		`incus query -X DELETE --wait /1.0/instances/c1
     Delete local instance "c1".`))
 	cmd.Hidden = true
 
-	cmd.RunE = c.Run
-	cmd.Flags().BoolVar(&c.flagRespWait, "wait", false, i18n.G("Wait for the operation to complete"))
-	cmd.Flags().BoolVar(&c.flagRespRaw, "raw", false, i18n.G("Print the raw response"))
-	cmd.Flags().StringVarP(&c.flagAction, "request", "X", "GET", i18n.G("Action (defaults to GET)")+"``")
-	cmd.Flags().StringVarP(&c.flagData, "data", "d", "", i18n.G("Input data")+"``")
+	cmd.RunE = c.run
+	cli.AddBoolFlag(cmd.Flags(), &c.flagRespWait, "wait", i18n.G("Wait for the operation to complete"))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagRespRaw, "raw", i18n.G("Print the raw response"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagAction, "request|X", "GET", "", i18n.G("Action"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagData, "data|d", "", "", i18n.G("Input data"))
 
 	return cmd
 }
@@ -62,15 +64,14 @@ func (c *cmdQuery) pretty(input any) string {
 	return pretty.String()
 }
 
-// Run runs the actual command logic.
-func (c *cmdQuery) Run(cmd *cobra.Command, args []string) error {
-	conf := c.global.conf
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 1)
-	if exit {
+func (c *cmdQuery) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdQueryUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
 		return err
 	}
+
+	d := parsed[0].RemoteServer
+	path := parsed[0].RemoteObject.String
 
 	if c.global.flagProject != "" {
 		return errors.New(i18n.G("--project cannot be used with the query command"))
@@ -80,21 +81,9 @@ func (c *cmdQuery) Run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf(i18n.G("Action %q isn't supported by this tool"), c.flagAction)
 	}
 
-	// Parse the remote
-	remote, path, err := conf.ParseRemote(args[0])
-	if err != nil {
-		return err
-	}
-
 	// Validate path
 	if !strings.HasPrefix(path, "/") {
 		return errors.New(i18n.G("Query path must start with /"))
-	}
-
-	// Attempt to connect
-	d, err := conf.GetInstanceServer(remote)
-	if err != nil {
-		return err
 	}
 
 	// Guess the encoding of the input

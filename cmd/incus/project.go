@@ -13,15 +13,16 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v4"
 
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/shared/api"
-	cli "github.com/lxc/incus/v6/shared/cmd"
-	"github.com/lxc/incus/v6/shared/termios"
-	"github.com/lxc/incus/v6/shared/units"
-	"github.com/lxc/incus/v6/shared/util"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
+	"github.com/lxc/incus/v7/shared/termios"
+	"github.com/lxc/incus/v7/shared/units"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 type projectColumn struct {
@@ -33,61 +34,59 @@ type cmdProject struct {
 	global *cmdGlobal
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProject) Command() *cobra.Command {
+func (c *cmdProject) command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Use = cli.U("project")
 	cmd.Short = i18n.G("Manage projects")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Manage projects`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Manage projects`))
 
 	// Create
 	projectCreateCmd := cmdProjectCreate{global: c.global, project: c}
-	cmd.AddCommand(projectCreateCmd.Command())
+	cmd.AddCommand(projectCreateCmd.command())
 
 	// Delete
 	projectDeleteCmd := cmdProjectDelete{global: c.global, project: c}
-	cmd.AddCommand(projectDeleteCmd.Command())
+	cmd.AddCommand(projectDeleteCmd.command())
 
 	// Edit
 	projectEditCmd := cmdProjectEdit{global: c.global, project: c}
-	cmd.AddCommand(projectEditCmd.Command())
+	cmd.AddCommand(projectEditCmd.command())
 
 	// Get
 	projectGetCmd := cmdProjectGet{global: c.global, project: c}
-	cmd.AddCommand(projectGetCmd.Command())
+	cmd.AddCommand(projectGetCmd.command())
 
 	// List
 	projectListCmd := cmdProjectList{global: c.global, project: c}
-	cmd.AddCommand(projectListCmd.Command())
+	cmd.AddCommand(projectListCmd.command())
 
 	// Rename
 	projectRenameCmd := cmdProjectRename{global: c.global, project: c}
-	cmd.AddCommand(projectRenameCmd.Command())
+	cmd.AddCommand(projectRenameCmd.command())
 
 	// Set
 	projectSetCmd := cmdProjectSet{global: c.global, project: c}
-	cmd.AddCommand(projectSetCmd.Command())
+	cmd.AddCommand(projectSetCmd.command())
 
 	// Unset
 	projectUnsetCmd := cmdProjectUnset{global: c.global, project: c, projectSet: &projectSetCmd}
-	cmd.AddCommand(projectUnsetCmd.Command())
+	cmd.AddCommand(projectUnsetCmd.command())
 
 	// Show
 	projectShowCmd := cmdProjectShow{global: c.global, project: c}
-	cmd.AddCommand(projectShowCmd.Command())
+	cmd.AddCommand(projectShowCmd.command())
 
 	// Info
 	projectGetInfo := cmdProjectInfo{global: c.global, project: c}
-	cmd.AddCommand(projectGetInfo.Command())
+	cmd.AddCommand(projectGetInfo.command())
 
 	// Set default
 	projectSwitchCmd := cmdProjectSwitch{global: c.global, project: c}
-	cmd.AddCommand(projectSwitchCmd.Command())
+	cmd.AddCommand(projectSwitchCmd.command())
 
 	// Get current project
 	projectGetCurrentCmd := cmdProjectGetCurrent{global: c.global, project: c}
-	cmd.AddCommand(projectGetCurrentCmd.Command())
+	cmd.AddCommand(projectGetCurrentCmd.command())
 
 	// Workaround for subcommand usage errors. See: https://github.com/spf13/cobra/issues/706
 	cmd.Args = cobra.NoArgs
@@ -103,24 +102,24 @@ type cmdProjectCreate struct {
 	flagDescription string
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProjectCreate) Command() *cobra.Command {
+var cmdProjectCreateUsage = u.Usage{u.NewName(u.Project).Remote()}
+
+func (c *cmdProjectCreate) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("create", u.NewName(u.Project).Remote())
+	cmd.Use = cli.U("create", cmdProjectCreateUsage...)
 	cmd.Aliases = []string{"add"}
 	cmd.Short = i18n.G("Create projects")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Create projects`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Create projects`))
 	cmd.Example = cli.FormatSection("", i18n.G(`incus project create p1
     Create a project named p1
 
 incus project create p1 < config.yaml
     Create a project named p1 with configuration from config.yaml`))
 
-	cmd.Flags().StringArrayVarP(&c.flagConfig, "config", "c", nil, i18n.G("Config key/value to apply to the new project")+"``")
-	cmd.Flags().StringVar(&c.flagDescription, "description", "", i18n.G("Project description")+"``")
+	cli.AddStringArrayFlag(cmd.Flags(), &c.flagConfig, "config|c", i18n.G("Config key/value to apply to the new project"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagDescription, "description", "", "", i18n.G("Project description"))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -133,44 +132,32 @@ incus project create p1 < config.yaml
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectCreate) Run(cmd *cobra.Command, args []string) error {
-	var stdinData api.ProjectPut
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 1)
-	if exit {
-		return err
-	}
-
-	// If stdin isn't a terminal, read text from it
-	if !termios.IsTerminal(getStdinFd()) {
-		contents, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return err
-		}
-
-		err = yaml.Unmarshal(contents, &stdinData)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdProjectCreate) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdProjectCreateUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
+	d := parsed[0].RemoteServer
+	projectName := parsed[0].RemoteObject.String
+	var stdinData api.ProjectPut
 
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing project name"))
+	// If stdin isn't a terminal, read text from it
+	if !termios.IsTerminal(getStdinFd()) {
+		loader, err := yaml.NewLoader(os.Stdin)
+		if err != nil {
+			return err
+		}
+
+		err = loader.Load(&stdinData)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
 	}
 
 	// Create the project
 	project := api.ProjectsPost{}
-	project.Name = resource.name
+	project.Name = projectName
 	project.ProjectPut = stdinData
 
 	if project.Config == nil {
@@ -189,13 +176,13 @@ func (c *cmdProjectCreate) Run(cmd *cobra.Command, args []string) error {
 		project.Description = c.flagDescription
 	}
 
-	err = resource.server.CreateProject(project)
+	err = d.CreateProject(project)
 	if err != nil {
 		return err
 	}
 
 	if !c.global.flagQuiet {
-		fmt.Printf(i18n.G("Project %s created")+"\n", resource.name)
+		fmt.Printf(i18n.G("Project %s created")+"\n", formatRemote(c.global.conf, parsed[0]))
 	}
 
 	return nil
@@ -209,17 +196,17 @@ type cmdProjectDelete struct {
 	flagForce bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProjectDelete) Command() *cobra.Command {
+var cmdProjectDeleteUsage = u.Usage{u.Project.Remote().List(1)}
+
+func (c *cmdProjectDelete) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("delete", u.Project.Remote().List(1))
+	cmd.Use = cli.U("delete", cmdProjectDeleteUsage...)
 	cmd.Aliases = []string{"rm", "remove"}
 	cmd.Short = i18n.G("Delete projects")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Delete projects`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Delete projects`))
 
-	cmd.Flags().BoolVarP(&c.flagForce, "force", "f", false, i18n.G("Force delete the project and everything it contains."))
-	cmd.RunE = c.Run
+	cli.AddBoolFlag(cmd.Flags(), &c.flagForce, "force|f", i18n.G("Force delete the project and everything it contains."))
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return c.global.cmpProjects(toComplete)
@@ -228,10 +215,10 @@ func (c *cmdProjectDelete) Command() *cobra.Command {
 	return cmd
 }
 
-func (c *cmdProjectDelete) promptConfirmation(name string) error {
+func (c *cmdProjectDelete) promptConfirmation(p *u.Parsed) error {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Printf(i18n.G("Remove %s and everything it contains (instances, images, volumes, networks, ...) (yes/no): "), name)
+	fmt.Printf(i18n.G("Remove %s and everything it contains (instances, images, volumes, networks, ...) (yes/no): "), formatRemote(c.global.conf, p))
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSuffix(input, "\n")
 
@@ -242,59 +229,59 @@ func (c *cmdProjectDelete) promptConfirmation(name string) error {
 	return nil
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectDelete) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, -1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	remoteName, _, err := c.global.conf.ParseRemote(args[0])
+func (c *cmdProjectDelete) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdProjectDeleteUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resources, err := c.global.parseServers(args...)
-	if err != nil {
-		return err
+	var errs []error
+
+	for _, p := range parsed[0].List {
+		d := p.RemoteServer
+		remoteName := p.RemoteName
+		projectName := p.RemoteObject.String
+
+		err := func() error {
+			if c.flagForce {
+				err := c.promptConfirmation(p)
+				if err != nil {
+					return err
+				}
+
+				err = d.DeleteProjectForce(projectName)
+				if err != nil {
+					return err
+				}
+			} else {
+				err = d.DeleteProject(projectName)
+				if err != nil {
+					return err
+				}
+			}
+
+			if !c.global.flagQuiet {
+				fmt.Printf(i18n.G("Project %s deleted")+"\n", formatRemote(c.global.conf, p))
+			}
+
+			remote := c.global.conf.Remotes[remoteName]
+
+			// Switch back to default project
+			if remote.Project == projectName {
+				remote.Project = ""
+				c.global.conf.Remotes[remoteName] = remote
+				return c.global.conf.SaveConfig(c.global.confPath)
+			}
+
+			return nil
+		}()
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 
-	for _, resource := range resources {
-		if resource.name == "" {
-			return errors.New(i18n.G("Missing project name"))
-		}
-
-		// Delete the project, server is unable to find the project here.
-		if c.flagForce {
-			err := c.promptConfirmation(resource.name)
-			if err != nil {
-				return err
-			}
-
-			err = resource.server.DeleteProjectForce(resource.name)
-			if err != nil {
-				return err
-			}
-		} else {
-			err = resource.server.DeleteProject(resource.name)
-			if err != nil {
-				return err
-			}
-		}
-
-		if !c.global.flagQuiet {
-			fmt.Printf(i18n.G("Project %s deleted")+"\n", resource.name)
-		}
-
-		// Switch back to default project
-		if resource.name == c.global.conf.Remotes[remoteName].Project {
-			rc := c.global.conf.Remotes[remoteName]
-			rc.Project = ""
-			c.global.conf.Remotes[remoteName] = rc
-			return c.global.conf.SaveConfig(c.global.confPath)
-		}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil
@@ -306,18 +293,19 @@ type cmdProjectEdit struct {
 	project *cmdProject
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProjectEdit) Command() *cobra.Command {
+var cmdProjectEditUsage = u.Usage{u.Project.Remote()}
+
+func (c *cmdProjectEdit) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("edit", u.Project.Remote())
+	cmd.Use = cli.U("edit", cmdProjectEditUsage...)
 	cmd.Short = i18n.G("Edit project configurations as YAML")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Edit project configurations as YAML`))
 	cmd.Example = cli.FormatSection("", i18n.G(
 		`incus project edit <project> < project.yaml
     Update a project using the content of project.yaml`))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -351,49 +339,38 @@ func (c *cmdProjectEdit) helpTemplate() string {
 ### Note that the name is shown but cannot be changed`)
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectEdit) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdProjectEdit) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdProjectEditUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing project name"))
-	}
+	d := parsed[0].RemoteServer
+	projectName := parsed[0].RemoteObject.String
 
 	// If stdin isn't a terminal, read text from it
 	if !termios.IsTerminal(getStdinFd()) {
-		contents, err := io.ReadAll(os.Stdin)
+		loader, err := yaml.NewLoader(os.Stdin)
 		if err != nil {
 			return err
 		}
 
 		newdata := api.ProjectPut{}
-		err = yaml.Unmarshal(contents, &newdata)
-		if err != nil {
+		err = loader.Load(&newdata)
+		if err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 
-		return resource.server.UpdateProject(resource.name, newdata, "")
+		return d.UpdateProject(projectName, newdata, "")
 	}
 
 	// Extract the current value
-	project, etag, err := resource.server.GetProject(resource.name)
+	project, etag, err := d.GetProject(projectName)
 	if err != nil {
 		return err
 	}
 
-	data, err := yaml.Marshal(&project)
+	data, err := yaml.Dump(&project, yaml.V2)
 	if err != nil {
 		return err
 	}
@@ -407,9 +384,9 @@ func (c *cmdProjectEdit) Run(cmd *cobra.Command, args []string) error {
 	for {
 		// Parse the text received from the editor
 		newdata := api.ProjectPut{}
-		err = yaml.Unmarshal(content, &newdata)
+		err = yaml.Load(content, &newdata)
 		if err == nil {
-			err = resource.server.UpdateProject(resource.name, newdata, etag)
+			err = d.UpdateProject(projectName, newdata, etag)
 		}
 
 		// Respawn the editor
@@ -444,16 +421,17 @@ type cmdProjectGet struct {
 	flagIsProperty bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProjectGet) Command() *cobra.Command {
+var cmdProjectGetUsage = u.Usage{u.Project.Remote(), u.Key}
+
+func (c *cmdProjectGet) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("get", u.Project.Remote(), u.Key)
+	cmd.Use = cli.U("get", cmdProjectGetUsage...)
 	cmd.Short = i18n.G("Get values for project configuration keys")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Get values for project configuration keys`))
 
-	cmd.RunE = c.Run
-	cmd.Flags().BoolVarP(&c.flagIsProperty, "property", "p", false, i18n.G("Get the key as a project property"))
+	cmd.RunE = c.run
+	cli.AddBoolFlag(cmd.Flags(), &c.flagIsProperty, "property|p", i18n.G("Get the key as a project property"))
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -470,42 +448,32 @@ func (c *cmdProjectGet) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectGet) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdProjectGet) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdProjectGetUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing project name"))
-	}
+	d := parsed[0].RemoteServer
+	projectName := parsed[0].RemoteObject.String
+	key := parsed[1].String
 
 	// Get the configuration key
-	project, _, err := resource.server.GetProject(resource.name)
+	project, _, err := d.GetProject(projectName)
 	if err != nil {
 		return err
 	}
 
 	if c.flagIsProperty {
 		w := project.Writable()
-		res, err := getFieldByJSONTag(&w, args[1])
+		res, err := getFieldByJSONTag(&w, key)
 		if err != nil {
-			return fmt.Errorf(i18n.G("The property %q does not exist on the project %q: %v"), args[1], resource.name, err)
+			return fmt.Errorf(i18n.G("The property %q does not exist on the project %q: %v"), key, formatRemote(c.global.conf, parsed[0]), err)
 		}
 
 		fmt.Printf("%v\n", res)
 	} else {
-		fmt.Printf("%s\n", project.Config[args[1]])
+		fmt.Printf("%s\n", project.Config[key])
 	}
 
 	return nil
@@ -520,13 +488,14 @@ type cmdProjectList struct {
 	flagColumns string
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProjectList) Command() *cobra.Command {
+var cmdProjectListUsage = u.Usage{u.RemoteColonOpt, u.Filter.List(0)}
+
+func (c *cmdProjectList) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("list", u.RemoteColonOpt, u.Filter.List(0))
+	cmd.Use = cli.U("list", cmdProjectListUsage...)
 	cmd.Aliases = []string{"ls"}
 	cmd.Short = i18n.G("List projects")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`List projects
 
 The -c option takes a (optionally comma-separated) list of arguments
@@ -545,15 +514,14 @@ z - Network Zones
 d - Description
 u - Used By`))
 
-	cmd.Flags().StringVarP(&c.flagColumns, "columns", "c", defaultProjectColumns, i18n.G("Columns")+"``")
-
-	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", c.global.defaultListFormat(), i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`)+"``")
+	cli.AddStringFlag(cmd.Flags(), &c.flagColumns, "columns|c", defaultProjectColumns, "", i18n.G("Columns"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagFormat, "format|f", c.global.defaultListFormat(), "", i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`))
 
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		return cli.ValidateFlagFormatForListOutput(cmd.Flag("format").Value.String())
 	}
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -669,45 +637,23 @@ func (c *cmdProjectList) usedByColumnData(project api.Project) string {
 	return fmt.Sprintf("%d", len(project.UsedBy))
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectList) Run(cmd *cobra.Command, args []string) error {
-	conf := c.global.conf
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 0, 1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	remote := conf.DefaultRemote
-	if len(args) > 0 {
-		remote = args[0]
-	}
-
-	resources, err := c.global.parseServers(remote)
+func (c *cmdProjectList) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdProjectListUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	// Process the filters
-	filters := []string{}
-	if len(args) > 1 {
-		filters = append(filters, args[1:]...)
-	}
-
-	filters = prepareProjectServerFilters(filters, api.Project{})
+	d := parsed[0].RemoteServer
+	filters := prepareProjectServerFilters(parsed[1].StringList, api.Project{})
 
 	// List projects
-	projects, err := resource.server.GetProjectsWithFilter(filters)
+	projects, err := d.GetProjectsWithFilter(filters)
 	if err != nil {
 		return err
 	}
 
 	// Get the current project.
-	info, err := resource.server.GetConnectionInfo()
+	info, err := d.GetConnectionInfo()
 	if err != nil {
 		return err
 	}
@@ -749,16 +695,16 @@ type cmdProjectRename struct {
 	project *cmdProject
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProjectRename) Command() *cobra.Command {
+var cmdProjectRenameUsage = u.Usage{u.Project.Remote(), u.NewName(u.Project)}
+
+func (c *cmdProjectRename) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("rename", u.Project.Remote(), u.NewName(u.Project))
+	cmd.Use = cli.U("rename", cmdProjectRenameUsage...)
 	cmd.Aliases = []string{"mv"}
 	cmd.Short = i18n.G("Rename projects")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Rename projects`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Rename projects`))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -771,28 +717,18 @@ func (c *cmdProjectRename) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectRename) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdProjectRename) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdProjectRenameUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing project name"))
-	}
+	d := parsed[0].RemoteServer
+	projectName := parsed[0].RemoteObject.String
+	newProjectName := parsed[1].String
 
 	// Rename the project
-	op, err := resource.server.RenameProject(resource.name, api.ProjectPost{Name: args[1]})
+	op, err := d.RenameProject(projectName, api.ProjectPost{Name: newProjectName})
 	if err != nil {
 		return err
 	}
@@ -803,7 +739,7 @@ func (c *cmdProjectRename) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	if !c.global.flagQuiet {
-		fmt.Printf(i18n.G("Project %s renamed to %s")+"\n", resource.name, args[1])
+		fmt.Printf(i18n.G("Project %s renamed to %s")+"\n", formatRemote(c.global.conf, parsed[0]), newProjectName)
 	}
 
 	return nil
@@ -817,19 +753,20 @@ type cmdProjectSet struct {
 	flagIsProperty bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProjectSet) Command() *cobra.Command {
+var cmdProjectSetUsage = u.Usage{u.Project.Remote(), u.LegacyKV.List(1)}
+
+func (c *cmdProjectSet) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("set", u.Project.Remote(), u.KV.List(1))
+	cmd.Use = cli.U("set", cmdProjectSetUsage...)
 	cmd.Short = i18n.G("Set project configuration keys")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Set project configuration keys
 
 For backward compatibility, a single configuration key may still be set with:
     incus project set [<remote>:]<project> <key> <value>`))
 
-	cmd.RunE = c.Run
-	cmd.Flags().BoolVarP(&c.flagIsProperty, "property", "p", false, i18n.G("Set the key as a project property"))
+	cmd.RunE = c.run
+	cli.AddBoolFlag(cmd.Flags(), &c.flagIsProperty, "property|p", i18n.G("Set the key as a project property"))
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -842,34 +779,17 @@ For backward compatibility, a single configuration key may still be set with:
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectSet) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, -1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+// set runs the post-parsing command logic.
+func (c *cmdProjectSet) set(cmd *cobra.Command, parsed []*u.Parsed) error {
+	d := parsed[0].RemoteServer
+	projectName := parsed[0].RemoteObject.String
+	keys, err := kvToMap(parsed[1])
 	if err != nil {
 		return err
-	}
-
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing project name"))
 	}
 
 	// Get the project
-	project, etag, err := resource.server.GetProject(resource.name)
-	if err != nil {
-		return err
-	}
-
-	// Set the configuration key
-	keys, err := getConfig(args[1:]...)
+	project, etag, err := d.GetProject(projectName)
 	if err != nil {
 		return err
 	}
@@ -893,7 +813,16 @@ func (c *cmdProjectSet) Run(cmd *cobra.Command, args []string) error {
 		maps.Copy(writable.Config, keys)
 	}
 
-	return resource.server.UpdateProject(resource.name, writable, etag)
+	return d.UpdateProject(projectName, writable, etag)
+}
+
+func (c *cmdProjectSet) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdProjectSetUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
+		return err
+	}
+
+	return c.set(cmd, parsed)
 }
 
 // Unset.
@@ -905,16 +834,16 @@ type cmdProjectUnset struct {
 	flagIsProperty bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProjectUnset) Command() *cobra.Command {
-	cmd := &cobra.Command{}
-	cmd.Use = cli.U("unset", u.Project.Remote(), u.Key)
-	cmd.Short = i18n.G("Unset project configuration keys")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Unset project configuration keys`))
+var cmdProjectUnsetUsage = u.Usage{u.Project.Remote(), u.Key}
 
-	cmd.RunE = c.Run
-	cmd.Flags().BoolVarP(&c.flagIsProperty, "property", "p", false, i18n.G("Unset the key as a project property"))
+func (c *cmdProjectUnset) command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = cli.U("unset", cmdProjectUnsetUsage...)
+	cmd.Short = i18n.G("Unset project configuration keys")
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Unset project configuration keys`))
+
+	cmd.RunE = c.run
+	cli.AddBoolFlag(cmd.Flags(), &c.flagIsProperty, "property|p", i18n.G("Unset the key as a project property"))
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -931,18 +860,14 @@ func (c *cmdProjectUnset) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectUnset) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
+func (c *cmdProjectUnset) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdProjectUnsetUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
 		return err
 	}
 
 	c.projectSet.flagIsProperty = c.flagIsProperty
-
-	args = append(args, "")
-	return c.projectSet.Run(cmd, args)
+	return unsetKey(c.projectSet, cmd, parsed)
 }
 
 // Show.
@@ -951,15 +876,15 @@ type cmdProjectShow struct {
 	project *cmdProject
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProjectShow) Command() *cobra.Command {
-	cmd := &cobra.Command{}
-	cmd.Use = cli.U("show", u.Project.Remote())
-	cmd.Short = i18n.G("Show project options")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Show project options`))
+var cmdProjectShowUsage = u.Usage{u.Project.Remote()}
 
-	cmd.RunE = c.Run
+func (c *cmdProjectShow) command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = cli.U("show", cmdProjectShowUsage...)
+	cmd.Short = i18n.G("Show project options")
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Show project options`))
+
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -972,33 +897,22 @@ func (c *cmdProjectShow) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectShow) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdProjectShow) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdProjectShowUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing project name"))
-	}
+	d := parsed[0].RemoteServer
+	projectName := parsed[0].RemoteObject.String
 
 	// Show the project
-	project, _, err := resource.server.GetProject(resource.name)
+	project, _, err := d.GetProject(projectName)
 	if err != nil {
 		return err
 	}
 
-	data, err := yaml.Marshal(&project)
+	data, err := yaml.Dump(&project, yaml.V2)
 	if err != nil {
 		return err
 	}
@@ -1014,15 +928,15 @@ type cmdProjectSwitch struct {
 	project *cmdProject
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProjectSwitch) Command() *cobra.Command {
-	cmd := &cobra.Command{}
-	cmd.Use = cli.U("switch", u.Project.Remote())
-	cmd.Short = i18n.G("Switch the current project")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Switch the current project`))
+var cmdProjectSwitchUsage = u.Usage{u.Project.Remote()}
 
-	cmd.RunE = c.Run
+func (c *cmdProjectSwitch) command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = cli.U("switch", cmdProjectSwitchUsage...)
+	cmd.Short = i18n.G("Switch the current project")
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Switch the current project`))
+
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -1035,42 +949,25 @@ func (c *cmdProjectSwitch) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectSwitch) Run(cmd *cobra.Command, args []string) error {
+func (c *cmdProjectSwitch) run(cmd *cobra.Command, args []string) error {
 	conf := c.global.conf
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 1)
-	if exit {
-		return err
-	}
-
-	// Parse the remote
-	remote, project, err := conf.ParseRemote(args[0])
+	parsed, err := cmdProjectSwitchUsage.Parse(conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	// Make sure the remote exists
-	rc, ok := conf.Remotes[remote]
-	if !ok {
-		return fmt.Errorf(i18n.G("Remote %s doesn't exist"), remote)
-	}
+	d := parsed[0].RemoteServer
+	remoteName := parsed[0].RemoteName
+	projectName := parsed[0].RemoteObject.String
 
-	// Make sure the project exists
-	d, err := conf.GetInstanceServer(remote)
+	_, _, err = d.GetProject(projectName)
 	if err != nil {
 		return err
 	}
 
-	_, _, err = d.GetProject(project)
-	if err != nil {
-		return err
-	}
-
-	rc.Project = project
-
-	conf.Remotes[remote] = rc
+	remote := conf.Remotes[remoteName]
+	remote.Project = projectName
+	conf.Remotes[remoteName] = remote
 
 	return conf.SaveConfig(c.global.confPath)
 }
@@ -1084,21 +981,22 @@ type cmdProjectInfo struct {
 	flagFormat     string
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdProjectInfo) Command() *cobra.Command {
+var cmdProjectInfoUsage = u.Usage{u.Project.Remote()}
+
+func (c *cmdProjectInfo) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("info", u.Project.Remote())
+	cmd.Use = cli.U("info", cmdProjectInfoUsage...)
 	cmd.Short = i18n.G("Get a summary of resource allocations")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Get a summary of resource allocations`))
-	cmd.Flags().BoolVar(&c.flagShowAccess, "show-access", false, i18n.G("Show the instance's access list"))
-	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", c.global.defaultListFormat(), i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`)+"``")
+	cli.AddBoolFlag(cmd.Flags(), &c.flagShowAccess, "show-access", i18n.G("Show the instance's access list"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagFormat, "format|f", c.global.defaultListFormat(), "", i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`))
 
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		return cli.ValidateFlagFormatForListOutput(cmd.Flag("format").Value.String())
 	}
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -1111,33 +1009,22 @@ func (c *cmdProjectInfo) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectInfo) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdProjectInfo) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdProjectInfoUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing project name"))
-	}
+	d := parsed[0].RemoteServer
+	projectName := parsed[0].RemoteObject.String
 
 	if c.flagShowAccess {
-		access, err := resource.server.GetProjectAccess(resource.name)
+		access, err := d.GetProjectAccess(projectName)
 		if err != nil {
 			return err
 		}
 
-		data, err := yaml.Marshal(access)
+		data, err := yaml.Dump(access, yaml.V2)
 		if err != nil {
 			return err
 		}
@@ -1147,7 +1034,7 @@ func (c *cmdProjectInfo) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get the current allocations
-	projectState, err := resource.server.GetProjectState(resource.name)
+	projectState, err := d.GetProjectState(projectName)
 	if err != nil {
 		return err
 	}
@@ -1200,43 +1087,28 @@ type cmdProjectGetCurrent struct {
 	project *cmdProject
 }
 
-// Command generates the command definition.
-func (c *cmdProjectGetCurrent) Command() *cobra.Command {
-	cmd := &cobra.Command{}
-	cmd.Use = cli.U("get-current")
-	cmd.Short = i18n.G("Show the current project")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Show the current project`))
+var cmdProjectGetCurrentUsage = u.Usage{u.RemoteColonOpt}
 
-	cmd.RunE = c.Run
+func (c *cmdProjectGetCurrent) command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = cli.U("get-current", cmdProjectGetCurrentUsage...)
+	cmd.Short = i18n.G("Show the current project")
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Show the current project`))
+
+	cmd.RunE = c.run
 
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdProjectGetCurrent) Run(cmd *cobra.Command, args []string) error {
-	conf := c.global.conf
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 0, 0)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	remote := conf.DefaultRemote
-	if len(args) > 0 {
-		remote = args[0]
-	}
-
-	resources, err := c.global.parseServers(remote)
+func (c *cmdProjectGetCurrent) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdProjectGetCurrentUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
+	d := parsed[0].RemoteServer
 
-	serverInfo, _, err := resource.server.GetServer()
+	serverInfo, _, err := d.GetServer()
 	if err != nil {
 		return err
 	}

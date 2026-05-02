@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/lxc/incus/v6/shared/tls/tlstest"
+	"github.com/lxc/incus/v7/shared/tls/tlstest"
 )
 
 type objectSuite struct {
@@ -58,6 +58,13 @@ func (s *objectSuite) TestObjectNetworkACL() {
 	s.Assert().NotPanics(func() {
 		o := ObjectNetworkACL("default", "network_acl_name")
 		s.Equal("network_acl:default/network_acl_name", string(o))
+	})
+}
+
+func (s *objectSuite) TestObjectNetworkAddressSet() {
+	s.Assert().NotPanics(func() {
+		o := ObjectNetworkAddressSet("default", "network_address_set_name")
+		s.Equal("network_address_set:default/network_address_set_name", string(o))
 	})
 }
 
@@ -168,6 +175,10 @@ func (s *objectSuite) TestObjectFromString() {
 		{
 			in:  "network_acl:default/acl1",
 			out: Object("network_acl:default/acl1"),
+		},
+		{
+			in:  "network_address_set:default/as1",
+			out: Object("network_address_set:default/as1"),
 		},
 		{
 			in:  "network_zone:default/example.com",

@@ -6,20 +6,20 @@ import (
 	"slices"
 	"sync"
 
-	internalInstance "github.com/lxc/incus/v6/internal/instance"
-	"github.com/lxc/incus/v6/internal/server/db"
-	"github.com/lxc/incus/v6/internal/server/db/cluster"
-	"github.com/lxc/incus/v6/internal/server/db/warningtype"
-	"github.com/lxc/incus/v6/internal/server/device"
-	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
-	"github.com/lxc/incus/v6/internal/server/instance"
-	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
-	"github.com/lxc/incus/v6/internal/server/operations"
-	"github.com/lxc/incus/v6/internal/server/project"
-	"github.com/lxc/incus/v6/internal/server/state"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/revert"
+	internalInstance "github.com/lxc/incus/v7/internal/instance"
+	"github.com/lxc/incus/v7/internal/server/db"
+	"github.com/lxc/incus/v7/internal/server/db/cluster"
+	"github.com/lxc/incus/v7/internal/server/db/warningtype"
+	"github.com/lxc/incus/v7/internal/server/device"
+	deviceConfig "github.com/lxc/incus/v7/internal/server/device/config"
+	"github.com/lxc/incus/v7/internal/server/instance"
+	"github.com/lxc/incus/v7/internal/server/instance/instancetype"
+	"github.com/lxc/incus/v7/internal/server/operations"
+	"github.com/lxc/incus/v7/internal/server/project"
+	"github.com/lxc/incus/v7/internal/server/state"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/revert"
 )
 
 // Instance driver definitions.
@@ -102,7 +102,7 @@ func validDevices(state *state.State, p api.Project, instanceType instancetype.T
 				return errors.New("The maximum device name length is 64 characters")
 			}
 
-			err := device.Validate(instConf, state, deviceName, deviceConfig)
+			err := device.Validate(instConf, state, deviceName, deviceConfig, false)
 			if err != nil {
 				if expanded && errors.Is(err, device.ErrUnsupportedDevType) {
 					// Skip unsupported devices in expanded config.
@@ -145,11 +145,11 @@ func validDevices(state *state.State, p api.Project, instanceType instancetype.T
 	return nil
 }
 
-func create(s *state.State, args db.InstanceArgs, p api.Project, op *operations.Operation) (instance.Instance, revert.Hook, error) {
+func create(s *state.State, args db.InstanceArgs, p api.Project, partialDeviceValidation bool, op *operations.Operation) (instance.Instance, revert.Hook, error) {
 	if args.Type == instancetype.Container {
-		return lxcCreate(s, args, p, op)
+		return lxcCreate(s, args, p, partialDeviceValidation, op)
 	} else if args.Type == instancetype.VM {
-		return qemuCreate(s, args, p, op)
+		return qemuCreate(s, args, p, partialDeviceValidation, op)
 	}
 
 	return nil, nil, errors.New("Instance type invalid")

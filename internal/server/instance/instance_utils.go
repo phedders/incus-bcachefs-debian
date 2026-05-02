@@ -19,33 +19,33 @@ import (
 	"github.com/flosch/pongo2/v6"
 	"github.com/google/uuid"
 
-	incus "github.com/lxc/incus/v6/client"
-	"github.com/lxc/incus/v6/internal/instance"
-	"github.com/lxc/incus/v6/internal/migration"
-	"github.com/lxc/incus/v6/internal/server/backup"
-	"github.com/lxc/incus/v6/internal/server/db"
-	"github.com/lxc/incus/v6/internal/server/db/cluster"
-	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
-	"github.com/lxc/incus/v6/internal/server/instance/drivers/qemudefault"
-	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
-	"github.com/lxc/incus/v6/internal/server/instance/operationlock"
-	"github.com/lxc/incus/v6/internal/server/operations"
-	"github.com/lxc/incus/v6/internal/server/seccomp"
-	"github.com/lxc/incus/v6/internal/server/state"
-	storageDrivers "github.com/lxc/incus/v6/internal/server/storage/drivers"
-	"github.com/lxc/incus/v6/internal/server/sys"
-	localUtil "github.com/lxc/incus/v6/internal/server/util"
-	internalUtil "github.com/lxc/incus/v6/internal/util"
-	"github.com/lxc/incus/v6/internal/version"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/idmap"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/osarch"
-	"github.com/lxc/incus/v6/shared/resources"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/units"
-	"github.com/lxc/incus/v6/shared/util"
-	"github.com/lxc/incus/v6/shared/validate"
+	incus "github.com/lxc/incus/v7/client"
+	"github.com/lxc/incus/v7/internal/instance"
+	"github.com/lxc/incus/v7/internal/migration"
+	"github.com/lxc/incus/v7/internal/server/backup"
+	"github.com/lxc/incus/v7/internal/server/db"
+	"github.com/lxc/incus/v7/internal/server/db/cluster"
+	deviceConfig "github.com/lxc/incus/v7/internal/server/device/config"
+	"github.com/lxc/incus/v7/internal/server/instance/drivers/qemudefault"
+	"github.com/lxc/incus/v7/internal/server/instance/instancetype"
+	"github.com/lxc/incus/v7/internal/server/instance/operationlock"
+	"github.com/lxc/incus/v7/internal/server/operations"
+	"github.com/lxc/incus/v7/internal/server/seccomp"
+	"github.com/lxc/incus/v7/internal/server/state"
+	storageDrivers "github.com/lxc/incus/v7/internal/server/storage/drivers"
+	"github.com/lxc/incus/v7/internal/server/sys"
+	localUtil "github.com/lxc/incus/v7/internal/server/util"
+	internalUtil "github.com/lxc/incus/v7/internal/util"
+	"github.com/lxc/incus/v7/internal/version"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/idmap"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/osarch"
+	"github.com/lxc/incus/v7/shared/resources"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/units"
+	"github.com/lxc/incus/v7/shared/util"
+	"github.com/lxc/incus/v7/shared/validate"
 )
 
 // ValidDevices is linked from instance/drivers.validDevices to validate device config.
@@ -56,7 +56,7 @@ var Load func(s *state.State, args db.InstanceArgs, p api.Project) (Instance, er
 
 // Create is linked from instance/drivers.create to allow difference instance types to be created.
 // Returns a revert fail function that can be used to undo this function if a subsequent step fails.
-var Create func(s *state.State, args db.InstanceArgs, p api.Project, op *operations.Operation) (Instance, revert.Hook, error)
+var Create func(s *state.State, args db.InstanceArgs, p api.Project, partialDeviceValidation bool, op *operations.Operation) (Instance, revert.Hook, error)
 
 func exclusiveConfigKeys(key1 string, key2 string, config map[string]string) (val string, ok bool, err error) {
 	if config[key1] != "" && config[key2] != "" {
@@ -475,7 +475,7 @@ func BackupLoadByName(s *state.State, project, name string) (*backup.InstanceBac
 		return nil, err
 	}
 
-	return backup.NewInstanceBackup(s, instance, args.ID, name, args.CreationDate, args.ExpiryDate, args.InstanceOnly, args.OptimizedStorage), nil
+	return backup.NewInstanceBackup(s, instance, args.ID, name, args.CreationDate, args.ExpiryDate, args.InstanceOnly, args.RootOnly, args.OptimizedStorage), nil
 }
 
 // ResolveImage takes an instance source and returns a hash suitable for instance creation or download.
@@ -625,6 +625,18 @@ func SuitableArchitectures(ctx context.Context, s *state.State, tx *db.ClusterTx
 				if err != nil {
 					return nil, err
 				}
+			} else if req.Source.Protocol == "oci" {
+				// Remote OCI registry.
+				remote, err = incus.ConnectOCI(req.Source.Server, &incus.ConnectionArgs{
+					TLSServerCert: req.Source.Certificate,
+					UserAgent:     version.UserAgent,
+					Proxy:         s.Proxy,
+					CachePath:     s.OS.CacheDir,
+					CacheExpiry:   time.Hour,
+				})
+				if err != nil {
+					return nil, err
+				}
 			} else {
 				return nil, api.StatusErrorf(http.StatusBadRequest, "Unsupported remote image server protocol %q", req.Source.Protocol)
 			}
@@ -698,7 +710,7 @@ func ValidName(instanceName string, isSnapshot bool) error {
 // Returns the created instance, along with a "create" operation lock that needs to be marked as Done once the
 // instance is fully completed, and a revert fail function that can be used to undo this function if a subsequent
 // step fails.
-func CreateInternal(s *state.State, args db.InstanceArgs, op *operations.Operation, clearLogDir bool, checkArchitecture bool) (Instance, *operationlock.InstanceOperation, revert.Hook, error) {
+func CreateInternal(s *state.State, args db.InstanceArgs, op *operations.Operation, clearLogDir bool, checkArchitecture bool, partialDeviceValidation bool) (Instance, *operationlock.InstanceOperation, revert.Hook, error) {
 	reverter := revert.New()
 	defer reverter.Fail()
 
@@ -982,7 +994,7 @@ func CreateInternal(s *state.State, args db.InstanceArgs, op *operations.Operati
 			return tx.DeleteInstance(ctx, dbInst.Project, dbInst.Name)
 		})
 	})
-	inst, cleanup, err := Create(s, args, *p, op)
+	inst, cleanup, err := Create(s, args, *p, partialDeviceValidation, op)
 	if err != nil {
 		logger.Error("Failed initializing instance", logger.Ctx{"project": args.Project, "instance": args.Name, "type": args.Type, "err": err})
 		return nil, nil, nil, fmt.Errorf("Failed initializing instance: %w", err)

@@ -8,10 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/shared/api"
-	cli "github.com/lxc/incus/v6/shared/cmd"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
 )
 
 type cmdMove struct {
@@ -30,13 +31,14 @@ type cmdMove struct {
 	flagAllowInconsistent bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdMove) Command() *cobra.Command {
+var cmdMoveUsage = u.Usage{u.Instance.Remote(), u.NewName(u.Instance).Optional().Remote()}
+
+func (c *cmdMove) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("move", u.Instance.Remote(), u.NewName(u.Instance).Optional().Remote())
+	cmd.Use = cli.U("move", cmdMoveUsage...)
 	cmd.Aliases = []string{"mv"}
 	cmd.Short = i18n.G("Move instances within or in between servers")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Move instances within or in between servers
 
 Transfer modes (--mode):
@@ -53,18 +55,18 @@ The pull transfer mode is the default as it is compatible with all server versio
 incus move <old name> <new name> [--instance-only]
     Rename a local instance.`))
 
-	cmd.RunE = c.Run
-	cmd.Flags().StringArrayVarP(&c.flagConfig, "config", "c", nil, i18n.G("Config key/value to apply to the target instance")+"``")
-	cmd.Flags().StringArrayVarP(&c.flagDevice, "device", "d", nil, i18n.G("New key/value to apply to a specific device")+"``")
-	cmd.Flags().StringArrayVarP(&c.flagProfile, "profile", "p", nil, i18n.G("Profile to apply to the target instance")+"``")
-	cmd.Flags().BoolVar(&c.flagNoProfiles, "no-profiles", false, i18n.G("Unset all profiles on the target instance"))
-	cmd.Flags().BoolVar(&c.flagInstanceOnly, "instance-only", false, i18n.G("Move the instance without its snapshots"))
-	cmd.Flags().StringVar(&c.flagMode, "mode", moveDefaultMode, i18n.G("Transfer mode. One of pull, push or relay.")+"``")
-	cmd.Flags().BoolVar(&c.flagStateless, "stateless", false, i18n.G("Copy a stateful instance stateless"))
-	cmd.Flags().StringVarP(&c.flagStorage, "storage", "s", "", i18n.G("Storage pool name")+"``")
-	cmd.Flags().StringVar(&c.flagTarget, "target", "", i18n.G("Cluster member name")+"``")
-	cmd.Flags().StringVar(&c.flagTargetProject, "target-project", "", i18n.G("Copy to a project different from the source")+"``")
-	cmd.Flags().BoolVar(&c.flagAllowInconsistent, "allow-inconsistent", false, i18n.G("Ignore copy errors for volatile files"))
+	cmd.RunE = c.run
+	cli.AddStringArrayFlag(cmd.Flags(), &c.flagConfig, "config|c", i18n.G("Config key/value to apply to the target instance"))
+	cli.AddStringArrayFlag(cmd.Flags(), &c.flagDevice, "device|d", i18n.G("New key/value to apply to a specific device"))
+	cli.AddStringArrayFlag(cmd.Flags(), &c.flagProfile, "profile|p", i18n.G("Profile to apply to the target instance"))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagNoProfiles, "no-profiles", i18n.G("Unset all profiles on the target instance"))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagInstanceOnly, "instance-only", i18n.G("Move the instance without its snapshots"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagMode, "mode", moveDefaultMode, "", i18n.G("Transfer mode. One of pull, push or relay."))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagStateless, "stateless", i18n.G("Copy a stateful instance stateless"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagStorage, "storage|s", "", "", i18n.G("Storage pool name"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagTarget, "target", "", "", i18n.G("Cluster member name"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagTargetProject, "target-project", "", "", i18n.G("Copy to a project different from the source"))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagAllowInconsistent, "allow-inconsistent", i18n.G("Ignore copy errors for volatile files"))
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -81,22 +83,17 @@ incus move <old name> <new name> [--instance-only]
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdMove) Run(cmd *cobra.Command, args []string) error {
-	conf := c.global.conf
-
-	// Quick checks.
-	if c.flagTarget == "" && c.flagTargetProject == "" && c.flagStorage == "" {
-		exit, err := c.global.checkArgs(cmd, args, 2, 2)
-		if exit {
-			return err
-		}
-	} else {
-		exit, err := c.global.checkArgs(cmd, args, 1, 2)
-		if exit {
-			return err
-		}
+func (c *cmdMove) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdMoveUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
+		return nil
 	}
+
+	srcServer := parsed[0].RemoteServer
+	srcInstanceName := parsed[0].RemoteObject.String
+	dstServer := parsed[1].RemoteServer
+	hasDstInstance := !parsed[1].RemoteObject.Skipped
+	dstInstanceName := parsed[1].RemoteObject.String
 
 	// Parse the mode
 	mode := moveDefaultMode
@@ -104,38 +101,22 @@ func (c *cmdMove) Run(cmd *cobra.Command, args []string) error {
 		mode = c.flagMode
 	}
 
-	sourceRemote, sourceName, err := conf.ParseRemote(args[0])
-	if err != nil {
-		return err
-	}
-
-	destRemote := sourceRemote
-	destName := ""
-	if len(args) == 2 {
-		var err error
-		destRemote, destName, err = conf.ParseRemote(args[1])
-		if err != nil {
-			return err
-		}
-	}
-
 	// As an optimization, if the source and destination are the same, do
 	// this via a simple rename. This only works for instances that aren't
 	// running, instances that are running should be live migrated (of
 	// course, this changing of hostname isn't supported right now, so this
 	// simply won't work).
-	if sourceRemote == destRemote && c.flagTarget == "" && c.flagStorage == "" && c.flagTargetProject == "" {
+	if srcServer == dstServer && c.flagTarget == "" && c.flagStorage == "" && c.flagTargetProject == "" {
+		if !hasDstInstance {
+			return errors.New(i18n.G("Can't perform local rename without a new instance name"))
+		}
+
 		if c.flagConfig != nil || c.flagDevice != nil || c.flagProfile != nil || c.flagNoProfiles {
 			return errors.New(i18n.G("Can't override configuration or profiles in local rename"))
 		}
 
-		source, err := conf.GetInstanceServer(sourceRemote)
-		if err != nil {
-			return err
-		}
-
 		// Instance rename
-		op, err := source.RenameInstance(sourceName, api.InstancePost{Name: destName})
+		op, err := srcServer.RenameInstance(srcInstanceName, api.InstancePost{Name: dstInstanceName})
 		if err != nil {
 			return err
 		}
@@ -143,17 +124,11 @@ func (c *cmdMove) Run(cmd *cobra.Command, args []string) error {
 		return op.Wait()
 	}
 
-	sourceResource := args[0]
-	destResource := sourceResource
-	if len(args) == 2 {
-		destResource = args[1]
-	}
-
 	stateful := !c.flagStateless
 
 	isServerSide := func() bool {
 		// Check if same source and destination.
-		if sourceRemote != destRemote {
+		if srcServer != dstServer {
 			return false
 		}
 
@@ -162,14 +137,8 @@ func (c *cmdMove) Run(cmd *cobra.Command, args []string) error {
 			return false
 		}
 
-		// Connect to the server.
-		source, err := conf.GetInstanceServer(sourceRemote)
-		if err != nil {
-			return false
-		}
-
 		// Check if override is requested with a server lacking support.
-		if !source.HasExtension("instance_move_config") {
+		if !srcServer.HasExtension("instance_move_config") {
 			if len(c.flagConfig) > 0 {
 				return false
 			}
@@ -184,12 +153,12 @@ func (c *cmdMove) Run(cmd *cobra.Command, args []string) error {
 		}
 
 		// Check if server supports moving pools.
-		if c.flagStorage != "" && !source.HasExtension("instance_pool_move") {
+		if c.flagStorage != "" && !srcServer.HasExtension("instance_pool_move") {
 			return false
 		}
 
 		// Check if server supports moving projects.
-		if c.flagTargetProject != "" && !source.HasExtension("instance_project_move") {
+		if c.flagTargetProject != "" && !srcServer.HasExtension("instance_project_move") {
 			return false
 		}
 
@@ -198,7 +167,7 @@ func (c *cmdMove) Run(cmd *cobra.Command, args []string) error {
 
 	// Support for server-side move in clusters.
 	if isServerSide {
-		return c.moveInstance(sourceResource, destResource, stateful)
+		return c.moveInstance(parsed[0], parsed[1], stateful)
 	}
 
 	cpy := cmdCopy{}
@@ -215,7 +184,7 @@ func (c *cmdMove) Run(cmd *cobra.Command, args []string) error {
 
 	// A move is just a copy followed by a delete; however, we want to
 	// keep the volatile entries around since we are moving the instance.
-	err = cpy.copyInstance(conf, sourceResource, destResource, true, -1, stateful, instanceOnly, mode, c.flagStorage, true)
+	err = cpy.copyOrMove(cmd, parsed[0], parsed[1], true, -1, stateful, instanceOnly, mode, c.flagStorage, true)
 	if err != nil {
 		return err
 	}
@@ -223,7 +192,7 @@ func (c *cmdMove) Run(cmd *cobra.Command, args []string) error {
 	del := cmdDelete{global: c.global}
 	del.flagForce = true
 	del.flagForceProtected = true
-	err = del.Run(cmd, args[:1])
+	err = del.deleteOne(parsed[0])
 	if err != nil {
 		return fmt.Errorf(i18n.G("Failed to delete original instance after copying it: %w"), err)
 	}
@@ -232,49 +201,26 @@ func (c *cmdMove) Run(cmd *cobra.Command, args []string) error {
 }
 
 // Move an instance between pools and projects using special POST /instances/<name> API.
-func (c *cmdMove) moveInstance(sourceResource string, destResource string, stateful bool) error {
-	conf := c.global.conf
-
-	// Parse the source.
-	sourceRemote, sourceName, err := conf.ParseRemote(sourceResource)
-	if err != nil {
-		return err
+func (c *cmdMove) moveInstance(src *u.Parsed, dst *u.Parsed, stateful bool) error {
+	srcServer := src.RemoteServer
+	srcInstanceName := src.RemoteObject.String
+	dstInstanceName := dst.RemoteObject.String
+	if dst.RemoteObject.Skipped {
+		dstInstanceName = srcInstanceName
 	}
 
-	// Parse the destination.
-	_, destName, err := conf.ParseRemote(destResource)
-	if err != nil {
-		return err
-	}
-
-	// Make sure we have an instance or snapshot name.
-	if sourceName == "" {
-		return errors.New(i18n.G("You must specify a source instance name"))
-	}
-
-	// The destination name is optional.
-	if destName == "" {
-		destName = sourceName
-	}
-
-	// Connect to the source host.
-	source, err := conf.GetInstanceServer(sourceRemote)
-	if err != nil {
-		return fmt.Errorf(i18n.G("Failed to connect to cluster member: %w"), err)
-	}
-
-	if !source.IsClustered() && c.flagTarget != "" {
+	if !srcServer.IsClustered() && c.flagTarget != "" {
 		return errors.New(i18n.G("--target can only be used with clusters"))
 	}
 
 	// Set the target if specified.
 	if c.flagTarget != "" {
-		source = source.UseTarget(c.flagTarget)
+		srcServer = srcServer.UseTarget(c.flagTarget)
 	}
 
 	// Pass the new pool to the migration API.
 	req := api.InstancePost{
-		Name:         destName,
+		Name:         dstInstanceName,
 		Migration:    true,
 		InstanceOnly: c.flagInstanceOnly,
 		Pool:         c.flagStorage,
@@ -319,7 +265,7 @@ func (c *cmdMove) moveInstance(sourceResource string, destResource string, state
 		}
 
 		// Fetch the current instance.
-		inst, _, err := source.GetInstance(sourceName)
+		inst, _, err := srcServer.GetInstance(srcInstanceName)
 		if err != nil {
 			return err
 		}
@@ -333,7 +279,7 @@ func (c *cmdMove) moveInstance(sourceResource string, destResource string, state
 	}
 
 	// Move the instance.
-	op, err := source.MigrateInstance(sourceName, req)
+	op, err := srcServer.MigrateInstance(srcInstanceName, req)
 	if err != nil {
 		return fmt.Errorf(i18n.G("Migration API failure: %w"), err)
 	}

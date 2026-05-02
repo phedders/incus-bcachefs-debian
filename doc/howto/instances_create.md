@@ -48,11 +48,21 @@ Check the contents of an existing instance configuration ([`incus config show <i
 
 The following examples use [`incus launch`](incus_launch.md), but you can use [`incus init`](incus_create.md) in the same way.
 
-### Launch a container
+### Launch a system container
 
 To launch a system container with a Debian 12 image from the `images` server using the instance name `debian-container`, enter the following command:
 
     incus launch images:debian/12 debian-container
+
+### Launch an application container
+
+To launch an application (OCI) container, you first need to add an image registry:
+
+    incus remote add oci-docker https://docker.io --protocol=oci
+
+And then can launch a container from one of its images:
+
+    incus launch oci-docker:hello-world --ephemeral --console
 
 ### Launch a virtual machine
 
@@ -102,13 +112,19 @@ The list of supported clouds and instance types can be found at [`https://github
 ### Launch a VM that boots from an ISO
 
 ```{note}
-When creating a Windows or a macOS virtual machine, make sure to set the `image.os` property to something starting with `Windows` or `macOS` respectively.
+When creating a Windows, macOS, or FreeBSD virtual machine, make sure to set the `image.os` property to something starting with `Windows`, `macOS`, or `FreeBSD` respectively.
 Doing so will tell Incus to expect the correct OS to be running inside of the virtual machine and to tweak behavior accordingly.
 
-This notably will cause on Windows:
- - Some unsupported virtual devices to be disabled
- - The {abbr}`RTC (Real Time Clock)` clock to be based on system local time rather than UTC
- - IOMMU handling to switch to an Intel IOMMU controller
+This notably will cause:
+ - On Windows:
+
+   - Some unsupported virtual devices to be disabled
+   - The {abbr}`RTC (Real Time Clock)` clock to be based on system local time rather than UTC
+   - IOMMU handling to switch to an Intel IOMMU controller
+
+ - On FreeBSD:
+
+   - Memory hotplug to be disabled
 ```
 
 To launch a VM that boots from an ISO, you must first create a VM.
@@ -163,7 +179,7 @@ The virtual machine images from the [images](https://images.linuxcontainers.org)
 For other virtual machines, you may want to manually install the agent.
 
 ```{note}
-The Incus Agent is currently available only on Linux, Windows and macOS virtual machines.
+The Incus Agent is currently available only on Linux, Windows, macOS, and FreeBSD virtual machines.
 ```
 
 Incus provides the agent primarily through a remote `9p` file system with mount name `config`.
@@ -228,6 +244,14 @@ This reduces the overall security of the system, by relaxing some of Apple's add
 This does not in any way bypass UNIX permissions, however, if you are not comfortable with that, you will need to manually run `incus-agent` each time.
 ```
 
+#### On FreeBSD
+
+For FreeBSD systems, the agent can manually be installed using a `9p` mount by running the following commands **as root** (running `kldload virtio_p9fs` beforehand may be necessary if this module is not loaded):
+
+    mount -t p9fs config /mnt
+    cd /mnt
+    ./install.sh
+
 ### Configure the Incus Agent
 By default the Incus Agent will have all features enabled.
 
@@ -236,7 +260,7 @@ In some environments, VM owners may want to turn off specific features.
 This can be done through a `incus-agent.yml` file which is located at:
 
 - `/etc/incus-agent.yml` on Linux
-- `/usr/local/etc/incus-agent.yml` on MacOS
+- `/usr/local/etc/incus-agent.yml` on supported BSD-like OSes (FreeBSD and macOS)
 - `C:\Program Files\Incus Agent\incus-agent.yml` on Windows
 
 If the file is missing or is empty, all features will be enabled.

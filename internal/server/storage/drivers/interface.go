@@ -4,14 +4,14 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/lxc/incus/v6/internal/instancewriter"
-	"github.com/lxc/incus/v6/internal/server/backup"
-	"github.com/lxc/incus/v6/internal/server/migration"
-	"github.com/lxc/incus/v6/internal/server/operations"
-	"github.com/lxc/incus/v6/internal/server/state"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/revert"
+	"github.com/lxc/incus/v7/internal/instancewriter"
+	"github.com/lxc/incus/v7/internal/server/backup"
+	"github.com/lxc/incus/v7/internal/server/migration"
+	"github.com/lxc/incus/v7/internal/server/operations"
+	"github.com/lxc/incus/v7/internal/server/state"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/revert"
 )
 
 // driver is the extended internal interface.
@@ -98,9 +98,7 @@ type Driver interface {
 	// not mounted.
 	UnmountVolumeSnapshot(snapVol Volume, op *operations.Operation) (bool, error)
 
-	// CacheVolumeSnapshots is used to temporarily pre-fetch and cache snapshot information.
-	CacheVolumeSnapshots(vol Volume) error
-
+	CanRestoreVolume(vol Volume, snapshotName string) error
 	CreateVolumeSnapshot(snapVol Volume, op *operations.Operation) error
 	GetQcow2BackingFilePath(vol Volume) (string, error)
 	DeleteVolumeSnapshot(snapVol Volume, op *operations.Operation) error
@@ -115,6 +113,6 @@ type Driver interface {
 	CreateVolumeFromMigration(vol Volume, conn io.ReadWriteCloser, volTargetArgs migration.VolumeTargetArgs, preFiller *VolumeFiller, op *operations.Operation) error
 
 	// Backup.
-	BackupVolume(vol Volume, writer instancewriter.InstanceWriter, optimized bool, snapshots []string, op *operations.Operation) error
-	CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcData io.ReadSeeker, op *operations.Operation) (VolumePostHook, revert.Hook, error)
+	BackupVolume(vol Volume, writer instancewriter.InstanceWriter, basePrefix string, optimized bool, snapshots []string, op *operations.Operation) error
+	CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcData io.ReadSeeker, basePrefix string, op *operations.Operation) (VolumePostHook, revert.Hook, error)
 }

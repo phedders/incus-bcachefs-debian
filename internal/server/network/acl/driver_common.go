@@ -13,20 +13,21 @@ import (
 	"strings"
 	"sync"
 
-	incus "github.com/lxc/incus/v6/client"
-	internalInstance "github.com/lxc/incus/v6/internal/instance"
-	"github.com/lxc/incus/v6/internal/server/cluster"
-	"github.com/lxc/incus/v6/internal/server/cluster/request"
-	"github.com/lxc/incus/v6/internal/server/db"
-	dbCluster "github.com/lxc/incus/v6/internal/server/db/cluster"
-	"github.com/lxc/incus/v6/internal/server/state"
-	localUtil "github.com/lxc/incus/v6/internal/server/util"
-	"github.com/lxc/incus/v6/internal/version"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/util"
-	"github.com/lxc/incus/v6/shared/validate"
+	incus "github.com/lxc/incus/v7/client"
+	internalInstance "github.com/lxc/incus/v7/internal/instance"
+	"github.com/lxc/incus/v7/internal/server/cluster"
+	"github.com/lxc/incus/v7/internal/server/cluster/request"
+	"github.com/lxc/incus/v7/internal/server/db"
+	dbCluster "github.com/lxc/incus/v7/internal/server/db/cluster"
+	addressset "github.com/lxc/incus/v7/internal/server/network/address-set"
+	"github.com/lxc/incus/v7/internal/server/state"
+	localUtil "github.com/lxc/incus/v7/internal/server/util"
+	"github.com/lxc/incus/v7/internal/version"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/util"
+	"github.com/lxc/incus/v7/shared/validate"
 )
 
 // Define type for rule directions.
@@ -558,6 +559,22 @@ func (d *common) validateRuleSubjects(fieldName string, direction ruleDirection,
 			return 0, fmt.Errorf("Named subjects not allowed in %q for %q rules", fieldName, direction)
 		}
 
+		if strings.HasPrefix(subject, "$") {
+			addrSetName := strings.Trim(subject, "$")
+
+			// Check that the address set exists.
+			err := d.state.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+				var err error
+				_, err = dbCluster.GetNetworkAddressSet(ctx, tx.Tx(), d.Project(), addrSetName)
+				return err
+			})
+			if err != nil {
+				return 0, fmt.Errorf("Failed getting network address set %q for subject validation: %w", addrSetName, err)
+			}
+
+			return 0, nil // Found valid subject.
+		}
+
 		return 0, fmt.Errorf("Invalid subject %q", subject)
 	}
 
@@ -660,6 +677,11 @@ func (d *common) Update(config *api.NetworkACLPut, clientType request.ClientType
 
 	// Apply ACL changes to non-OVN networks on this member.
 	for _, aclNet := range aclNets {
+		err = addressset.FirewallApplyAddressSetsForACLRules(d.state, "inet", d.projectName, []string{d.info.Name})
+		if err != nil {
+			return err
+		}
+
 		// Only trigger application on related bridged networks that directly use the ACL.
 		networkACLs := util.SplitNTrimSpace(aclNet.Config["security.acls"], ",", -1, true)
 		if slices.Contains(networkACLs, d.info.Name) {
@@ -672,6 +694,11 @@ func (d *common) Update(config *api.NetworkACLPut, clientType request.ClientType
 
 	// If there are affected bridge NICs, apply the ACL changes to the bridge interface filter.
 	if len(aclBridgeNICs) > 0 {
+		err = addressset.FirewallApplyAddressSetsForACLRules(d.state, "bridge", d.projectName, []string{d.info.Name})
+		if err != nil {
+			return err
+		}
+
 		err := BridgeUpdateACLs(d.state, d.logger, d.projectName, aclBridgeNICs)
 		if err != nil {
 			return fmt.Errorf("Failed updating bridge NIC ACL: %w", err)
@@ -716,6 +743,13 @@ func (d *common) Update(config *api.NetworkACLPut, clientType request.ClientType
 		cleanup, err := OVNEnsureACLs(d.state, d.logger, ovnnb, d.projectName, aclNameIDs, aclOVNNets, []string{d.info.Name}, true)
 		if err != nil {
 			return fmt.Errorf("Failed ensuring ACL is configured in OVN: %w", err)
+		}
+
+		reverter.Add(cleanup)
+
+		cleanup, err = addressset.OVNEnsureAddressSetsViaACLs(d.state, d.logger, ovnnb, d.projectName, []string{d.info.Name})
+		if err != nil {
+			return fmt.Errorf("Failed ensuring Address sets is configured for ACL %s in OVN: %w", d.info.Name, err)
 		}
 
 		reverter.Add(cleanup)

@@ -12,28 +12,31 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lxc/incus/v6/internal/server/backup"
-	"github.com/lxc/incus/v6/internal/server/certificate"
-	"github.com/lxc/incus/v6/internal/server/cluster"
-	"github.com/lxc/incus/v6/internal/server/db"
-	dbCluster "github.com/lxc/incus/v6/internal/server/db/cluster"
-	"github.com/lxc/incus/v6/internal/server/db/query"
-	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
-	"github.com/lxc/incus/v6/internal/server/instance"
-	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
-	"github.com/lxc/incus/v6/internal/server/network"
-	"github.com/lxc/incus/v6/internal/server/network/acl"
-	"github.com/lxc/incus/v6/internal/server/network/ovn"
-	"github.com/lxc/incus/v6/internal/server/node"
-	"github.com/lxc/incus/v6/internal/server/project"
-	storagePools "github.com/lxc/incus/v6/internal/server/storage"
-	storageDrivers "github.com/lxc/incus/v6/internal/server/storage/drivers"
-	internalUtil "github.com/lxc/incus/v6/internal/util"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/subprocess"
-	"github.com/lxc/incus/v6/shared/util"
+	linstorClient "github.com/LINBIT/golinstor/client"
+
+	internalInstance "github.com/lxc/incus/v7/internal/instance"
+	"github.com/lxc/incus/v7/internal/server/backup"
+	"github.com/lxc/incus/v7/internal/server/certificate"
+	"github.com/lxc/incus/v7/internal/server/cluster"
+	"github.com/lxc/incus/v7/internal/server/db"
+	dbCluster "github.com/lxc/incus/v7/internal/server/db/cluster"
+	"github.com/lxc/incus/v7/internal/server/db/query"
+	deviceConfig "github.com/lxc/incus/v7/internal/server/device/config"
+	"github.com/lxc/incus/v7/internal/server/instance"
+	"github.com/lxc/incus/v7/internal/server/instance/instancetype"
+	"github.com/lxc/incus/v7/internal/server/network"
+	"github.com/lxc/incus/v7/internal/server/network/acl"
+	"github.com/lxc/incus/v7/internal/server/network/ovn"
+	"github.com/lxc/incus/v7/internal/server/node"
+	"github.com/lxc/incus/v7/internal/server/project"
+	storagePools "github.com/lxc/incus/v7/internal/server/storage"
+	storageDrivers "github.com/lxc/incus/v7/internal/server/storage/drivers"
+	internalUtil "github.com/lxc/incus/v7/internal/util"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/subprocess"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 type patchStage int
@@ -90,13 +93,18 @@ var patches = []patch{
 	{name: "runtime_directory", stage: patchPostDaemonStorage, run: patchRuntimeDirectory},
 	{name: "lvm_node_force_reuse", stage: patchPostDaemonStorage, run: patchLvmForceReuseKey},
 	{name: "auth_openfga_viewer", stage: patchPostNetworks, run: patchGenericAuthorization},
+	{name: "auth_openfga_network_address_set", stage: patchPostNetworks, run: patchGenericAuthorization},
 	{name: "db_json_columns", stage: patchPreDaemonStorage, run: patchConvertJSONColumn},
-	{name: "pool_fix_default_permissions", stage: patchPostDaemonStorage, run: patchDefaultStoragePermissions},
 	{name: "network_ovn_directional_port_groups", stage: patchPostDaemonStorage, run: patchGenericNetwork(patchNetworkOVNPortGroups)},
+	{name: "pool_fix_default_permissions", stage: patchPostDaemonStorage, run: patchDefaultStoragePermissions},
 	{name: "auth_openfga_volume_files", stage: patchPostNetworks, run: patchGenericAuthorization},
+	{name: "btrfs_config_volume_subvolume_names", stage: patchPostNetworks, run: patchBtrfsSubvolumeNames},
+	{name: "linstor_tune_rs_discard_granularity", stage: patchPostDaemonStorage, run: patchLinstorDiscardGranularity},
 }
 
 type patchRun func(name string, d *Daemon) error
+
+var errRetryNextTime = errors.New("skipped")
 
 type patch struct {
 	name  string
@@ -109,6 +117,10 @@ func (p *patch) apply(d *Daemon) error {
 
 	err := p.run(p.name, d)
 	if err != nil {
+		if errors.Is(err, errRetryNextTime) {
+			return nil
+		}
+
 		return fmt.Errorf("Failed applying patch %q: %w", p.name, err)
 	}
 
@@ -1349,45 +1361,6 @@ UPDATE networks_load_balancers SET ports="null" WHERE ports="";
 	return nil
 }
 
-// patchDefaultStoragePermissions re-applies the default modes to all storage pools.
-func patchDefaultStoragePermissions(_ string, d *Daemon) error {
-	s := d.State()
-
-	var pools []string
-
-	err := s.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
-		var err error
-
-		// Get all storage pool names.
-		pools, err = tx.GetStoragePoolNames(ctx)
-
-		return err
-	})
-	if err != nil {
-		// Skip the rest of the patch if no storage pools were found.
-		if api.StatusErrorCheck(err, http.StatusNotFound) {
-			return nil
-		}
-
-		return fmt.Errorf("Failed getting storage pool names: %w", err)
-	}
-
-	for _, pool := range pools {
-		for _, volEntry := range storageDrivers.BaseDirectories {
-			for _, volDir := range volEntry.Paths {
-				path := filepath.Join(storagePools.GetStoragePoolMountPoint(pool), volDir)
-
-				err := os.Chmod(path, volEntry.Mode)
-				if err != nil && !errors.Is(err, fs.ErrNotExist) {
-					return fmt.Errorf("Failed to set directory mode %q: %w", path, err)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
 func patchNetworkOVNPortGroups(_ string, d *Daemon) error {
 	reverter := revert.New()
 	defer reverter.Fail()
@@ -1646,6 +1619,215 @@ func patchNetworkOVNPortGroups(_ string, d *Daemon) error {
 	}
 
 	reverter.Success()
+	return nil
+}
+
+// patchDefaultStoragePermissions re-applies the default modes to all storage pools.
+func patchDefaultStoragePermissions(_ string, d *Daemon) error {
+	s := d.State()
+
+	var pools []string
+
+	err := s.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+		var err error
+
+		// Get all storage pool names.
+		pools, err = tx.GetStoragePoolNames(ctx)
+
+		return err
+	})
+	if err != nil {
+		// Skip the rest of the patch if no storage pools were found.
+		if api.StatusErrorCheck(err, http.StatusNotFound) {
+			return nil
+		}
+
+		return fmt.Errorf("Failed getting storage pool names: %w", err)
+	}
+
+	for _, pool := range pools {
+		for _, volEntry := range storageDrivers.BaseDirectories {
+			for _, volDir := range volEntry.Paths {
+				path := filepath.Join(storagePools.GetStoragePoolMountPoint(pool), volDir)
+
+				err := os.Chmod(path, volEntry.Mode)
+				if err != nil && !errors.Is(err, fs.ErrNotExist) {
+					return fmt.Errorf("Failed to set directory mode %q: %w", path, err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// patchBtrfsSubvolumeNames updates Btrfs subvolume names for instance config volumes,
+// replacing the pattern '<instance-name>-' with 'instance-'.
+func patchBtrfsSubvolumeNames(_ string, d *Daemon) error {
+	s := d.State()
+
+	// Get the list of local instances.
+	instances, err := instance.LoadNodeAll(s, instancetype.Any)
+	if err != nil {
+		return fmt.Errorf("Failed loading local instances: %w", err)
+	}
+
+	for _, inst := range instances {
+		volType, err := storagePools.InstanceTypeToVolumeType(inst.Type())
+		if err != nil {
+			return err
+		}
+
+		// Get the volume name on storage.
+		volStorageName := project.Instance(inst.Project().Name, inst.Name())
+		contentType := storagePools.InstanceContentType(inst)
+
+		_, currentPool, _ := internalInstance.GetRootDiskDevice(inst.ExpandedDevices().CloneNative())
+
+		// Load storage pool.
+		p, err := storagePools.LoadByName(s, currentPool["pool"])
+		if err != nil {
+			logger.Error("Failed loading pool", logger.Ctx{"pool": currentPool["pool"], "err": err})
+			continue
+		}
+
+		// Check if driver is 'lvmcluster'.
+		if p.Driver().Info().Name != "lvmcluster" {
+			continue
+		}
+
+		// Load storage volume from database.
+		dbVol, err := storagePools.VolumeDBGet(p, inst.Project().Name, inst.Name(), volType)
+		if err != nil {
+			logger.Error("Failed loading volume", logger.Ctx{"vol": inst.Name(), "err": err})
+			continue
+		}
+
+		// Process only qcow2 instances.
+		if dbVol.Config["block.type"] != "qcow2" {
+			continue
+		}
+
+		vol := p.GetVolume(volType, contentType, volStorageName, dbVol.Config)
+
+		newName := storageDrivers.Qcow2ConfigVolumeBase
+		fsVol := vol.NewVMBlockFilesystemVolume()
+
+		// Increment the ref count for running instances,
+		// since it is equal zero at this stage and may cause an unintended volume deactivation.
+		if inst.IsRunning() {
+			fsVol.MountRefCountIncrement()
+		}
+
+		err = storageDrivers.Qcow2MountConfigTask(fsVol, nil, func(mountPath string) error {
+			_, volName := project.StorageVolumeParts(fsVol.Name())
+			entries, err := os.ReadDir(mountPath)
+			if err != nil {
+				return err
+			}
+
+			// Iterate through all entries (directories) and rename them.
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+
+				oldName := entry.Name()
+
+				if oldName == volName || strings.HasPrefix(oldName, volName) {
+					newName := newName + strings.TrimPrefix(oldName, volName)
+
+					oldPath := filepath.Join(mountPath, oldName)
+					newPath := filepath.Join(mountPath, newName)
+
+					err := os.Rename(oldPath, newPath)
+					if err != nil {
+						return fmt.Errorf("Failed to rename %q to %q: %w", oldPath, newPath, err)
+					}
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			logger.Error("Failed to rename btrfs subvolumes", logger.Ctx{"err": err})
+			continue
+		}
+
+		if inst.IsRunning() {
+			fsVol.MountRefCountDecrement()
+		}
+	}
+
+	return nil
+}
+
+// patchLinstorDiscardGranularity sets `DrbdOptions/Disk/rs-discard-granularity` on pools that don’t
+// already set it.
+func patchLinstorDiscardGranularity(_ string, d *Daemon) error {
+	s := d.State()
+	var pools map[int64]api.StoragePool
+
+	err := s.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+		var err error
+
+		// Get all storage pools.
+		pools, _, err = tx.GetStoragePools(ctx, nil)
+
+		return err
+	})
+	if err != nil {
+		// Skip the rest of the patch if no storage pools were found.
+		if api.StatusErrorCheck(err, http.StatusNotFound) {
+			return nil
+		}
+
+		return fmt.Errorf("Failed getting storage pools: %w", err)
+	}
+
+	var resourceGroups []string
+	for _, pool := range pools {
+		if pool.Driver == "linstor" {
+			resourceGroups = append(resourceGroups, pool.Config[storageDrivers.LinstorResourceGroupNameConfigKey])
+		}
+	}
+
+	if len(resourceGroups) == 0 {
+		return nil
+	}
+
+	// Retrieve the Linstor client.
+	linstor, err := s.Linstor()
+	if err != nil {
+		// Let’s not fail the daemon here.
+		logger.Errorf("Failed to load LINSTOR client: %v", err)
+		return errRetryNextTime
+	}
+
+	retryNextTime := false
+	for _, resourceGroup := range resourceGroups {
+		rg, err := linstor.Client.ResourceGroups.Get(context.TODO(), resourceGroup)
+		if err != nil {
+			logger.Errorf("Could not get LINSTOR resource group %s: %v", resourceGroup, err)
+			retryNextTime = true
+			continue
+		}
+
+		if rg.Props["DrbdOptions/Disk/rs-discard-granularity"] == "" {
+			err = linstor.Client.ResourceGroups.Modify(context.TODO(), resourceGroup, linstorClient.ResourceGroupModify{
+				OverrideProps: map[string]string{"DrbdOptions/Disk/rs-discard-granularity": "1048576"},
+			})
+			if err != nil {
+				logger.Errorf("Could not set LINSTOR resource group %s property: %v", resourceGroup, err)
+				retryNextTime = true
+			}
+		}
+	}
+
+	if retryNextTime {
+		return errRetryNextTime
+	}
+
 	return nil
 }
 

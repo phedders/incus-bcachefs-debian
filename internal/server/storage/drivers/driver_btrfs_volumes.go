@@ -16,23 +16,23 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v4"
 
-	"github.com/lxc/incus/v6/internal/instancewriter"
-	"github.com/lxc/incus/v6/internal/linux"
-	"github.com/lxc/incus/v6/internal/migration"
-	"github.com/lxc/incus/v6/internal/server/backup"
-	localMigration "github.com/lxc/incus/v6/internal/server/migration"
-	"github.com/lxc/incus/v6/internal/server/operations"
-	internalUtil "github.com/lxc/incus/v6/internal/util"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/archive"
-	"github.com/lxc/incus/v6/shared/ioprogress"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/subprocess"
-	"github.com/lxc/incus/v6/shared/units"
-	"github.com/lxc/incus/v6/shared/util"
+	"github.com/lxc/incus/v7/internal/instancewriter"
+	"github.com/lxc/incus/v7/internal/linux"
+	"github.com/lxc/incus/v7/internal/migration"
+	"github.com/lxc/incus/v7/internal/server/backup"
+	localMigration "github.com/lxc/incus/v7/internal/server/migration"
+	"github.com/lxc/incus/v7/internal/server/operations"
+	internalUtil "github.com/lxc/incus/v7/internal/util"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/archive"
+	"github.com/lxc/incus/v7/shared/ioprogress"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/subprocess"
+	"github.com/lxc/incus/v7/shared/units"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 // CreateVolume creates an empty volume and can optionally fill it by executing the supplied filler function.
@@ -153,10 +153,10 @@ func (d *btrfs) CreateVolume(vol Volume, filler *VolumeFiller, op *operations.Op
 }
 
 // CreateVolumeFromBackup restores a backup tarball onto the storage device.
-func (d *btrfs) CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcData io.ReadSeeker, op *operations.Operation) (VolumePostHook, revert.Hook, error) {
+func (d *btrfs) CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcData io.ReadSeeker, basePrefix string, op *operations.Operation) (VolumePostHook, revert.Hook, error) {
 	// Handle the non-optimized tarballs through the generic unpacker.
 	if !*srcBackup.OptimizedStorage {
-		return genericVFSBackupUnpack(d, d.state.OS, vol, srcBackup.Snapshots, srcData, op)
+		return genericVFSBackupUnpack(d, d.state.OS, vol, srcBackup.Snapshots, srcData, basePrefix, op)
 	}
 
 	volExists, err := d.HasVolume(vol)
@@ -200,7 +200,7 @@ func (d *btrfs) CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcDat
 	// Load optimized backup header file if specified.
 	var optimizedHeader *BTRFSMetaDataHeader
 	if *srcBackup.OptimizedHeader {
-		optimizedHeader, err = d.loadOptimizedBackupHeader(srcData, GetVolumeMountPath(d.name, vol.volType, ""))
+		optimizedHeader, err = d.loadOptimizedBackupHeader(srcData, GetVolumeMountPath(d.name, vol.volType, ""), basePrefix)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -288,11 +288,11 @@ func (d *btrfs) CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcDat
 			}
 
 			// Figure out what file we are looking for in the backup file.
-			srcFilePath := filepath.Join("backup", fmt.Sprintf("%s.bin", srcFilePrefix))
+			srcFilePath := filepath.Join(basePrefix, fmt.Sprintf("%s.bin", srcFilePrefix))
 			if subVol.Path != string(filepath.Separator) {
 				// If subvolume is non-root, then we expect the file to be encoded as its original
 				// path with the leading / removed.
-				srcFilePath = filepath.Join("backup", fmt.Sprintf("%s_%s.bin", srcFilePrefix, linux.PathNameEncode(strings.TrimPrefix(subVol.Path, string(filepath.Separator)))))
+				srcFilePath = filepath.Join(basePrefix, fmt.Sprintf("%s_%s.bin", srcFilePrefix, linux.PathNameEncode(strings.TrimPrefix(subVol.Path, string(filepath.Separator)))))
 			}
 
 			// Define where we will move the subvolume after it is unpacked.
@@ -324,7 +324,7 @@ func (d *btrfs) CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcDat
 
 	if len(srcBackup.Snapshots) > 0 {
 		// Create new snapshots directory.
-		err := createParentSnapshotDirIfMissing(d.name, vol.volType, vol.name)
+		err := CreateParentSnapshotDirIfMissing(d.name, vol.volType, vol.name)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -471,7 +471,7 @@ func (d *btrfs) CreateVolumeFromCopy(vol Volume, srcVol Volume, copySnapshots bo
 	// Copy any snapshots needed.
 	if len(snapshots) > 0 {
 		// Create the parent directory.
-		err = createParentSnapshotDirIfMissing(d.name, vol.volType, vol.name)
+		err = CreateParentSnapshotDirIfMissing(d.name, vol.volType, vol.name)
 		if err != nil {
 			return err
 		}
@@ -694,7 +694,7 @@ func (d *btrfs) createVolumeFromMigrationOptimized(vol Volume, conn io.ReadWrite
 	// Handle btrfs send/receive migration.
 	if !volTargetArgs.VolumeOnly && len(volTargetArgs.Snapshots) > 0 {
 		// Create the parent directory.
-		err := createParentSnapshotDirIfMissing(d.name, vol.volType, vol.name)
+		err := CreateParentSnapshotDirIfMissing(d.name, vol.volType, vol.name)
 		if err != nil {
 			return err
 		}
@@ -1107,7 +1107,7 @@ func (d *btrfs) UpdateVolume(vol Volume, changedConfig map[string]string) error 
 		}
 	}
 
-	return nil
+	return d.updateVolume(vol, changedConfig)
 }
 
 // GetVolumeUsage returns the disk space used by the volume.
@@ -1623,7 +1623,7 @@ func (d *btrfs) migrateVolumeOptimized(vol Volume, conn io.ReadWriteCloser, volS
 
 // BackupVolume copies a volume (and optionally its snapshots) to a specified target path.
 // This driver does not support optimized backups.
-func (d *btrfs) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, optimized bool, snapshots []string, op *operations.Operation) error {
+func (d *btrfs) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, basePrefix string, optimized bool, snapshots []string, op *operations.Operation) error {
 	// Handle the non-optimized tarballs through the generic packer.
 	if !optimized {
 		// Because the generic backup method will not take a consistent backup if files are being modified
@@ -1642,7 +1642,7 @@ func (d *btrfs) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, o
 			vol.mountCustomPath = snapshotPath
 		}
 
-		return genericVFSBackupVolume(d, vol, writer, snapshots, op)
+		return genericVFSBackupVolume(d, vol, writer, basePrefix, snapshots, op)
 	}
 
 	// Optimized backup.
@@ -1662,7 +1662,7 @@ func (d *btrfs) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, o
 	}
 
 	// Convert to YAML.
-	optimizedHeaderYAML, err := yaml.Marshal(&optimizedHeader)
+	optimizedHeaderYAML, err := yaml.Dump(&optimizedHeader, yaml.V2)
 	if err != nil {
 		return err
 	}
@@ -1670,7 +1670,7 @@ func (d *btrfs) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, o
 	r := bytes.NewReader(optimizedHeaderYAML)
 
 	indexFileInfo := instancewriter.FileInfo{
-		FileName:    "backup/optimized_header.yaml",
+		FileName:    filepath.Join(basePrefix, "optimized_header.yaml"),
 		FileSize:    int64(len(optimizedHeaderYAML)),
 		FileMode:    0o644,
 		FileModTime: time.Now(),
@@ -1779,7 +1779,7 @@ func (d *btrfs) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, o
 			}
 
 			fileName := fmt.Sprintf("%s%s.bin", fileNamePrefix, subVolName)
-			err = sendToFile(sourcePath, parentPath, filepath.Join("backup", fileName))
+			err = sendToFile(sourcePath, parentPath, filepath.Join(basePrefix, fileName))
 			if err != nil {
 				return fmt.Errorf("Failed adding volume %v:%s: %w", v.name, subVolume.Path, err)
 			}
@@ -1884,7 +1884,7 @@ func (d *btrfs) CreateVolumeSnapshot(snapVol Volume, op *operations.Operation) e
 	snapPath := snapVol.MountPath()
 
 	// Create the parent directory.
-	err := createParentSnapshotDirIfMissing(d.name, snapVol.volType, parentName)
+	err := CreateParentSnapshotDirIfMissing(d.name, snapVol.volType, parentName)
 	if err != nil {
 		return err
 	}
@@ -2094,4 +2094,23 @@ func (d *btrfs) RestoreVolume(vol Volume, snapshotName string, op *operations.Op
 // RenameVolumeSnapshot renames a volume snapshot.
 func (d *btrfs) RenameVolumeSnapshot(snapVol Volume, newSnapshotName string, op *operations.Operation) error {
 	return genericVFSRenameVolumeSnapshot(d, snapVol, newSnapshotName, op)
+}
+
+// ActivateTask allows running a function while the volume is active (but not mounted).
+func (d *btrfs) ActivateTask(vol Volume, task func(devPath string, op *operations.Operation) error, op *operations.Operation) error {
+	// Prevent concurrent mounting actions.
+	unlock, err := vol.MountLock()
+	if err != nil {
+		return err
+	}
+
+	defer unlock()
+
+	volDevPath, err := d.GetVolumeDiskPath(vol)
+	if err != nil {
+		return err
+	}
+
+	// Run the task.
+	return task(volDevPath, op)
 }

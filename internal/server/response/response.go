@@ -14,11 +14,12 @@ import (
 	"sync"
 	"time"
 
-	incus "github.com/lxc/incus/v6/client"
-	localUtil "github.com/lxc/incus/v6/internal/server/util"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/tcp"
+	incus "github.com/lxc/incus/v7/client"
+	localUtil "github.com/lxc/incus/v7/internal/server/util"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/tcp"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 var debug bool
@@ -495,7 +496,7 @@ func (r *fileResponse) Render(w http.ResponseWriter) error {
 			return err
 		}
 
-		_, err = io.Copy(fw, rd)
+		_, err = util.SafeCopy(fw, rd)
 		if err != nil {
 			return err
 		}
@@ -567,7 +568,7 @@ func (r *forwardedResponse) Render(w http.ResponseWriter) error {
 		w.WriteHeader(response.StatusCode)
 	}
 
-	_, err = io.Copy(w, response.Body)
+	_, err = util.SafeCopy(w, response.Body)
 	return err
 }
 
@@ -612,28 +613,34 @@ func Unauthorized(err error) Response {
 	return &errorResponse{http.StatusUnauthorized, message}
 }
 
-// SFTPResponse upgrades the connection for sftp and connects to the backend server.
-func SFTPResponse(r *http.Request, conn net.Conn) Response {
-	return &sftpResponse{req: r, conn: conn}
+// UpgradeResponse upgrades the connection and connects to the backend server.
+func UpgradeResponse(r *http.Request, conn net.Conn, protocol string, cleanup func()) Response {
+	return &upgradeResponse{req: r, conn: conn, protocol: protocol, cleanup: cleanup}
 }
 
-type sftpResponse struct {
-	req  *http.Request
-	conn net.Conn
+type upgradeResponse struct {
+	req      *http.Request
+	conn     net.Conn
+	protocol string
+	cleanup  func()
 }
 
 // String returns the response type name.
-func (r *sftpResponse) String() string {
-	return "sftp handler"
+func (r *upgradeResponse) String() string {
+	return r.protocol + " handler"
 }
 
 // Code returns the HTTP code.
-func (r *sftpResponse) Code() int {
+func (r *upgradeResponse) Code() int {
 	return http.StatusOK
 }
 
 // Render handles the HTTP connection.
-func (r *sftpResponse) Render(w http.ResponseWriter) error {
+func (r *upgradeResponse) Render(w http.ResponseWriter) error {
+	if r.cleanup != nil {
+		defer r.cleanup()
+	}
+
 	defer func() { _ = r.conn.Close() }()
 
 	hijacker, ok := w.(http.Hijacker)
@@ -657,9 +664,18 @@ func (r *sftpResponse) Render(w http.ResponseWriter) error {
 		}
 	}
 
-	err = Upgrade(remoteConn, "sftp")
+	err = Upgrade(remoteConn, r.protocol)
 	if err != nil {
 		return api.StatusErrorf(http.StatusInternalServerError, "%s", err.Error())
+	}
+
+	if r.protocol == "nbd" {
+		// A bit of a hack to handle the fact that NBD is a protocol where
+		// the server speaks first, immediately sending a connection header when
+		// processing a new connection. This immediate bit of raw data can hit the
+		// client prior to it having completed the HTTP part of the upgrade,
+		// causing that header message to get dropped.
+		time.Sleep(250 * time.Millisecond)
 	}
 
 	ctx, cancel := context.WithCancel(r.req.Context())
@@ -672,25 +688,28 @@ func (r *sftpResponse) Render(w http.ResponseWriter) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := io.Copy(remoteConn, r.conn)
+
+		_, err := util.SafeCopy(remoteConn, r.conn)
 		if err != nil {
 			if ctx.Err() == nil {
-				l.Warn("Failed copying SFTP instance connection to remote connection", logger.Ctx{"err": err})
+				l.Warn("Failed copying data from local to remote connection", logger.Ctx{"err": err})
 			}
 		}
+
 		cancel()               // Cancel context first so when remoteConn is closed it doesn't cause a warning.
-		_ = remoteConn.Close() // Trigger the cancellation of the io.Copy reading from remoteConn.
+		_ = remoteConn.Close() // Trigger the cancellation of the util.SafeCopy reading from remoteConn.
 	}()
 
-	_, err = io.Copy(r.conn, remoteConn)
+	_, err = util.SafeCopy(r.conn, remoteConn)
 	if err != nil {
 		if ctx.Err() == nil {
-			l.Warn("Failed copying SFTP remote connection to instance connection", logger.Ctx{"err": err})
+			l.Warn("Failed copying data from remote to local connection", logger.Ctx{"err": err})
 		}
 	}
+
 	cancel() // Cancel context first so when conn is closed it doesn't cause a warning.
 
-	err = r.conn.Close() // Trigger the cancellation of the io.Copy reading from conn.
+	err = r.conn.Close() // Trigger the cancellation of the util.SafeCopy reading from conn.
 	if err != nil {
 		return fmt.Errorf("Failed closing connection to remote server: %w", err)
 	}
@@ -719,7 +738,16 @@ func (r *pipeResponse) Code() int {
 func (r *pipeResponse) Render(w http.ResponseWriter) error {
 	defer func() { _ = r.reader.Close() }()
 	w.Header().Set("Content-Type", "application/octet-stream")
-	_, err := io.Copy(w, r.reader)
+	w.WriteHeader(r.Code())
+
+	// We really want to flush the headers now, so that we do not hit a timeout on the receiver side
+	// in the case of slow optimized storage export.
+	flusher, ok := w.(http.Flusher)
+	if ok {
+		flusher.Flush()
+	}
+
+	_, err := util.SafeCopy(w, r.reader)
 	return err
 }
 

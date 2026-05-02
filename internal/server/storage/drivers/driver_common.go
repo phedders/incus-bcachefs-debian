@@ -11,18 +11,18 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lxc/incus/v6/internal/instancewriter"
-	"github.com/lxc/incus/v6/internal/linux"
-	"github.com/lxc/incus/v6/internal/migration"
-	"github.com/lxc/incus/v6/internal/server/backup"
-	localMigration "github.com/lxc/incus/v6/internal/server/migration"
-	"github.com/lxc/incus/v6/internal/server/operations"
-	"github.com/lxc/incus/v6/internal/server/project"
-	"github.com/lxc/incus/v6/internal/server/state"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/subprocess"
-	"github.com/lxc/incus/v6/shared/util"
+	"github.com/lxc/incus/v7/internal/instancewriter"
+	"github.com/lxc/incus/v7/internal/linux"
+	"github.com/lxc/incus/v7/internal/migration"
+	"github.com/lxc/incus/v7/internal/server/backup"
+	localMigration "github.com/lxc/incus/v7/internal/server/migration"
+	"github.com/lxc/incus/v7/internal/server/operations"
+	"github.com/lxc/incus/v7/internal/server/project"
+	"github.com/lxc/incus/v7/internal/server/state"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/subprocess"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 type common struct {
@@ -189,6 +189,23 @@ func (d *common) validateVolume(vol Volume, driverRules map[string]func(value st
 		return errors.New("security.unmapped and security.shifted are mutually exclusive")
 	}
 
+	if util.IsTrue(vol.config["dependent"]) {
+		err := ValidateDependentConfigKey(vol.config)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// updateVolume applies the common changes for all drivers of a volume configuration change.
+func (d *common) updateVolume(vol Volume, changedConfig map[string]string) error {
+	_, changed := changedConfig["dependent"]
+	if changed {
+		return errors.New("dependent cannot be changed")
+	}
+
 	return nil
 }
 
@@ -316,7 +333,7 @@ func (d *common) CreateVolume(vol Volume, filler *VolumeFiller, op *operations.O
 }
 
 // CreateVolumeFromBackup re-creates a volume from its exported state.
-func (d *common) CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcData io.ReadSeeker, op *operations.Operation) (VolumePostHook, revert.Hook, error) {
+func (d *common) CreateVolumeFromBackup(vol Volume, srcBackup backup.Info, srcData io.ReadSeeker, basePrefix string, op *operations.Operation) (VolumePostHook, revert.Hook, error) {
 	return nil, nil, ErrNotSupported
 }
 
@@ -407,7 +424,7 @@ func (d *common) MigrateVolume(vol Volume, conn io.ReadWriteCloser, volSrcArgs *
 }
 
 // BackupVolume creates an exported version of a volume.
-func (d *common) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, optimized bool, snapshots []string, op *operations.Operation) error {
+func (d *common) BackupVolume(vol Volume, writer instancewriter.InstanceWriter, basePrefix string, optimized bool, snapshots []string, op *operations.Operation) error {
 	return ErrNotSupported
 }
 
@@ -434,6 +451,11 @@ func (d *common) UnmountVolumeSnapshot(snapVol Volume, op *operations.Operation)
 // VolumeSnapshots returns a list of snapshots for the volume (in no particular order).
 func (d *common) VolumeSnapshots(vol Volume, op *operations.Operation) ([]string, error) {
 	return nil, ErrNotSupported
+}
+
+// CanRestoreVolume checks whether a volume snapshot can be restored.
+func (d *common) CanRestoreVolume(vol Volume, snapshotName string) error {
+	return nil
 }
 
 // RestoreVolume resets a volume to its snapshotted state.
@@ -551,11 +573,6 @@ func (d *common) filesystemFreeze(path string) (func() error, error) {
 	}
 
 	return unfreezeFS, nil
-}
-
-// CacheVolumeSnapshots causes snapshot data to be cached for later use (for bulk queries).
-func (d *common) CacheVolumeSnapshots(vol Volume) error {
-	return nil
 }
 
 // GetQcow2BackingFilePath generates the backing file path for the specified volume.

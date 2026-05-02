@@ -17,19 +17,18 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/sys/unix"
 
-	internalInstance "github.com/lxc/incus/v6/internal/instance"
-	"github.com/lxc/incus/v6/internal/server/locking"
-	"github.com/lxc/incus/v6/internal/server/operations"
-	"github.com/lxc/incus/v6/internal/server/project"
-	"github.com/lxc/incus/v6/internal/server/refcount"
-	"github.com/lxc/incus/v6/internal/server/state"
-	internalUtil "github.com/lxc/incus/v6/internal/util"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/idmap"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/units"
-	"github.com/lxc/incus/v6/shared/util"
+	internalInstance "github.com/lxc/incus/v7/internal/instance"
+	"github.com/lxc/incus/v7/internal/server/locking"
+	"github.com/lxc/incus/v7/internal/server/operations"
+	"github.com/lxc/incus/v7/internal/server/refcount"
+	"github.com/lxc/incus/v7/internal/server/state"
+	internalUtil "github.com/lxc/incus/v7/internal/util"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/idmap"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/units"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 // tmpVolSuffix Suffix to use for any temporary volumes created by Incus.
@@ -240,7 +239,7 @@ func (v Volume) EnsureMountPath(creation bool) error {
 		if v.IsSnapshot() {
 			// Create the parent directory if needed.
 			parentName, _, _ := api.GetParentAndSnapshotName(v.name)
-			err := createParentSnapshotDirIfMissing(v.pool, v.volType, parentName)
+			err := CreateParentSnapshotDirIfMissing(v.pool, v.volType, parentName)
 			if err != nil {
 				return err
 			}
@@ -610,11 +609,10 @@ func (v Volume) ConfigBlockFilesystem() string {
 // "block.mount_options" if defined in volume or pool's volume config, otherwise defaultFilesystemMountOptions.
 func (v Volume) ConfigBlockMountOptions() string {
 	if v.ExpandedConfig("block.type") == BlockVolumeTypeQcow2 && !v.mountFullFilesystem {
-		fullParent, snapName, isSnap := api.GetParentAndSnapshotName(v.name)
-		_, parent := project.StorageVolumeParts(fullParent)
-		subvol := parent
+		_, snapName, isSnap := api.GetParentAndSnapshotName(v.name)
+		subvol := Qcow2ConfigVolumeBase
 		if isSnap {
-			subvol = fmt.Sprintf("%s-%s", parent, snapName)
+			subvol = fmt.Sprintf("%s-%s", Qcow2ConfigVolumeBase, snapName)
 		}
 
 		return fmt.Sprintf("subvol=%s", subvol)

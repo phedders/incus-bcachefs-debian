@@ -57,6 +57,12 @@ if [ "$INCUS_BACKEND" != "random" ] && ! storage_backend_available "$INCUS_BACKE
     if [ "${INCUS_BACKEND}" = "ceph" ] && [ -z "${INCUS_CEPH_CLUSTER:-}" ]; then
         echo "Ceph storage backend requires that \"INCUS_CEPH_CLUSTER\" be set."
         exit 1
+    elif [ "${INCUS_BACKEND}" = "linstor" ] && [ -z "${INCUS_LINSTOR_CLUSTER:-}" ]; then
+        echo "LINSTOR storage backend requires that \"INCUS_LINSTOR_CLUSTER\" be set."
+        exit 1
+    elif [ "${INCUS_BACKEND}" = "truenas" ] && [ -z "${INCUS_TRUENAS_DATASET:-}" ]; then
+        echo "TrueNAS storage backend requires that \"INCUS_TRUENAS_DATASET\" be set."
+        exit 1
     fi
     echo "Storage backend \"$INCUS_BACKEND\" is not available"
     exit 1
@@ -64,6 +70,12 @@ fi
 echo "==> Using storage backend ${INCUS_BACKEND}"
 
 import_storage_backends
+
+if [ "${INCUS_BACKEND}" = "truenas" ] && { [ "$#" -eq 0 ] || [ "$1" = "all" ] || [ "$1" = "cluster" ]; }; then
+    # The cluster tests use net-ns which is incompatible with open-iscsi
+    echo "TrueNAS storage backend does not support the cluster tests. Please specify a list of test suites, or 'standalone'"
+    exit 1
+fi
 
 cleanup() {
     # Allow for failures and stop tracing everything
@@ -263,6 +275,7 @@ run_standalone_storage() {
     run_test test_container_devices_disk "container devices - disk"
     run_test test_container_local_cross_pool_handling "container local cross pool handling"
     run_test test_container_move "container server-side move"
+    run_test test_dependent_volumes "dependent volumes"
     run_test test_incremental_copy "incremental container copy"
     run_test test_migration "migration"
     run_test test_projects_storage "projects and storage pools"
@@ -276,6 +289,8 @@ run_standalone_storage() {
     run_test test_storage_driver_btrfs "btrfs storage driver"
     run_test test_storage_driver_ceph "ceph storage driver"
     run_test test_storage_driver_cephfs "cephfs storage driver"
+    run_test test_storage_driver_linstor "linstor storage driver"
+    run_test test_storage_driver_truenas "truenas storage driver"
     run_test test_storage_driver_zfs "zfs storage driver"
     run_test test_storage_local_volume_handling "storage local volume handling"
     run_test test_storage_profiles "storage profiles"
@@ -290,6 +305,7 @@ run_standalone_storage() {
 
 # Network and networking related tests
 run_standalone_network() {
+    run_test test_address_set "network address set"
     run_test test_container_devices_nic_bridged_acl "container devices - nic - bridged - acl"
     run_test test_container_devices_nic_bridged "container devices - nic - bridged"
     run_test test_container_devices_nic_bridged_filtering "container devices - nic - bridged - filtering"
@@ -334,6 +350,7 @@ run_standalone_container() {
     run_test test_container_devices_unix_block "container devices - unix-block"
     run_test test_container_devices_unix_char "container devices - unix-char"
     run_test test_container_metadata "manage container metadata and templates"
+    run_test test_container_oci "OCI containers"
     run_test test_container_recover "container recover"
     run_test test_container_snapshot_config "container snapshot configuration"
     run_test test_container_syscall_interception "container syscall interception"

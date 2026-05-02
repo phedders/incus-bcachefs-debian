@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/lxc/incus/v6/internal/server/auth/common"
-	"github.com/lxc/incus/v6/internal/server/request"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/util"
+	"github.com/lxc/incus/v7/internal/server/auth/common"
+	"github.com/lxc/incus/v7/internal/server/request"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 type commonAuthorizer struct {
@@ -278,6 +278,21 @@ func (c *commonAuthorizer) DeleteNetworkACL(ctx context.Context, projectName str
 
 // RenameNetworkACL is a no-op.
 func (c *commonAuthorizer) RenameNetworkACL(ctx context.Context, projectName string, oldNetworkACLName string, newNetworkACLName string) error {
+	return nil
+}
+
+// AddNetworkAddressSet is a no-op.
+func (c *commonAuthorizer) AddNetworkAddressSet(ctx context.Context, projectName string, networkAddressSetName string) error {
+	return nil
+}
+
+// DeleteNetworkAddressSet is a no-op.
+func (c *commonAuthorizer) DeleteNetworkAddressSet(ctx context.Context, projectName string, networkAddressSetName string) error {
+	return nil
+}
+
+// RenameNetworkAddressSet is a no-op.
+func (c *commonAuthorizer) RenameNetworkAddressSet(ctx context.Context, projectName string, oldNetworkAddressSetName string, newNetworkAddressSetName string) error {
 	return nil
 }
 

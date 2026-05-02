@@ -1,0 +1,56 @@
+name: Release
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+  issues: write
+  id-token: write
+  attestations: write
+
+jobs:
+  goreleaser:
+    name: Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Format version
+        id: version
+        run: |
+          raw="${GITHUB_REF_NAME#v}"
+          IFS='.' read -r major minor patch <<< "$raw"
+          if [ "${patch}" = "0" ]; then
+            echo "value=${major}.${minor}" >> $GITHUB_OUTPUT
+          else
+            echo "value=${major}.${minor}.${patch}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INCUS_VERSION: ${{ steps.version.outputs.value }}
+
+      - name: Handle attestation
+        uses: actions/attest@v4
+        with:
+          subject-checksums: ./dist/checksums.txt

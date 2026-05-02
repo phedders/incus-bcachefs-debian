@@ -682,6 +682,8 @@ test_clustering_storage() {
         driver_config="size=1GiB"
     elif [ "${poolDriver}" = "ceph" ]; then
         driver_config="source=incustest-$(basename "${TEST_DIR}")-pool1"
+    elif [ "${poolDriver}" = "linstor" ]; then
+        driver_config="source=incustest-$(basename "${TEST_DIR}" | sed 's/\./__/g')-pool1"
     fi
 
     # Define storage pools on the two nodes
@@ -730,6 +732,8 @@ test_clustering_storage() {
         INCUS_DIR="${INCUS_TWO_DIR}" incus storage create pool1 "${poolDriver}" volume.size=25MiB
     elif [ "${poolDriver}" = "ceph" ]; then
         INCUS_DIR="${INCUS_TWO_DIR}" incus storage create pool1 "${poolDriver}" volume.size=25MiB ceph.osd.pg_num=16
+    elif [ "${poolDriver}" = "linstor" ]; then
+        INCUS_DIR="${INCUS_TWO_DIR}" incus storage create pool1 "${poolDriver}" linstor.resource_group.place_count=1
     else
         INCUS_DIR="${INCUS_TWO_DIR}" incus storage create pool1 "${poolDriver}"
     fi
@@ -746,6 +750,11 @@ test_clustering_storage() {
         source1="incustest-$(basename "${TEST_DIR}")"
         source2="${source1}"
     fi
+    if [ "${poolDriver}" = "linstor" ]; then
+        # For linstor the source field is the name of the underlying linstor resource group
+        source1="incustest-$(basename "${TEST_DIR}" | sed 's/\./__/g')"
+        source2="${source1}"
+    fi
     INCUS_DIR="${INCUS_ONE_DIR}" incus storage show pool1 --target node1 | grep source | grep -q "${source1}"
     INCUS_DIR="${INCUS_ONE_DIR}" incus storage show pool1 --target node2 | grep source | grep -q "${source2}"
 
@@ -757,8 +766,8 @@ test_clustering_storage() {
         ! INCUS_DIR="${INCUS_ONE_DIR}" incus storage show pool1 | grep -q rsync.bwlimit || false
     fi
 
-    if [ "${poolDriver}" = "ceph" ]; then
-        # Test migration of ceph-based containers
+    if [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "linstor" ]; then
+        # Test migration of ceph- and linstor-based containers
         INCUS_DIR="${INCUS_TWO_DIR}" ensure_import_testimage
         INCUS_DIR="${INCUS_ONE_DIR}" incus launch --target node2 -s pool1 testimage foo
 
@@ -787,13 +796,17 @@ test_clustering_storage() {
 
     # If the driver has the same per-node storage pool config (e.g. size), make sure it's included in the
     # member_config, and actually added to a joining node so we can validate it.
-    if [ "${poolDriver}" = "zfs" ] || [ "${poolDriver}" = "btrfs" ] || [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "lvm" ]; then
+    if [ "${poolDriver}" = "zfs" ] || [ "${poolDriver}" = "btrfs" ] || [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "lvm" ] || [ "${poolDriver}" = "linstor" ]; then
         # Spawn a third node
         setup_clustering_netns 3
         INCUS_THREE_DIR=$(mktemp -d -p "${TEST_DIR}" XXX)
         chmod +x "${INCUS_THREE_DIR}"
         ns3="${prefix}3"
         INCUS_NETNS="${ns3}" spawn_incus "${INCUS_THREE_DIR}" false
+
+        if [ "${poolDriver}" = "linstor" ]; then
+            linstor_preconfigure "${INCUS_THREE_DIR}"
+        fi
 
         key=$(echo "${driver_config}" | cut -d'=' -f1)
         value=$(echo "${driver_config}" | cut -d'=' -f2-)
@@ -817,13 +830,12 @@ test_clustering_storage() {
         done
 
         # Other storage backends will be finished with the third node, so we can remove it.
-        if [ "${poolDriver}" != "ceph" ]; then
+        if [ "${poolDriver}" != "ceph" ] && [ "${poolDriver}" != "linstor" ]; then
             INCUS_DIR="${INCUS_ONE_DIR}" incus cluster remove node3 --yes
         fi
     fi
 
-    if [ "${poolDriver}" = "ceph" ]; then
-
+    if [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "linstor" ]; then
         # Move the container to node3, renaming it
         INCUS_DIR="${INCUS_TWO_DIR}" incus move foo bar --target node3
         INCUS_DIR="${INCUS_TWO_DIR}" incus info bar | grep -q "Location: node3"
@@ -850,11 +862,11 @@ test_clustering_storage() {
         # Attach a custom volume to a container on node1
         INCUS_DIR="${INCUS_ONE_DIR}" incus storage volume create pool1 v1
         INCUS_DIR="${INCUS_ONE_DIR}" incus init --target node1 -s pool1 testimage baz
-        INCUS_DIR="${INCUS_ONE_DIR}" incus storage volume attach pool1 custom/v1 baz testDevice /opt
+        INCUS_DIR="${INCUS_ONE_DIR}" incus storage volume attach pool1 v1 baz testDevice /opt
 
         # Trying to attach a custom volume to a container on another node fails
         INCUS_DIR="${INCUS_TWO_DIR}" incus init --target node2 -s pool1 testimage buz
-        ! INCUS_DIR="${INCUS_TWO_DIR}" incus storage volume attach pool1 custom/v1 buz testDevice /opt || false
+        ! INCUS_DIR="${INCUS_TWO_DIR}" incus storage volume attach pool1 v1 buz testDevice /opt || false
 
         # Create an unrelated volume and rename it on a node which differs from the
         # one running the container (issue #6435).
@@ -913,7 +925,7 @@ test_clustering_storage() {
     INCUS_DIR="${INCUS_ONE_DIR}" incus storage delete pool1
     ! INCUS_DIR="${INCUS_ONE_DIR}" incus storage list | grep -q pool1 || false
 
-    if [ "${poolDriver}" != "ceph" ]; then
+    if [ "${poolDriver}" != "ceph" ] && [ "${poolDriver}" != "linstor" ]; then
         # Create a volume on node1
         INCUS_DIR="${INCUS_ONE_DIR}" incus storage volume create data web
         INCUS_DIR="${INCUS_ONE_DIR}" incus storage volume list data | grep web | grep -q node1
@@ -993,13 +1005,16 @@ test_clustering_storage_single_node() {
     driver_config=""
     if [ "${poolDriver}" = "btrfs" ]; then
         driver_config="size=1GiB"
-    fi
-    if [ "${poolDriver}" = "zfs" ]; then
+    elif [ "${poolDriver}" = "zfs" ]; then
         driver_config="size=1GiB"
-    fi
-    if [ "${poolDriver}" = "ceph" ]; then
+    elif [ "${poolDriver}" = "ceph" ]; then
         driver_config="source=incustest-$(basename "${TEST_DIR}")-pool1"
+    elif [ "${poolDriver}" = "linstor" ]; then
+        driver_config="source=incustest-$(basename "${TEST_DIR}" | sed 's/\./__/g')-pool1"
+    elif [ "${poolDriver}" = "truenas" ]; then
+        driver_config="$(truenas_source)/incustest-$(basename "${TEST_DIR}")-pool1 $(truenas_config) $(truenas_allow_insecure) $(truenas_api_key)"
     fi
+
     driver_config_node="${driver_config}"
     if [ "${poolDriver}" = "zfs" ]; then
         driver_config_node="${driver_config_node} zfs.pool_name=pool1-$(basename "${TEST_DIR}")-${ns1}"
@@ -2772,7 +2787,7 @@ test_clustering_image_refresh() {
     if [ "${poolDriver}" != "dir" ]; then
         # Check image storage volume records exist.
         incus admin sql global 'select name from storage_volumes'
-        if [ "${poolDriver}" = "ceph" ]; then
+        if [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "linstor" ]; then
             incus admin sql global 'select name from storage_volumes' | grep -Fc "${old_fingerprint}" | grep -Fx 1
         else
             incus admin sql global 'select name from storage_volumes' | grep -Fc "${old_fingerprint}" | grep -Fx 3
@@ -2794,7 +2809,7 @@ test_clustering_image_refresh() {
     if [ "${poolDriver}" != "dir" ]; then
         incus admin sql global 'select name from storage_volumes'
         # Check image storage volume records actually removed from relevant members and replaced with new fingerprint.
-        if [ "${poolDriver}" = "ceph" ]; then
+        if [ "${poolDriver}" = "ceph" ] || [ "${poolDriver}" = "linstor" ]; then
             incus admin sql global 'select name from storage_volumes' | grep -Fc "${old_fingerprint}" | grep -Fx 0
             incus admin sql global 'select name from storage_volumes' | grep -Fc "${new_fingerprint}" | grep -Fx 1
         else
@@ -3436,6 +3451,12 @@ test_clustering_groups() {
 
     # Renaming the default group is not allowed
     ! incus cluster group rename cluster:default foobar || false
+
+    # User properties can be set
+    ! incus cluster group set cluster:default invalid foo || false
+    incus cluster group set cluster:default user.foo bar
+    [ "$(incus cluster group get cluster:default user.foo)" = "bar" ] || false
+    incus cluster group unset cluster:default user.foo
 
     incus cluster list cluster:
     # Nodes need to belong to at least one group, removing it from the default group should therefore fail

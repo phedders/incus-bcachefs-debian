@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	scriptletLoad "github.com/lxc/incus/v6/internal/server/scriptlet/load"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/units"
-	"github.com/lxc/incus/v6/shared/validate"
+	scriptletLoad "github.com/lxc/incus/v7/internal/server/scriptlet/load"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/units"
+	"github.com/lxc/incus/v7/shared/validate"
 )
 
 // IsUserConfig returns true if the config key is a user configuration.
@@ -677,6 +677,42 @@ var InstanceConfigKeysContainer = map[string]func(value string) error{
 	//  shortdesc: Required driver version
 	"nvidia.require.driver": validate.IsAny,
 
+	// gendoc:generate(entity=instance, group=oci, key=oci.entrypoint)
+	// Override the entry point of an OCI container.
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: OCI container
+	//  shortdesc: OCI container entry point
+	"oci.entrypoint": validate.IsAny,
+
+	// gendoc:generate(entity=instance, group=oci, key=oci.cwd)
+	// Override the working directory of an OCI container.
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: OCI container
+	//  shortdesc: OCI container working directory
+	"oci.cwd": validate.Optional(validate.IsAbsFilePath),
+
+	// gendoc:generate(entity=instance, group=oci, key=oci.gid)
+	// Override the GID of the process run in an OCI container.
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: OCI container
+	//  shortdesc: OCI container GID
+	"oci.gid": validate.Optional(validate.IsUint32),
+
+	// gendoc:generate(entity=instance, group=oci, key=oci.uid)
+	// Override the UID of the process run in an OCI container.
+	// ---
+	//  type: string
+	//  liveupdate: no
+	//  condition: OCI container
+	//  shortdesc: OCI container UID
+	"oci.uid": validate.Optional(validate.IsUint32),
+
 	// Caller is responsible for full validation of any raw.* value.
 
 	// gendoc:generate(entity=instance, group=raw, key=raw.lxc)
@@ -964,6 +1000,14 @@ var InstanceConfigKeysContainer = map[string]func(value string) error{
 
 	"security.syscalls.whitelist": validate.IsAny,
 
+	// gendoc:generate(entity=instance, group=volatile, key=volatile.container.oci)
+	//
+	// ---
+	//  type: bool
+	//  defaultdesc: `false`
+	//  shortdesc: Whether the container is an OCI application container
+	"volatile.container.oci": validate.IsBool,
+
 	// gendoc:generate(entity=instance, group=volatile, key=volatile.last_state.idmap)
 	//
 	// ---
@@ -1171,19 +1215,12 @@ var InstanceConfigKeysVM = map[string]func(value string) error{
 	//  shortdesc: Whether to regenerate VM NVRAM the next time the instance starts
 	"volatile.apply_nvram": validate.Optional(validate.IsBool),
 
-	// gendoc:generate(entity=instance, group=volatile, key=volatile.vm.definition)
+	// gendoc:generate(entity=instance, group=volatile, key=volatile.vm.boot_state)
 	//
 	// ---
 	//  type: string
-	//  shortdesc: QEMU VM definition name (used for migration between versions)
-	"volatile.vm.definition": validate.Optional(validate.IsAny),
-
-	// gendoc:generate(entity=instance, group=volatile, key=volatile.vm.hotplug.memory)
-	//
-	// ---
-	//  type: string
-	//  shortdesc: Memory setup of the VM as needed for state restoration
-	"volatile.vm.hotplug.memory": validate.Optional(validate.IsAny),
+	//  shortdesc: JSON encoded VM properties used during live migration and other state restoration.
+	"volatile.vm.boot_state": validate.Optional(validate.IsAny),
 
 	// gendoc:generate(entity=instance, group=volatile, key=volatile.vm.needs_reset)
 	//
@@ -1212,6 +1249,10 @@ var InstanceConfigKeysVM = map[string]func(value string) error{
 	//  type: string
 	//  shortdesc: Instance `vsock ID` used as of last start
 	"volatile.vsock_id": validate.Optional(validate.IsInt64),
+
+	// Deprecated keys, keep in map to allow transition.
+	"volatile.vm.definition":     validate.Optional(validate.IsAny),
+	"volatile.vm.hotplug.memory": validate.Optional(validate.IsAny),
 }
 
 // ConfigKeyChecker returns a function that will check whether or not

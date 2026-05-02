@@ -3,7 +3,7 @@ package firewall
 import (
 	"net"
 
-	"github.com/lxc/incus/v6/internal/server/firewall/drivers"
+	"github.com/lxc/incus/v7/internal/server/firewall/drivers"
 )
 
 // FirewallRules represents a set of firewall rules.
@@ -24,6 +24,8 @@ type Firewall interface {
 	NetworkClear(networkName string, removeChains bool, ipVersions []uint) error
 	NetworkApplyACLRules(networkName string, rules []drivers.ACLRule) error
 	NetworkApplyForwards(networkName string, rules []drivers.AddressForward) error
+	NetworkApplyAddressSets(sets []drivers.AddressSet, nftTable string) error
+	NetworkDeleteAddressSetsIfUnused(nftTable string) error
 
 	InstanceSetupBridgeFilter(projectName string, instanceName string, deviceName string, parentName string, hostName string, hwAddr string, IPv4Nets []*net.IPNet, IPv6Nets []*net.IPNet, IPv4DNS []string, IPv6DNS []string, parentManaged bool, macFiltering bool, aclRules []drivers.ACLRule) error
 	InstanceClearBridgeFilter(projectName string, instanceName string, deviceName string, parentName string, hostName string, hwAddr string, IPv4Nets []*net.IPNet, IPv6Nets []*net.IPNet) error

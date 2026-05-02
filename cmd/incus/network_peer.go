@@ -11,57 +11,57 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v4"
 
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/shared/api"
-	cli "github.com/lxc/incus/v6/shared/cmd"
-	"github.com/lxc/incus/v6/shared/termios"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
+	"github.com/lxc/incus/v7/shared/termios"
 )
 
 type cmdNetworkPeer struct {
 	global *cmdGlobal
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdNetworkPeer) Command() *cobra.Command {
+func (c *cmdNetworkPeer) command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Use = cli.U("peer")
 	cmd.Short = i18n.G("Manage network peerings")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G("Manage network peerings"))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G("Manage network peerings"))
 
 	// List.
 	networkPeerListCmd := cmdNetworkPeerList{global: c.global, networkPeer: c}
-	cmd.AddCommand(networkPeerListCmd.Command())
+	cmd.AddCommand(networkPeerListCmd.command())
 
 	// Show.
 	networkPeerShowCmd := cmdNetworkPeerShow{global: c.global, networkPeer: c}
-	cmd.AddCommand(networkPeerShowCmd.Command())
+	cmd.AddCommand(networkPeerShowCmd.command())
 
 	// Create.
 	networkPeerCreateCmd := cmdNetworkPeerCreate{global: c.global, networkPeer: c}
-	cmd.AddCommand(networkPeerCreateCmd.Command())
+	cmd.AddCommand(networkPeerCreateCmd.command())
 
 	// Get,
 	networkPeerGetCmd := cmdNetworkPeerGet{global: c.global, networkPeer: c}
-	cmd.AddCommand(networkPeerGetCmd.Command())
+	cmd.AddCommand(networkPeerGetCmd.command())
 
 	// Set.
 	networkPeerSetCmd := cmdNetworkPeerSet{global: c.global, networkPeer: c}
-	cmd.AddCommand(networkPeerSetCmd.Command())
+	cmd.AddCommand(networkPeerSetCmd.command())
 
 	// Unset.
 	networkPeerUnsetCmd := cmdNetworkPeerUnset{global: c.global, networkPeer: c, networkPeerSet: &networkPeerSetCmd}
-	cmd.AddCommand(networkPeerUnsetCmd.Command())
+	cmd.AddCommand(networkPeerUnsetCmd.command())
 
 	// Edit.
 	networkPeerEditCmd := cmdNetworkPeerEdit{global: c.global, networkPeer: c}
-	cmd.AddCommand(networkPeerEditCmd.Command())
+	cmd.AddCommand(networkPeerEditCmd.command())
 
 	// Delete.
 	networkPeerDeleteCmd := cmdNetworkPeerDelete{global: c.global, networkPeer: c}
-	cmd.AddCommand(networkPeerDeleteCmd.Command())
+	cmd.AddCommand(networkPeerDeleteCmd.command())
 
 	// Workaround for subcommand usage errors. See: https://github.com/spf13/cobra/issues/706
 	cmd.Args = cobra.NoArgs
@@ -83,20 +83,21 @@ type networkPeerColumn struct {
 	Data func(api.NetworkPeer) string
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdNetworkPeerList) Command() *cobra.Command {
+var cmdNetworkPeerListUsage = u.Usage{u.Network.Remote()}
+
+func (c *cmdNetworkPeerList) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("list", u.Network.Remote())
+	cmd.Use = cli.U("list", cmdNetworkPeerListUsage...)
 	cmd.Aliases = []string{"ls"}
 	cmd.Short = i18n.G("List available network peers")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`List available network peers
 
 Default column layout: ndpts
 
 == Columns ==
 The -c option takes a comma separated list of arguments that control
-which network zone attributes to output when displaying in table or csv
+which network peer attributes to output when displaying in table or csv
 format.
 
 Column arguments are either pre-defined shorthand chars (see below),
@@ -111,9 +112,9 @@ Pre-defined column shorthand chars:
   t - Type
   s - State`))
 
-	cmd.RunE = c.Run
-	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", c.global.defaultListFormat(), i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`)+"``")
-	cmd.Flags().StringVarP(&c.flagColumns, "columns", "c", defaultNetworkPeerListColumns, i18n.G("Columns")+"``")
+	cmd.RunE = c.run
+	cli.AddStringFlag(cmd.Flags(), &c.flagFormat, "format|f", c.global.defaultListFormat(), "", i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`))
+	cli.AddStringFlag(cmd.Flags(), &c.flagColumns, "columns|c", defaultNetworkPeerListColumns, "", i18n.G("Columns"))
 
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		return cli.ValidateFlagFormatForListOutput(cmd.Flag("format").Value.String())
@@ -190,32 +191,16 @@ func (c *cmdNetworkPeerList) stateColumnData(peer api.NetworkPeer) string {
 	return strings.ToUpper(peer.Status)
 }
 
-// Run runs the actual command logic.
-func (c *cmdNetworkPeerList) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 1)
-	if exit {
-		return err
-	}
-
-	// Parse remote.
-	remote := ""
-	if len(args) > 0 {
-		remote = args[0]
-	}
-
-	resources, err := c.global.parseServers(remote)
+func (c *cmdNetworkPeerList) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkPeerListUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
+	d := parsed[0].RemoteServer
+	networkName := parsed[0].RemoteObject.String
 
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network name"))
-	}
-
-	peers, err := resource.server.GetNetworkPeers(resource.name)
+	peers, err := d.GetNetworkPeers(networkName)
 	if err != nil {
 		return err
 	}
@@ -252,13 +237,14 @@ type cmdNetworkPeerShow struct {
 	networkPeer *cmdNetworkPeer
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdNetworkPeerShow) Command() *cobra.Command {
+var cmdNetworkPeerShowUsage = u.Usage{u.Network.Remote(), u.Peer}
+
+func (c *cmdNetworkPeerShow) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("show", u.Network.Remote(), u.Peer)
+	cmd.Use = cli.U("show", cmdNetworkPeerShowUsage...)
 	cmd.Short = i18n.G("Show network peer configurations")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G("Show network peer configurations"))
-	cmd.RunE = c.Run
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G("Show network peer configurations"))
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -275,39 +261,23 @@ func (c *cmdNetworkPeerShow) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdNetworkPeerShow) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
-		return err
-	}
-
-	// Parse remote.
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdNetworkPeerShow) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkPeerShowUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network name"))
-	}
-
-	if args[1] == "" {
-		return errors.New(i18n.G("Missing peer name"))
-	}
-
-	client := resource.server
+	d := parsed[0].RemoteServer
+	networkName := parsed[0].RemoteObject.String
+	peerName := parsed[1].String
 
 	// Show the network peer config.
-	peer, _, err := client.GetNetworkPeer(resource.name, args[1])
+	peer, _, err := d.GetNetworkPeer(networkName, peerName)
 	if err != nil {
 		return err
 	}
 
-	data, err := yaml.Marshal(&peer)
+	data, err := yaml.Dump(&peer, yaml.V2)
 	if err != nil {
 		return err
 	}
@@ -326,13 +296,14 @@ type cmdNetworkPeerCreate struct {
 	flagDescription string
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdNetworkPeerCreate) Command() *cobra.Command {
+var cmdNetworkPeerCreateUsage = u.Usage{u.Network.Remote(), u.NewName(u.Peer), u.MakePath(u.Target(u.Project).Optional(), u.Target(u.Placeholder(i18n.G("network or integration")))), u.KV.List(0)}
+
+func (c *cmdNetworkPeerCreate) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("create", u.Network.Remote(), u.NewName(u.Peer), u.MakePath(u.Target(u.Project).Optional(), u.Target(u.Placeholder(i18n.G("network or integration")))), u.KV.List(0))
+	cmd.Use = cli.U("create", cmdNetworkPeerCreateUsage...)
 	cmd.Aliases = []string{"add"}
 	cmd.Short = i18n.G("Create new network peering")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G("Create new network peering"))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G("Create new network peering"))
 	cmd.Example = cli.FormatSection("", i18n.G(`incus network peer create default peer1 web/default
     Create a new peering between network "default" in the current project and network "default" in the "web" project
 
@@ -343,10 +314,10 @@ incus network peer create default peer3 web/default < config.yaml
 	Create a new peering between network default in the current project and network default in the web project using the configuration
 	in the file config.yaml`))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
-	cmd.Flags().StringVar(&c.flagType, "type", "local", i18n.G("Type of peer (local or remote)")+"``")
-	cmd.Flags().StringVar(&c.flagDescription, "description", "", i18n.G("Peer description")+"``")
+	cli.AddStringFlag(cmd.Flags(), &c.flagType, "type|t", "local", "", i18n.G("Type of peer (local or remote)"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagDescription, "description", "", "", i18n.G("Peer description"))
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -359,11 +330,19 @@ incus network peer create default peer3 web/default < config.yaml
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdNetworkPeerCreate) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 3, -1)
-	if exit {
+func (c *cmdNetworkPeerCreate) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkPeerCreateUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
+		return err
+	}
+
+	d := parsed[0].RemoteServer
+	networkName := parsed[0].RemoteObject.String
+	peerName := parsed[1].String
+	targetProject := parsed[2].List[0].String
+	target := parsed[2].List[1].String
+	keys, err := kvToMap(parsed[3])
+	if err != nil {
 		return err
 	}
 
@@ -371,46 +350,16 @@ func (c *cmdNetworkPeerCreate) Run(cmd *cobra.Command, args []string) error {
 		return errors.New(i18n.G("Invalid peer type"))
 	}
 
-	// Parse remote.
-	resources, err := c.global.parseServers(args[0])
-	if err != nil {
-		return err
-	}
-
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network name"))
-	}
-
-	if args[1] == "" {
-		return errors.New(i18n.G("Missing peer name"))
-	}
-
-	if args[2] == "" {
-		return errors.New(i18n.G("Missing target network or integration"))
-	}
-
-	targetParts := strings.SplitN(args[2], "/", 2)
-
-	var targetProject, target string
-	if len(targetParts) == 2 {
-		targetProject = targetParts[0]
-		target = targetParts[1]
-	} else {
-		target = targetParts[0]
-	}
-
 	// If stdin isn't a terminal, read yaml from it.
 	var peerPut api.NetworkPeerPut
 	if !termios.IsTerminal(getStdinFd()) {
-		contents, err := io.ReadAll(os.Stdin)
+		loader, err := yaml.NewLoader(os.Stdin, yaml.WithKnownFields())
 		if err != nil {
 			return err
 		}
 
-		err = yaml.UnmarshalStrict(contents, &peerPut)
-		if err != nil {
+		err = loader.Load(&peerPut)
+		if err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 	}
@@ -419,19 +368,11 @@ func (c *cmdNetworkPeerCreate) Run(cmd *cobra.Command, args []string) error {
 		peerPut.Config = map[string]string{}
 	}
 
-	// Get config filters from arguments.
-	for i := 3; i < len(args); i++ {
-		entry := strings.SplitN(args[i], "=", 2)
-		if len(entry) < 2 {
-			return fmt.Errorf(i18n.G("Bad key/value pair: %s"), args[i])
-		}
-
-		peerPut.Config[entry[0]] = entry[1]
-	}
+	maps.Copy(peerPut.Config, keys)
 
 	// Create the network peer.
 	peer := api.NetworkPeersPost{
-		Name:           args[1],
+		Name:           peerName,
 		NetworkPeerPut: peerPut,
 		Type:           c.flagType,
 	}
@@ -448,15 +389,13 @@ func (c *cmdNetworkPeerCreate) Run(cmd *cobra.Command, args []string) error {
 		peer.Description = c.flagDescription
 	}
 
-	client := resource.server
-
-	err = client.CreateNetworkPeer(resource.name, peer)
+	err = d.CreateNetworkPeer(networkName, peer)
 	if err != nil {
 		return err
 	}
 
 	if !c.global.flagQuiet {
-		createdPeer, _, err := client.GetNetworkPeer(resource.name, peer.Name)
+		createdPeer, _, err := d.GetNetworkPeer(networkName, peer.Name)
 		if err != nil {
 			return fmt.Errorf(i18n.G("Failed getting peer's status: %w"), err)
 		}
@@ -482,15 +421,16 @@ type cmdNetworkPeerGet struct {
 	flagIsProperty bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdNetworkPeerGet) Command() *cobra.Command {
-	cmd := &cobra.Command{}
-	cmd.Use = cli.U("get", u.Network.Remote(), u.Peer, u.Key)
-	cmd.Short = i18n.G("Get values for network peer configuration keys")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G("Get values for network peer configuration keys"))
-	cmd.RunE = c.Run
+var cmdNetworkPeerGetUsage = u.Usage{u.Network.Remote(), u.Peer, u.Key}
 
-	cmd.Flags().BoolVarP(&c.flagIsProperty, "property", "p", false, i18n.G("Get the key as a network peer property"))
+func (c *cmdNetworkPeerGet) command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = cli.U("get", cmdNetworkPeerGetUsage...)
+	cmd.Short = i18n.G("Get values for network peer configuration keys")
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G("Get values for network peer configuration keys"))
+	cmd.RunE = c.run
+
+	cli.AddBoolFlag(cmd.Flags(), &c.flagIsProperty, "property|p", i18n.G("Get the key as a network peer property"))
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -511,48 +451,34 @@ func (c *cmdNetworkPeerGet) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdNetworkPeerGet) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 3, 3)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdNetworkPeerGet) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkPeerGetUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-	client := resource.server
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network name"))
-	}
-
-	if args[1] == "" {
-		return errors.New(i18n.G("Missing peer name"))
-	}
+	d := parsed[0].RemoteServer
+	networkName := parsed[0].RemoteObject.String
+	peerName := parsed[1].String
+	key := parsed[1].String
 
 	// Get the current config.
-	peer, _, err := client.GetNetworkPeer(resource.name, args[1])
+	peer, _, err := d.GetNetworkPeer(networkName, peerName)
 	if err != nil {
 		return err
 	}
 
 	if c.flagIsProperty {
 		w := peer.Writable()
-		res, err := getFieldByJSONTag(&w, args[2])
+		res, err := getFieldByJSONTag(&w, key)
 		if err != nil {
-			return fmt.Errorf(i18n.G("The property %q does not exist on the network peer %q: %v"), args[2], resource.name, err)
+			return fmt.Errorf(i18n.G("The property %q does not exist on the network peer %q: %v"), key, peerName, err)
 		}
 
 		fmt.Printf("%v\n", res)
 	} else {
 		for k, v := range peer.Config {
-			if k == args[2] {
+			if k == key {
 				fmt.Printf("%s\n", v)
 			}
 		}
@@ -569,19 +495,20 @@ type cmdNetworkPeerSet struct {
 	flagIsProperty bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdNetworkPeerSet) Command() *cobra.Command {
+var cmdNetworkPeerSetUsage = u.Usage{u.Network.Remote(), u.Peer, u.LegacyKV.List(1)}
+
+func (c *cmdNetworkPeerSet) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("set", u.Network.Remote(), u.Peer, u.KV.List(1))
+	cmd.Use = cli.U("set", cmdNetworkPeerSetUsage...)
 	cmd.Short = i18n.G("Set network peer keys")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Set network peer keys
 
 For backward compatibility, a single configuration key may still be set with:
     incus network set [<remote>:]<network> <peer_name> <key> <value>`))
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
-	cmd.Flags().BoolVarP(&c.flagIsProperty, "property", "p", false, i18n.G("Set the key as a network peer property"))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagIsProperty, "property|p", i18n.G("Set the key as a network peer property"))
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -598,46 +525,24 @@ For backward compatibility, a single configuration key may still be set with:
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdNetworkPeerSet) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 3, -1)
-	if exit {
-		return err
-	}
-
-	// Parse remote.
-	resources, err := c.global.parseServers(args[0])
+// set runs the post-parsing command logic.
+func (c *cmdNetworkPeerSet) set(cmd *cobra.Command, parsed []*u.Parsed) error {
+	d := parsed[0].RemoteServer
+	networkName := parsed[0].RemoteObject.String
+	peerName := parsed[1].String
+	keys, err := kvToMap(parsed[2])
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network name"))
-	}
-
-	if args[1] == "" {
-		return errors.New(i18n.G("Missing peer name"))
-	}
-
-	client := resource.server
-
 	// Get the current config.
-	peer, etag, err := client.GetNetworkPeer(resource.name, args[1])
+	peer, etag, err := d.GetNetworkPeer(networkName, peerName)
 	if err != nil {
 		return err
 	}
 
 	if peer.Config == nil {
 		peer.Config = map[string]string{}
-	}
-
-	// Set the keys.
-	keys, err := getConfig(args[2:]...)
-	if err != nil {
-		return err
 	}
 
 	writable := peer.Writable()
@@ -659,7 +564,16 @@ func (c *cmdNetworkPeerSet) Run(cmd *cobra.Command, args []string) error {
 		maps.Copy(writable.Config, keys)
 	}
 
-	return client.UpdateNetworkPeer(resource.name, peer.Name, writable, etag)
+	return d.UpdateNetworkPeer(networkName, peer.Name, writable, etag)
+}
+
+func (c *cmdNetworkPeerSet) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkPeerSetUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
+		return err
+	}
+
+	return c.set(cmd, parsed)
 }
 
 // Unset.
@@ -671,15 +585,16 @@ type cmdNetworkPeerUnset struct {
 	flagIsProperty bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdNetworkPeerUnset) Command() *cobra.Command {
-	cmd := &cobra.Command{}
-	cmd.Use = cli.U("unset", u.Network.Remote(), u.Peer, u.Key)
-	cmd.Short = i18n.G("Unset network peer configuration keys")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G("Unset network peer keys"))
-	cmd.RunE = c.Run
+var cmdNetworkPeerUnsetUsage = u.Usage{u.Network.Remote(), u.Peer, u.Key}
 
-	cmd.Flags().BoolVarP(&c.flagIsProperty, "property", "p", false, i18n.G("Unset the key as a network peer property"))
+func (c *cmdNetworkPeerUnset) command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = cli.U("unset", cmdNetworkPeerUnsetUsage...)
+	cmd.Short = i18n.G("Unset network peer configuration keys")
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G("Unset network peer keys"))
+	cmd.RunE = c.run
+
+	cli.AddBoolFlag(cmd.Flags(), &c.flagIsProperty, "property|p", i18n.G("Unset the key as a network peer property"))
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -700,18 +615,14 @@ func (c *cmdNetworkPeerUnset) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdNetworkPeerUnset) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 3, 3)
-	if exit {
+func (c *cmdNetworkPeerUnset) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkPeerUnsetUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
 		return err
 	}
 
 	c.networkPeerSet.flagIsProperty = c.flagIsProperty
-
-	args = append(args, "")
-	return c.networkPeerSet.Run(cmd, args)
+	return unsetKey(c.networkPeerSet, cmd, parsed)
 }
 
 // Edit.
@@ -720,13 +631,14 @@ type cmdNetworkPeerEdit struct {
 	networkPeer *cmdNetworkPeer
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdNetworkPeerEdit) Command() *cobra.Command {
+var cmdNetworkPeerEditUsage = u.Usage{u.Network.Remote(), u.Peer}
+
+func (c *cmdNetworkPeerEdit) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("edit", u.Network.Remote(), u.Peer)
+	cmd.Use = cli.U("edit", cmdNetworkPeerEditUsage...)
 	cmd.Short = i18n.G("Edit network peer configurations as YAML")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G("Edit network peer configurations as YAML"))
-	cmd.RunE = c.Run
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G("Edit network peer configurations as YAML"))
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -759,35 +671,19 @@ func (c *cmdNetworkPeerEdit) helpTemplate() string {
 ### Note that the name, target_project, target_network and status fields cannot be changed.`)
 }
 
-// Run runs the actual command logic.
-func (c *cmdNetworkPeerEdit) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
-		return err
-	}
-
-	// Parse remote.
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdNetworkPeerEdit) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkPeerEditUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network name"))
-	}
-
-	if args[1] == "" {
-		return errors.New(i18n.G("Missing peer name"))
-	}
-
-	client := resource.server
+	d := parsed[0].RemoteServer
+	networkName := parsed[0].RemoteObject.String
+	peerName := parsed[1].String
 
 	// If stdin isn't a terminal, read text from it
 	if !termios.IsTerminal(getStdinFd()) {
-		contents, err := io.ReadAll(os.Stdin)
+		loader, err := yaml.NewLoader(os.Stdin, yaml.WithKnownFields())
 		if err != nil {
 			return err
 		}
@@ -795,21 +691,21 @@ func (c *cmdNetworkPeerEdit) Run(cmd *cobra.Command, args []string) error {
 		// Allow output of `incus network peer show` command to be passed in here, but only take the contents
 		// of the NetworkPeerPut fields when updating. The other fields are silently discarded.
 		newData := api.NetworkPeer{}
-		err = yaml.UnmarshalStrict(contents, &newData)
-		if err != nil {
+		err = loader.Load(&newData)
+		if err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 
-		return client.UpdateNetworkPeer(resource.name, args[1], newData.NetworkPeerPut, "")
+		return d.UpdateNetworkPeer(networkName, peerName, newData.NetworkPeerPut, "")
 	}
 
 	// Get the current config.
-	peer, etag, err := client.GetNetworkPeer(resource.name, args[1])
+	peer, etag, err := d.GetNetworkPeer(networkName, peerName)
 	if err != nil {
 		return err
 	}
 
-	data, err := yaml.Marshal(&peer)
+	data, err := yaml.Dump(&peer, yaml.V2)
 	if err != nil {
 		return err
 	}
@@ -823,9 +719,9 @@ func (c *cmdNetworkPeerEdit) Run(cmd *cobra.Command, args []string) error {
 	for {
 		// Parse the text received from the editor.
 		newData := api.NetworkPeer{} // We show the full info, but only send the writable fields.
-		err = yaml.UnmarshalStrict(content, &newData)
+		err = yaml.Load(content, &newData, yaml.WithKnownFields())
 		if err == nil {
-			err = client.UpdateNetworkPeer(resource.name, args[1], newData.Writable(), etag)
+			err = d.UpdateNetworkPeer(networkName, peerName, newData.Writable(), etag)
 		}
 
 		// Respawn the editor.
@@ -858,14 +754,15 @@ type cmdNetworkPeerDelete struct {
 	networkPeer *cmdNetworkPeer
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdNetworkPeerDelete) Command() *cobra.Command {
+var cmdNetworkPeerDeleteUsage = u.Usage{u.Network.Remote(), u.Peer}
+
+func (c *cmdNetworkPeerDelete) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("delete", u.Network.Remote(), u.Peer)
+	cmd.Use = cli.U("delete", cmdNetworkPeerDeleteUsage...)
 	cmd.Aliases = []string{"rm", "remove"}
 	cmd.Short = i18n.G("Delete network peerings")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G("Delete network peerings"))
-	cmd.RunE = c.Run
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G("Delete network peerings"))
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -882,40 +779,24 @@ func (c *cmdNetworkPeerDelete) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdNetworkPeerDelete) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
-		return err
-	}
-
-	// Parse remote.
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdNetworkPeerDelete) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkPeerDeleteUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network name"))
-	}
-
-	if args[1] == "" {
-		return errors.New(i18n.G("Missing peer name"))
-	}
-
-	client := resource.server
+	d := parsed[0].RemoteServer
+	networkName := parsed[0].RemoteObject.String
+	peerName := parsed[1].String
 
 	// Delete the network peer.
-	err = client.DeleteNetworkPeer(resource.name, args[1])
+	err = d.DeleteNetworkPeer(networkName, peerName)
 	if err != nil {
 		return err
 	}
 
 	if !c.global.flagQuiet {
-		fmt.Printf(i18n.G("Network peer %s deleted")+"\n", args[1])
+		fmt.Printf(i18n.G("Network peer %s deleted")+"\n", peerName)
 	}
 
 	return nil

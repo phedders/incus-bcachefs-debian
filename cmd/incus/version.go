@@ -2,54 +2,42 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/internal/version"
-	cli "github.com/lxc/incus/v6/shared/cmd"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/internal/version"
+	cli "github.com/lxc/incus/v7/shared/cmd"
 )
 
 type cmdVersion struct {
 	global *cmdGlobal
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdVersion) Command() *cobra.Command {
-	cmd := &cobra.Command{}
-	cmd.Use = cli.U("version", u.RemoteColonOpt)
-	cmd.Short = i18n.G("Show local and remote versions")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Show local and remote versions`))
+var cmdVersionUsage = u.Usage{u.Colon(u.Remote).Optional()}
 
-	cmd.RunE = c.Run
+func (c *cmdVersion) command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = cli.U("version", cmdVersionUsage...)
+	cmd.Short = i18n.G("Show local and remote versions")
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Show local and remote versions`))
+
+	cmd.RunE = c.run
 
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdVersion) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 0, 1)
-	if exit {
+func (c *cmdVersion) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdVersionUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
 		return err
 	}
 
 	fmt.Printf(i18n.G("Client version: %s\n"), version.Version)
-
-	// Remote version
-	remote := ""
-	if len(args) == 1 {
-		remote = args[0]
-		if !strings.HasSuffix(remote, ":") {
-			remote = remote + ":"
-		}
-	}
-
 	ver := i18n.G("unreachable")
-	resources, err := c.global.parseServers(remote)
+	resources, err := c.global.parseServers(parsed[0].String)
 	if err == nil {
 		resource := resources[0]
 		info, _, err := resource.server.GetServer()

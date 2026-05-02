@@ -17,11 +17,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	incus "github.com/lxc/incus/v6/client"
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/shared/api"
-	cli "github.com/lxc/incus/v6/shared/cmd"
+	incus "github.com/lxc/incus/v7/client"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
 )
 
 type cmdRemoteProxy struct {
@@ -31,42 +32,40 @@ type cmdRemoteProxy struct {
 	flagTimeout int
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdRemoteProxy) Command() *cobra.Command {
+var cmdRemoteProxyUsage = u.Usage{u.Colon(u.Remote), u.Target(u.Placeholder(i18n.G("socket file")))}
+
+func (c *cmdRemoteProxy) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("proxy", u.Colon(u.Remote), u.Target(u.Placeholder(i18n.G("socket file"))))
+	cmd.Use = cli.U("proxy", cmdRemoteProxyUsage...)
 	cmd.Short = i18n.G("Run a local API proxy")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Run a local API proxy for the remote`))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
-	cmd.Flags().IntVar(&c.flagTimeout, "timeout", 0, i18n.G("Proxy timeout (exits when no connections)")+"``")
+	cli.AddIntFlag(cmd.Flags(), &c.flagTimeout, "timeout", 0, i18n.G("Proxy timeout (exits when no connections)"))
 
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdRemoteProxy) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
+func (c *cmdRemoteProxy) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdRemoteProxyUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
 		return err
 	}
 
-	// Detect remote name.
-	remoteName := args[0]
-	if !strings.HasSuffix(remoteName, ":") {
-		remoteName = remoteName + ":"
-	}
+	remoteName := strings.TrimSuffix(parsed[0].String, ":")
+	path := parsed[1].String
 
-	path := args[1]
-
-	remote := c.global.conf.Remotes[strings.TrimSuffix(remoteName, ":")]
+	remote := c.global.conf.Remotes[remoteName]
 	remote.KeepAlive = 0
-	c.global.conf.Remotes[strings.TrimSuffix(remoteName, ":")] = remote
 
-	resources, err := c.global.parseServers(remoteName)
+	// Attempt to read stdin for TLS connection details.
+	_ = json.NewDecoder(os.Stdin).Decode(&remote.TLS)
+
+	c.global.conf.Remotes[remoteName] = remote
+
+	resources, err := c.global.parseServers(parsed[0].String)
 	if err != nil {
 		return err
 	}
@@ -211,6 +210,7 @@ func (t remoteProxyTransport) RoundTrip(r *http.Request) (*http.Response, error)
 type remoteProxyHandler struct {
 	s         incus.InstanceServer
 	transport http.RoundTripper
+	url       string
 
 	mu           *sync.RWMutex
 	connections  *uint64
@@ -235,6 +235,12 @@ func (h remoteProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	*h.connections++
 	h.mu.Unlock()
 
+	// Don't allow cross-origin requests.
+	origin := r.Header.Get("Origin")
+	if origin != "" && origin != h.url {
+		return
+	}
+
 	// Basic auth.
 	if h.token != "" {
 		// Parse query URL.
@@ -245,6 +251,8 @@ func (h remoteProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		token := values.Get("auth_token")
 		if token != "" {
+			// If a token was passed through the URL, persist it as a cookie.
+
 			tokenCookie := http.Cookie{
 				Name:     "auth_token",
 				Value:    token,
@@ -256,11 +264,21 @@ func (h remoteProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			http.SetCookie(w, &tokenCookie)
 		} else {
+			// If not, attempt to pull it from the cookie.
 			cookie, err := r.Cookie("auth_token")
-			if err != nil || cookie.Value != h.token {
+			if err != nil {
+				// Fail authentication if no cookie can be found.
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
+
+			token = cookie.Value
+		}
+
+		// Check the user token against the expected value.
+		if token != h.token {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
 		}
 	}
 

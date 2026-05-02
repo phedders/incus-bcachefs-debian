@@ -1,29 +1,27 @@
 package main
 
 import (
-	"errors"
-	"fmt"
-	"strings"
-
 	"github.com/spf13/cobra"
 
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	cli "github.com/lxc/incus/v6/shared/cmd"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
 )
 
 type cmdRename struct {
 	global *cmdGlobal
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdRename) Command() *cobra.Command {
+var cmdRenameUsage = u.Usage{u.Instance.Remote(), u.NewName(u.Instance)}
+
+func (c *cmdRename) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("rename", u.Instance.Remote(), u.NewName(u.Instance))
+	cmd.Use = cli.U("rename", cmdRenameUsage...)
 	cmd.Short = i18n.G("Rename instances")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Rename instances`))
-	cmd.RunE = c.Run
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Rename instances`))
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -36,38 +34,21 @@ func (c *cmdRename) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdRename) Run(cmd *cobra.Command, args []string) error {
+func (c *cmdRename) run(cmd *cobra.Command, args []string) error {
 	conf := c.global.conf
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
-		return err
-	}
-
-	// Check the remotes
-	sourceRemote, _, err := conf.ParseRemote(args[0])
+	parsed, err := cmdRenameUsage.Parse(conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	destRemote, _, err := conf.ParseRemote(args[1])
+	d := parsed[0].RemoteServer
+	instanceName := parsed[0].RemoteObject.String
+	newInstanceName := parsed[1].String
+
+	op, err := d.RenameInstance(instanceName, api.InstancePost{Name: newInstanceName})
 	if err != nil {
 		return err
 	}
 
-	if sourceRemote != destRemote {
-		// We just do renames
-		if strings.Contains(args[1], ":") {
-			return errors.New(i18n.G("Can't specify a different remote for rename"))
-		}
-
-		// Don't require the remote to be passed as both source and target
-		args[1] = fmt.Sprintf("%s:%s", sourceRemote, args[1])
-	}
-
-	// Call move
-	move := cmdMove{global: c.global}
-	return move.Run(cmd, args)
+	return op.Wait()
 }

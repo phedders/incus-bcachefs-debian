@@ -2251,7 +2251,6 @@ This parameter allows bypassing the project name filter.
 
 ## `metadata_configuration`
 Adds the `GET /1.0/metadata/configuration` API endpoint to retrieve the generated metadata configuration in a JSON format. The JSON structure adopts the structure ```"configs" > `ENTITY` > `ENTITY_SECTION` > "keys" > [<CONFIG_OPTION_0>, <CONFIG_OPTION_1>, ...]```.
-Check the list of {doc}`configuration options </config-options>` to see which configuration options are included.
 
 ## `syslog_socket`
 
@@ -2518,11 +2517,30 @@ This exposes the CPU flags/extensions in our resources API to check the CPU feat
 
 This adds support for both `io.bus` and `io.cache` to disks that are backed by a file system.
 
+## `instance_oci`
+
+Adds initial support for running OCI containers.
+
+## `clustering_groups_config`
+
+This introduces a standard key/value `config` option to clustering
+groups which will allow placing some restrictions or configuration on
+those groups.
+
 ## `instances_lxcfs_per_instance`
 
 This introduces a new `instances.lxcfs.per_instance` server
 configuration key to control whether to run LXCFS per instance instead
 of globally on the system.
+
+## `clustering_groups_vm_cpu_definition`
+
+This introduces a few new configuration options to control the virtual machine CPU definitions through cluster group configuration.
+
+The new configuration keys are:
+
+* `instances.vm.cpu.ARCHITECTURE.baseline`
+* `instances.vm.cpu.ARCHITECTURE.flag`
 
 ## `disk_volume_subpath`
 
@@ -2742,6 +2760,25 @@ This introduces a new `io.bus` property for compatible network devices allowing 
 
 Adds a new `usb` value for `io.bus` on `disk` devices.
 
+## `storage_driver_linstor`
+
+This adds a LINSTOR storage driver.
+
+## `instance_oci_entrypoint`
+
+This introduces a set of new configuration options on the container to configure the OCI entry point:
+
+* `oci.entrypoint`
+* `oci.cwd`
+* `oci.uid`
+* `oci.gid`
+
+Those are initialized at creation time using the values from the OCI image.
+
+## `network_address_set`
+
+This adds the concept of network address sets to API under the API endpoint prefix `/1.0/network-address-sets`.
+
 ## `server_logging`
 
 This implements a new set of `logging` configuration keys on the server, allowing for multiple logging targets.
@@ -2831,6 +2868,10 @@ The following target keys are supported:
 * `logging.NAME.target.retry` (How many times to retry the transmission)
 
 The webhook data matches what's sent over the existing events API.
+
+## `storage_driver_truenas`
+
+This adds a TrueNAS storage driver.
 
 ## `container_disk_tmpfs`
 
@@ -2991,3 +3032,58 @@ This adds `storage.logs_volume` alongside the existing `storage.backups_volume` 
 ## `instances_debug_repair`
 
 This adds a new API at `POST /1.0/instances/NAME/debug/repair` to trigger low-level repair actions.
+
+## `network_io_bus_ovn`
+
+This ports the `io.bus` property available on most NIC devices to non-accelerated OVN NICs.
+
+## `dependent`
+
+This introduces a new `dependent` configuration key for disk devices and custom volumes.
+Volumes marked as `dependent` are tied to the `lifecycle` of the instance they are attached to.
+Snapshot operations on the instance are automatically propagated to the dependent volume.
+Creating an instance snapshot creates a corresponding snapshot on the dependent volume,
+and deleting the instance snapshot removes it as well.
+Direct snapshot creation or deletion on a dependent volume is not allowed.
+Exporting and importing an instance also includes dependent volumes.
+
+## `metrics_project_resources`
+
+This adds project-level metrics to the `/1.0/metrics` endpoint including resource counts, configured limits, and current usage per project.
+
+## `storage_volume_nbd`
+
+This adds a few new APIs for storage volumes and instances:
+
+* `POST /1.0/storage-pools/POOL/volumes/TYPE/VOLUME/nbd`
+* `GET /1.0/storage-pools/POOL/volumes/TYPE/VOLUME/bitmaps`
+* `POST /1.0/storage-pools/POOL/volumes/TYPE/VOLUME/bitmaps`
+* `GET /1.0/storage-pools/POOL/volumes/TYPE/VOLUME/bitmaps/NAME`
+* `DELETE /1.0/storage-pools/POOL/volumes/TYPE/VOLUME/bitmaps/NAME`
+* `POST /1.0/instances/NAME/bitmaps`
+
+This introduces the ability to get a raw `NBD` connection to an Incus block storage volume.
+It also allows interacting with dirty bitmaps on those volumes which can then be used as the basis for incremental backups.
+The instance level endpoint allows for consistent bitmap creation across the VM and its dependent volumes.
+
+## `projects_restricted_storage_pool_access`
+
+Adds the `restricted.storage-pools.access` project configuration key to
+indicate (as a comma-delimited list) which storage pools can be accessed
+inside the project. If not specified, all storage pools are accessible.
+
+Storage pools that are not in the list are treated as equivalent to
+having a pool size limit of 0 (`limits.disk.pool.POOLNAME=0`), making
+them inaccessible and hidden from the project.
+
+## `server_shutdown_action`
+
+This adds a new `core.shutdown_action` server configuration option.
+
+Its default value of `shutdown` keeps the current behavior but
+`evacuate` can be set to have a clustered server attempt an evacuation
+on shutdown with any instance left after it getting shutdown.
+
+## `instances_placement_scriptlet_rebalance`
+
+Add a new placement scriptlet trigger for cluster re-balancing.

@@ -20,29 +20,29 @@ import (
 
 	"github.com/google/uuid"
 
-	internalInstance "github.com/lxc/incus/v6/internal/instance"
-	"github.com/lxc/incus/v6/internal/server/backup"
-	"github.com/lxc/incus/v6/internal/server/db"
-	dbCluster "github.com/lxc/incus/v6/internal/server/db/cluster"
-	"github.com/lxc/incus/v6/internal/server/device"
-	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
-	"github.com/lxc/incus/v6/internal/server/device/nictype"
-	"github.com/lxc/incus/v6/internal/server/instance"
-	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
-	"github.com/lxc/incus/v6/internal/server/instance/operationlock"
-	"github.com/lxc/incus/v6/internal/server/lifecycle"
-	"github.com/lxc/incus/v6/internal/server/locking"
-	"github.com/lxc/incus/v6/internal/server/operations"
-	"github.com/lxc/incus/v6/internal/server/project"
-	"github.com/lxc/incus/v6/internal/server/state"
-	storagePools "github.com/lxc/incus/v6/internal/server/storage"
-	internalUtil "github.com/lxc/incus/v6/internal/util"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/resources"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/subprocess"
-	"github.com/lxc/incus/v6/shared/util"
+	internalInstance "github.com/lxc/incus/v7/internal/instance"
+	"github.com/lxc/incus/v7/internal/server/backup"
+	"github.com/lxc/incus/v7/internal/server/db"
+	dbCluster "github.com/lxc/incus/v7/internal/server/db/cluster"
+	"github.com/lxc/incus/v7/internal/server/device"
+	deviceConfig "github.com/lxc/incus/v7/internal/server/device/config"
+	"github.com/lxc/incus/v7/internal/server/device/nictype"
+	"github.com/lxc/incus/v7/internal/server/instance"
+	"github.com/lxc/incus/v7/internal/server/instance/instancetype"
+	"github.com/lxc/incus/v7/internal/server/instance/operationlock"
+	"github.com/lxc/incus/v7/internal/server/lifecycle"
+	"github.com/lxc/incus/v7/internal/server/locking"
+	"github.com/lxc/incus/v7/internal/server/operations"
+	"github.com/lxc/incus/v7/internal/server/project"
+	"github.com/lxc/incus/v7/internal/server/state"
+	storagePools "github.com/lxc/incus/v7/internal/server/storage"
+	internalUtil "github.com/lxc/incus/v7/internal/util"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/resources"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/subprocess"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 // Track last autorestart of an instance.
@@ -66,7 +66,7 @@ var muNUMA sync.Mutex
 // deviceManager is an interface that allows managing device lifecycle.
 type deviceManager interface {
 	deviceAdd(dev device.Device, instanceRunning bool) error
-	deviceRemove(dev device.Device, instanceRunning bool) error
+	deviceRemove(dev device.Device, instanceRunning bool, cleanupDependencies bool) error
 	deviceStart(dev device.Device, instanceRunning bool) (*deviceConfig.RunConfig, error)
 	deviceStop(dev device.Device, instanceRunning bool, stopHookNetnsPath string) error
 }
@@ -117,6 +117,17 @@ func (d *common) Architecture() int {
 // CreationDate returns the instance's creation date.
 func (d *common) CreationDate() time.Time {
 	return d.creationDate
+}
+
+// UpdateDevices overrides the instance's devices without persisting changes to the database.
+func (d *common) UpdateDevices(devices deviceConfig.Devices) error {
+	d.localDevices = devices
+
+	for name, devConfig := range devices {
+		d.expandedDevices[name] = devConfig
+	}
+
+	return nil
 }
 
 // Type returns the instance's type.
@@ -363,15 +374,9 @@ func (d *common) Snapshots() ([]instance.Instance, error) {
 		return nil, err
 	}
 
-	// Allow storage to pre-fetch snapshot details using bulk queries.
-	pool, err := d.getStoragePool()
-	if err != nil {
-		return nil, err
-	}
-
-	err = pool.CacheInstanceSnapshots(d)
-	if err != nil {
-		return nil, err
+	// Stop if no snapshots.
+	if len(snapshotArgs) == 0 {
+		return []instance.Instance{}, nil
 	}
 
 	snapshots := make([]instance.Instance, 0, len(snapshotArgs))
@@ -382,17 +387,6 @@ func (d *common) Snapshots() ([]instance.Instance, error) {
 		snapInst, err := instance.Load(d.state, snapshotArg, d.project)
 		if err != nil {
 			return nil, err
-		}
-
-		// Set the storage pool to the pre-loaded one (for caching).
-		snapLXC, ok := snapInst.(*lxc)
-		if ok {
-			snapLXC.storagePool = pool
-		}
-
-		snapQEMU, ok := snapInst.(*qemu)
-		if ok {
-			snapQEMU.storagePool = pool
 		}
 
 		// Pass through the current operation.
@@ -481,10 +475,6 @@ func (d *common) DevicesPath() string {
 // LogPath returns the instance's log path.
 func (d *common) LogPath() string {
 	name := project.Instance(d.project.Name, d.name)
-
-	if d.state.LocalConfig != nil && d.state.LocalConfig.StorageLogsVolume() != "" {
-		return internalUtil.VarPath("logs", name)
-	}
 
 	return internalUtil.LogPath(name)
 }
@@ -822,7 +812,7 @@ func (d *common) snapshotCommon(inst instance.Instance, name string, expiry time
 	}
 
 	// Create the snapshot.
-	snap, snapInstOp, cleanup, err := instance.CreateInternal(d.state, args, d.op, true, true)
+	snap, snapInstOp, cleanup, err := instance.CreateInternal(d.state, args, d.op, true, true, false)
 	if err != nil {
 		return fmt.Errorf("Failed creating instance snapshot record %q: %w", name, err)
 	}
@@ -840,7 +830,7 @@ func (d *common) snapshotCommon(inst instance.Instance, name string, expiry time
 		return fmt.Errorf("Create instance snapshot: %w", err)
 	}
 
-	reverter.Add(func() { _ = snap.Delete(true) })
+	reverter.Add(func() { _ = snap.Delete(true, true) })
 
 	// Mount volume for backup.yaml writing.
 	_, err = pool.MountInstance(inst, d.op)
@@ -908,6 +898,11 @@ func (d *common) insertConfigkey(key string, value string) (string, error) {
 // isRunningStatusCode returns if instance is running from status code.
 func (d *common) isRunningStatusCode(statusCode api.StatusCode) bool {
 	return statusCode != api.Error && statusCode != api.Stopped
+}
+
+// isErrorStatusCode returns if instance is errored from status code.
+func (d *common) isErrorStatusCode(statusCode api.StatusCode) bool {
+	return statusCode == api.Error
 }
 
 // isStartableStatusCode returns an error if the status code means the instance cannot be started currently.
@@ -1046,7 +1041,7 @@ func (d *common) canMigrate(inst instance.Instance) string {
 
 	// Look at attached devices.
 	for _, entry := range d.ExpandedDevices().Sorted() {
-		dev, err := d.deviceLoad(inst, entry.Name, entry.Config)
+		dev, err := d.deviceLoad(inst, entry.Name, entry.Config, false)
 		if err != nil {
 			logger.Warn("Instance will not be migrated due to a device error", logger.Ctx{"project": inst.Project().Name, "instance": inst.Name(), "device": dev.Name(), "err": err})
 			return "stop"
@@ -1096,10 +1091,6 @@ func (d *common) recordLastState() error {
 }
 
 func (d *common) setCoreSched(pids []int) error {
-	if !d.state.OS.CoreScheduling {
-		return nil
-	}
-
 	args := []string{
 		"forkcoresched",
 		"0",
@@ -1241,7 +1232,7 @@ func (d *common) getStoragePool() (storagePools.Pool, error) {
 }
 
 // deviceLoad instantiates and validates a new device and returns it along with enriched config.
-func (d *common) deviceLoad(inst instance.Instance, deviceName string, rawConfig deviceConfig.Device) (device.Device, error) {
+func (d *common) deviceLoad(inst instance.Instance, deviceName string, rawConfig deviceConfig.Device, partialValidation bool) (device.Device, error) {
 	var configCopy deviceConfig.Device
 	var err error
 
@@ -1256,7 +1247,7 @@ func (d *common) deviceLoad(inst instance.Instance, deviceName string, rawConfig
 		configCopy = rawConfig.Clone()
 	}
 
-	dev, err := device.New(inst, d.state, deviceName, configCopy, d.deviceVolatileGetFunc(deviceName), d.deviceVolatileSetFunc(deviceName))
+	dev, err := device.New(inst, d.state, deviceName, configCopy, partialValidation, d.deviceVolatileGetFunc(deviceName), d.deviceVolatileSetFunc(deviceName))
 
 	// If validation fails with unsupported device type then don't return the device for use.
 	if errors.Is(err, device.ErrUnsupportedDevType) {
@@ -1280,7 +1271,7 @@ func (d *common) deviceAdd(dev device.Device, instanceRunning bool) error {
 }
 
 // deviceRemove loads a new device and calls its Remove() function.
-func (d *common) deviceRemove(dev device.Device, instanceRunning bool) error {
+func (d *common) deviceRemove(dev device.Device, instanceRunning bool, cleanupDependencies bool) error {
 	l := d.logger.AddContext(logger.Ctx{"device": dev.Name(), "type": dev.Config()["type"]})
 	l.Debug("Removing device")
 
@@ -1288,16 +1279,16 @@ func (d *common) deviceRemove(dev device.Device, instanceRunning bool) error {
 		return errors.New("Device cannot be removed when instance is running")
 	}
 
-	return dev.Remove()
+	return dev.Remove(cleanupDependencies)
 }
 
 // devicesAdd adds devices to instance.
-func (d *common) devicesAdd(inst instance.Instance, instanceRunning bool) (revert.Hook, error) {
+func (d *common) devicesAdd(inst instance.Instance, instanceRunning bool, partialValidation bool) (revert.Hook, error) {
 	reverter := revert.New()
 	defer reverter.Fail()
 
 	for _, entry := range d.expandedDevices.Sorted() {
-		dev, err := d.deviceLoad(inst, entry.Name, entry.Config)
+		dev, err := d.deviceLoad(inst, entry.Name, entry.Config, partialValidation)
 		if err != nil {
 			if errors.Is(err, device.ErrUnsupportedDevType) {
 				continue // Skip unsupported device (allows for mixed instance type profiles).
@@ -1326,7 +1317,7 @@ func (d *common) devicesAdd(inst instance.Instance, instanceRunning bool) (rever
 			return nil, fmt.Errorf("Failed to add device %q: %w", dev.Name(), err)
 		}
 
-		reverter.Add(func() { _ = d.deviceRemove(dev, instanceRunning) })
+		reverter.Add(func() { _ = d.deviceRemove(dev, instanceRunning, true) })
 	}
 
 	cleanup := reverter.Clone().Fail
@@ -1363,7 +1354,7 @@ func (d *common) devicesUpdate(inst instance.Instance, removeDevices deviceConfi
 	// Remove devices in reverse order to how they were added.
 	for _, entry := range removeDevices.Reversed() {
 		l := d.logger.AddContext(logger.Ctx{"device": entry.Name, "userRequested": userRequested})
-		dev, err := d.deviceLoad(inst, entry.Name, entry.Config)
+		dev, err := d.deviceLoad(inst, entry.Name, entry.Config, false)
 		if err != nil {
 			if errors.Is(err, device.ErrUnsupportedDevType) {
 				continue // Skip unsupported device (allows for mixed instance type profiles).
@@ -1382,7 +1373,7 @@ func (d *common) devicesUpdate(inst instance.Instance, removeDevices deviceConfi
 				}
 			}
 
-			err = d.deviceRemove(dev, instanceRunning)
+			err = d.deviceRemove(dev, instanceRunning, true)
 			if err != nil && !errors.Is(err, device.ErrUnsupportedDevType) {
 				return fmt.Errorf("Failed to remove device %q: %w", dev.Name(), err)
 			}
@@ -1400,7 +1391,7 @@ func (d *common) devicesUpdate(inst instance.Instance, removeDevices deviceConfi
 	// Add devices in sorted order, this ensures that device mounts are added in path order.
 	for _, entry := range addDevices.Sorted() {
 		l := d.logger.AddContext(logger.Ctx{"device": entry.Name, "userRequested": userRequested})
-		dev, err := d.deviceLoad(inst, entry.Name, entry.Config)
+		dev, err := d.deviceLoad(inst, entry.Name, entry.Config, false)
 		if err != nil {
 			if errors.Is(err, device.ErrUnsupportedDevType) {
 				continue // Skip unsupported device (allows for mixed instance type profiles).
@@ -1431,7 +1422,7 @@ func (d *common) devicesUpdate(inst instance.Instance, removeDevices deviceConfi
 			l.Error("Failed to add device, skipping as non-user requested", logger.Ctx{"err": err})
 		}
 
-		reverter.Add(func() { _ = d.deviceRemove(dev, instanceRunning) })
+		reverter.Add(func() { _ = d.deviceRemove(dev, instanceRunning, true) })
 
 		if instanceRunning {
 			err = dev.PreStartCheck()
@@ -1459,7 +1450,7 @@ func (d *common) devicesUpdate(inst instance.Instance, removeDevices deviceConfi
 
 	for _, entry := range updateDevices.Sorted() {
 		l := d.logger.AddContext(logger.Ctx{"device": entry.Name, "userRequested": userRequested})
-		dev, err := d.deviceLoad(inst, entry.Name, entry.Config)
+		dev, err := d.deviceLoad(inst, entry.Name, entry.Config, false)
 		if err != nil {
 			if errors.Is(err, device.ErrUnsupportedDevType) {
 				continue // Skip unsupported device (allows for mixed instance type profiles).
@@ -1488,7 +1479,7 @@ func (d *common) devicesUpdate(inst instance.Instance, removeDevices deviceConfi
 					}
 				}
 
-				err = d.deviceRemove(dev, instanceRunning)
+				err = d.deviceRemove(dev, instanceRunning, true)
 				if err != nil && !errors.Is(err, device.ErrUnsupportedDevType) {
 					l.Error("Failed to remove device after update validation failed", logger.Ctx{"err": err})
 				}
@@ -1509,9 +1500,9 @@ func (d *common) devicesUpdate(inst instance.Instance, removeDevices deviceConfi
 }
 
 // devicesRemove runs device removal function for each device.
-func (d *common) devicesRemove(inst instance.Instance) {
+func (d *common) devicesRemove(inst instance.Instance, cleanupDependencies bool) {
 	for _, entry := range d.expandedDevices.Reversed() {
-		dev, err := d.deviceLoad(inst, entry.Name, entry.Config)
+		dev, err := d.deviceLoad(inst, entry.Name, entry.Config, true)
 		if err != nil {
 			if errors.Is(err, device.ErrUnsupportedDevType) {
 				continue // Skip unsupported device (allows for mixed instance type profiles).
@@ -1526,7 +1517,7 @@ func (d *common) devicesRemove(inst instance.Instance) {
 		// than older versions and we still need to allow previously valid devices to be stopped even if
 		// they are no longer considered valid.
 		if dev != nil {
-			err = d.deviceRemove(dev, false)
+			err = d.deviceRemove(dev, false, cleanupDependencies)
 			if err != nil {
 				d.logger.Error("Failed to remove device", logger.Ctx{"device": dev.Name(), "err": err})
 			}
@@ -1655,7 +1646,7 @@ func (d *common) balanceNUMANodes() error {
 // Gets the process starting time.
 func (d *common) processStartedAt(pid int) (time.Time, error) {
 	if pid < 1 {
-		return time.Time{}, fmt.Errorf("Invalid PID %q", pid)
+		return time.Time{}, fmt.Errorf("Invalid PID %d", pid)
 	}
 
 	file, err := os.Stat(fmt.Sprintf("/proc/%d", pid))
@@ -1776,4 +1767,33 @@ func (d *common) selinuxContext(baseContext string) (string, error) {
 
 		return seContext, nil
 	}
+}
+
+// HasDependentDisk checks whether the instance has any dependent volumes.
+func (d *common) HasDependentDisk() bool {
+	for _, dev := range d.ExpandedDevices().Sorted() {
+		if dev.Config["type"] != "disk" || util.IsFalseOrEmpty(dev.Config["dependent"]) || dev.Config["path"] == "/" || dev.Config["pool"] == "" {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
+// ForEachDependentDiskType executes the given function for each dependent disk on the instance.
+func (d *common) ForEachDependentDiskType(diskAction func(dev deviceConfig.DeviceNamed) error) error {
+	for _, dev := range d.ExpandedDevices().Sorted() {
+		if dev.Config["type"] != "disk" || util.IsFalseOrEmpty(dev.Config["dependent"]) || dev.Config["path"] == "/" || dev.Config["pool"] == "" {
+			continue
+		}
+
+		err := diskAction(dev)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

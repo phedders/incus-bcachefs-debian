@@ -9,32 +9,35 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v4"
 
-	incus "github.com/lxc/incus/v6/client"
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/internal/instance"
-	"github.com/lxc/incus/v6/shared/api"
-	cli "github.com/lxc/incus/v6/shared/cmd"
-	"github.com/lxc/incus/v6/shared/units"
+	incus "github.com/lxc/incus/v7/client"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/internal/instance"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
+	"github.com/lxc/incus/v7/shared/units"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 type cmdInfo struct {
 	global *cmdGlobal
 
 	flagShowAccess bool
-	flagShowLog    bool
+	flagShowLog    string
 	flagResources  bool
 	flagTarget     string
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdInfo) Command() *cobra.Command {
+var cmdInfoUsage = u.Usage{u.Instance.Optional().Remote()}
+
+func (c *cmdInfo) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("info", u.Instance.Optional().Remote())
+	cmd.Use = cli.U("info", cmdInfoUsage...)
 	cmd.Short = i18n.G("Show instance or server information")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Show instance or server information`))
 	cmd.Example = cli.FormatSection("", i18n.G(
 		`incus info [<remote>:]<instance> [--show-log]
@@ -43,11 +46,11 @@ func (c *cmdInfo) Command() *cobra.Command {
 incus info [<remote>:] [--resources]
     For server information.`))
 
-	cmd.RunE = c.Run
-	cmd.Flags().BoolVar(&c.flagShowAccess, "show-access", false, i18n.G("Show the instance's access list"))
-	cmd.Flags().BoolVar(&c.flagShowLog, "show-log", false, i18n.G("Show the instance's recent log entries"))
-	cmd.Flags().BoolVar(&c.flagResources, "resources", false, i18n.G("Show the resources available to the server"))
-	cmd.Flags().StringVar(&c.flagTarget, "target", "", i18n.G("Cluster member name")+"``")
+	cmd.RunE = c.run
+	cli.AddBoolFlag(cmd.Flags(), &c.flagShowAccess, "show-access", i18n.G("Show the instance's access list"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagShowLog, "show-log", "", "default", i18n.G("Show the instance's recent log entries"))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagResources, "resources", i18n.G("Show the resources available to the server"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagTarget, "target", "", "", i18n.G("Cluster member name"))
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -60,46 +63,27 @@ incus info [<remote>:] [--resources]
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdInfo) Run(cmd *cobra.Command, args []string) error {
-	conf := c.global.conf
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 0, 1)
-	if exit {
-		return err
-	}
-
-	var remote string
-	var cName string
-	if len(args) == 1 {
-		remote, cName, err = conf.ParseRemote(args[0])
-		if err != nil {
-			return err
-		}
-	} else {
-		remote, cName, err = conf.ParseRemote("")
-		if err != nil {
-			return err
-		}
-	}
-
-	d, err := conf.GetInstanceServer(remote)
+func (c *cmdInfo) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdInfoUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	if cName == "" {
+	d := parsed[0].RemoteServer
+	hasInstance := !parsed[0].RemoteObject.Skipped
+	instanceName := parsed[0].RemoteObject.String
+
+	if !hasInstance {
 		return c.remoteInfo(d)
 	}
 
 	if c.flagShowAccess {
-		access, err := d.GetInstanceAccess(cName)
+		access, err := d.GetInstanceAccess(instanceName)
 		if err != nil {
 			return err
 		}
 
-		data, err := yaml.Marshal(access)
+		data, err := yaml.Dump(access, yaml.V2)
 		if err != nil {
 			return err
 		}
@@ -109,7 +93,7 @@ func (c *cmdInfo) Run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return c.instanceInfo(d, cName, c.flagShowLog)
+	return c.instanceInfo(d, instanceName, c.flagShowLog)
 }
 
 func (c *cmdInfo) renderGPU(gpu api.ResourcesGPUCard, prefix string, initial bool) {
@@ -441,7 +425,7 @@ func (c *cmdInfo) remoteInfo(d incus.InstanceServer) error {
 		}
 
 		if resources.System.Serial != "" {
-			fmt.Printf("  "+i18n.G("Serial: %v")+"\n", resources.System.Serial)
+			fmt.Printf("  "+i18n.G("Serial number: %v")+"\n", resources.System.Serial)
 		}
 
 		if resources.System.Type != "" {
@@ -635,7 +619,7 @@ func (c *cmdInfo) remoteInfo(d incus.InstanceServer) error {
 		return err
 	}
 
-	data, err := yaml.Marshal(&serverStatus)
+	data, err := yaml.Dump(&serverStatus, yaml.V2)
 	if err != nil {
 		return err
 	}
@@ -645,7 +629,7 @@ func (c *cmdInfo) remoteInfo(d incus.InstanceServer) error {
 	return nil
 }
 
-func (c *cmdInfo) instanceInfo(d incus.InstanceServer, name string, showLog bool) error {
+func (c *cmdInfo) instanceInfo(d incus.InstanceServer, name string, showLog string) error {
 	// Quick checks.
 	if c.flagTarget != "" {
 		return errors.New(i18n.G("--target cannot be used with instances"))
@@ -661,15 +645,20 @@ func (c *cmdInfo) instanceInfo(d incus.InstanceServer, name string, showLog bool
 	fmt.Printf(i18n.G("Description: %s")+"\n", inst.Description)
 	fmt.Printf(i18n.G("Status: %s")+"\n", strings.ToUpper(inst.Status))
 
-	if inst.Type == "" {
-		inst.Type = "container"
+	instType := inst.Type
+	if instType == "" {
+		instType = "container"
+	}
+
+	if util.IsTrue(inst.ExpandedConfig["volatile.container.oci"]) {
+		instType = fmt.Sprintf("%s (%s)", instType, i18n.G("application"))
 	}
 
 	if inst.Ephemeral {
-		fmt.Printf(i18n.G("Type: %s (ephemeral)")+"\n", inst.Type)
-	} else {
-		fmt.Printf(i18n.G("Type: %s")+"\n", inst.Type)
+		instType = fmt.Sprintf("%s (%s)", instType, i18n.G("ephemeral"))
 	}
+
+	fmt.Printf(i18n.G("Type: %s")+"\n", instType)
 
 	fmt.Printf(i18n.G("Architecture: %s")+"\n", inst.Architecture)
 
@@ -908,23 +897,25 @@ func (c *cmdInfo) instanceInfo(d incus.InstanceServer, name string, showLog bool
 		_ = cli.RenderTable(os.Stdout, cli.TableFormatTable, backupHeader, backupData, inst.Backups)
 	}
 
-	if showLog {
+	if showLog != "" {
 		var log io.Reader
-		switch inst.Type {
-		case "container":
-			log, err = d.GetInstanceLogfile(name, "lxc.log")
-			if err != nil {
-				return err
-			}
 
-		case "virtual-machine":
-			log, err = d.GetInstanceLogfile(name, "qemu.log")
-			if err != nil {
-				return err
-			}
+		if showLog == "default" {
+			switch inst.Type {
+			case "container":
+				showLog = "lxc.log"
 
-		default:
-			return fmt.Errorf(i18n.G("Unsupported instance type: %s"), inst.Type)
+			case "virtual-machine":
+				showLog = "qemu.log"
+
+			default:
+				return fmt.Errorf(i18n.G("Unsupported instance type: %s"), inst.Type)
+			}
+		}
+
+		log, err = d.GetInstanceLogfile(name, showLog)
+		if err != nil {
+			return err
 		}
 
 		stuff, err := io.ReadAll(log)
@@ -932,7 +923,7 @@ func (c *cmdInfo) instanceInfo(d incus.InstanceServer, name string, showLog bool
 			return err
 		}
 
-		fmt.Printf("\n"+i18n.G("Log:")+"\n\n%s\n", string(stuff))
+		fmt.Printf("\n"+i18n.G("Log (%s):")+"\n\n%s\n", showLog, strings.TrimSpace(string(stuff)))
 	}
 
 	return nil

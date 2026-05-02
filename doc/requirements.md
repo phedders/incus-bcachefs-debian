@@ -9,7 +9,7 @@ We recommend having at least 2GiB of RAM to allow the build to complete.
 
 ## Kernel requirements
 
-The minimum supported kernel version is 5.4.
+The minimum supported kernel version is 6.12.
 
 Incus requires a kernel with support for:
 
@@ -31,11 +31,15 @@ As well as any other kernel feature required by the LXC version in use.
 
 Incus requires LXC 6.0.0 or higher with the following build options:
 
-* `apparmor` (if using Incus' AppArmor support)
+* `apparmor` (if using Incus' AppArmor support) (minimum version: 3.0.0)
 * `seccomp`
 * `selinux` (if using Incus' SELinux support)
 
 LXCFS is strongly recommended to properly report resource consumption inside the container.
+
+## OCI
+
+To run OCI containers, Incus currently relies on `skopeo` for registry interactions.
 
 ## QEMU
 
@@ -43,12 +47,26 @@ For virtual machines, QEMU 8.2 or higher is required.
 
 When using `virtiofsd`, only the [Rust rewrite](https://gitlab.com/virtio-fs/virtiofsd) of `virtiofsd` is supported.
 
-## OVS/OVN
+## Network
+
+Minimum versions for network related tooling:
+
+* `nftables`: 1.0.0
+* `dnsmasq`: 2.90
 
 When using Incus with OVN networks, the minimum versions of OVS and OVN are:
 
-* OVS: 2.15.0
-* OVN: 23.03.0
+* `openvswitch`: 2.15.0
+* `ovn`: 23.03.0
+
+## Storage
+
+Minimum versions for storage drivers:
+
+* `zfs`: 2.1.0
+* `lvm`: 2.03.11
+* `linstor-drbd`: 9.0
+* `truenas-incus-ctl`: 0.7.7
 
 ## Additional libraries (and development headers)
 

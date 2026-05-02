@@ -140,6 +140,16 @@ EOF
   cluster.https_address: 100.64.1.101:${port}
 EOF
         fi
+        if [ "${driver}" = "linstor" ]; then
+            cat >> "${INCUS_DIR}/preseed.yaml" << EOF
+  storage.linstor.controller_connection: ${INCUS_LINSTOR_CLUSTER}
+EOF
+            if [ -n "${INCUS_LINSTOR_LOCAL_SATELLITE:-}" ]; then
+                cat >> "${INCUS_DIR}/preseed.yaml" << EOF
+  storage.linstor.satellite.name: ${INCUS_LINSTOR_LOCAL_SATELLITE}
+EOF
+            fi
+        fi
         cat >> "${INCUS_DIR}/preseed.yaml" << EOF
   images.auto_update_interval: 0
 storage_pools:
@@ -167,12 +177,26 @@ EOF
     lvm.vg_name: incustest-$(basename "${TEST_DIR}")-${ns}
 EOF
         fi
+        if [ "${driver}" = "truenas" ]; then
+            cat >> "${INCUS_DIR}/preseed.yaml" << EOF
+  config:
+    source: $(truenas_host_dataset)/incustest-$(basename "${TEST_DIR}")
+    truenas.api_key: \"${INCUS_TRUENAS_API_KEY}\"
+EOF
+        fi
         if [ "${driver}" = "ceph" ]; then
             cat >> "${INCUS_DIR}/preseed.yaml" << EOF
   config:
     source: incustest-$(basename "${TEST_DIR}")
     volume.size: 25MiB
     ceph.osd.pg_num: 16
+EOF
+        fi
+        if [ "${driver}" = "linstor" ]; then
+            cat >> "${INCUS_DIR}/preseed.yaml" << EOF
+  config:
+    source: incustest-$(basename "${TEST_DIR}" | sed 's/\./__/g')
+    linstor.resource_group.place_count: 1
 EOF
         fi
         cat >> "${INCUS_DIR}/preseed.yaml" << EOF
@@ -234,6 +258,14 @@ spawn_incus_and_join_cluster() {
             incus config set core.https_address "100.64.1.10${index}:8443"
         fi
 
+        # If there is a satellite name override, apply it.
+        if [ "${driver}" = "linstor" ]; then
+            incus config set storage.linstor.controller_connection "${INCUS_LINSTOR_CLUSTER}"
+            if [ -n "${INCUS_LINSTOR_LOCAL_SATELLITE:-}" ]; then
+                incus config set storage.linstor.satellite.name "${INCUS_LINSTOR_LOCAL_SATELLITE}"
+            fi
+        fi
+
         cat > "${INCUS_DIR}/preseed.yaml" << EOF
 cluster:
   enabled: true
@@ -244,10 +276,10 @@ cluster:
   cluster_token: ${token}
   member_config:
 EOF
-        # Declare the pool only if the driver is not ceph, because
-        # the ceph pool doesn't need to be created on the joining
+        # Declare the pool only if the driver is not ceph or linstor, because
+        # the pool doesn't need to be created on the joining
         # node (it's shared with the bootstrap one).
-        if [ "${driver}" != "ceph" ]; then
+        if [ "${driver}" != "ceph" ] && [ "${driver}" != "linstor" ]; then
             cat >> "${INCUS_DIR}/preseed.yaml" << EOF
   - entity: storage-pool
     name: data

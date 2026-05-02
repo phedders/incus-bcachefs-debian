@@ -10,62 +10,61 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v4"
 
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/shared/api"
-	cli "github.com/lxc/incus/v6/shared/cmd"
-	"github.com/lxc/incus/v6/shared/termios"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
+	"github.com/lxc/incus/v7/shared/termios"
 )
 
 type cmdNetworkIntegration struct {
 	global *cmdGlobal
 }
 
-// Command returns a cobra command for inclusion.
-func (c *cmdNetworkIntegration) Command() *cobra.Command {
+func (c *cmdNetworkIntegration) command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Use = cli.U("integration")
 	cmd.Short = i18n.G("Manage network integrations")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Manage network integrations`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Manage network integrations`))
 
 	// Create
 	networkIntegrationCreateCmd := cmdNetworkIntegrationCreate{global: c.global, networkIntegration: c}
-	cmd.AddCommand(networkIntegrationCreateCmd.Command())
+	cmd.AddCommand(networkIntegrationCreateCmd.command())
 
 	// Delete
 	networkIntegrationDeleteCmd := cmdNetworkIntegrationDelete{global: c.global, networkIntegration: c}
-	cmd.AddCommand(networkIntegrationDeleteCmd.Command())
+	cmd.AddCommand(networkIntegrationDeleteCmd.command())
 
 	// Edit
 	networkIntegrationEditCmd := cmdNetworkIntegrationEdit{global: c.global, networkIntegration: c}
-	cmd.AddCommand(networkIntegrationEditCmd.Command())
+	cmd.AddCommand(networkIntegrationEditCmd.command())
 
 	// Get
 	networkIntegrationGetCmd := cmdNetworkIntegrationGet{global: c.global, networkIntegration: c}
-	cmd.AddCommand(networkIntegrationGetCmd.Command())
+	cmd.AddCommand(networkIntegrationGetCmd.command())
 
 	// List
 	networkIntegrationListCmd := cmdNetworkIntegrationList{global: c.global, networkIntegration: c}
-	cmd.AddCommand(networkIntegrationListCmd.Command())
+	cmd.AddCommand(networkIntegrationListCmd.command())
 
 	// Rename
 	networkIntegrationRenameCmd := cmdNetworkIntegrationRename{global: c.global, networkIntegration: c}
-	cmd.AddCommand(networkIntegrationRenameCmd.Command())
+	cmd.AddCommand(networkIntegrationRenameCmd.command())
 
 	// Set
 	networkIntegrationSetCmd := cmdNetworkIntegrationSet{global: c.global, networkIntegration: c}
-	cmd.AddCommand(networkIntegrationSetCmd.Command())
+	cmd.AddCommand(networkIntegrationSetCmd.command())
 
 	// Unset
 	networkIntegrationUnsetCmd := cmdNetworkIntegrationUnset{global: c.global, networkIntegration: c, networkIntegrationSet: &networkIntegrationSetCmd}
-	cmd.AddCommand(networkIntegrationUnsetCmd.Command())
+	cmd.AddCommand(networkIntegrationUnsetCmd.command())
 
 	// Show
 	networkIntegrationShowCmd := cmdNetworkIntegrationShow{global: c.global, networkIntegration: c}
-	cmd.AddCommand(networkIntegrationShowCmd.Command())
+	cmd.AddCommand(networkIntegrationShowCmd.command())
 
 	// Workaround for subcommand usage errors. See: https://github.com/spf13/cobra/issues/706
 	cmd.Args = cobra.NoArgs
@@ -80,65 +79,56 @@ type cmdNetworkIntegrationCreate struct {
 	flagConfig         []string
 }
 
-// Command returns a cobra command for inclusion.
-func (c *cmdNetworkIntegrationCreate) Command() *cobra.Command {
+var cmdNetworkIntegrationCreateUsage = u.Usage{u.NewName(u.NetworkIntegration).Remote(), u.Type}
+
+func (c *cmdNetworkIntegrationCreate) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("create", u.NewName(u.NetworkIntegration).Remote(), u.Type)
+	cmd.Use = cli.U("create", cmdNetworkIntegrationCreateUsage...)
 	cmd.Aliases = []string{"add"}
 	cmd.Short = i18n.G("Create network integrations")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Create network integrations`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Create network integrations`))
 	cmd.Example = cli.FormatSection("", i18n.G(`incus network integration create o1 ovn
+   Create network integration o1 of type ovn
 
 incus network integration create o1 ovn < config.yaml
     Create network integration o1 of type ovn with configuration from config.yaml`))
 
-	cmd.Flags().StringArrayVarP(&c.flagConfig, "config", "c", nil, i18n.G("Config key/value to apply to the new network integration")+"``")
+	cli.AddStringArrayFlag(cmd.Flags(), &c.flagConfig, "config|c", i18n.G("Config key/value to apply to the new network integration"))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	return cmd
 }
 
-// Run actually performs the action.
-func (c *cmdNetworkIntegrationCreate) Run(cmd *cobra.Command, args []string) error {
-	var stdinData api.NetworkIntegrationPut
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
-		return err
-	}
-
-	// If stdin isn't a terminal, read text from it
-	if !termios.IsTerminal(getStdinFd()) {
-		contents, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return err
-		}
-
-		err = yaml.Unmarshal(contents, &stdinData)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdNetworkIntegrationCreate) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkIntegrationCreateUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
+	d := parsed[0].RemoteServer
+	integrationName := parsed[0].RemoteObject.String
+	integrationType := parsed[1].String
 
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network integration name"))
+	var stdinData api.NetworkIntegrationPut
+
+	// If stdin isn't a terminal, read text from it
+	if !termios.IsTerminal(getStdinFd()) {
+		loader, err := yaml.NewLoader(os.Stdin)
+		if err != nil {
+			return err
+		}
+
+		err = loader.Load(&stdinData)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
 	}
 
 	// Create the network integration
 	networkIntegration := api.NetworkIntegrationsPost{}
-	networkIntegration.Name = resource.name
-	networkIntegration.Type = args[1]
+	networkIntegration.Name = integrationName
+	networkIntegration.Type = integrationType
 	networkIntegration.Description = stdinData.Description
 
 	if stdinData.Config == nil {
@@ -155,13 +145,13 @@ func (c *cmdNetworkIntegrationCreate) Run(cmd *cobra.Command, args []string) err
 		networkIntegration.Config = stdinData.Config
 	}
 
-	err = resource.server.CreateNetworkIntegration(networkIntegration)
+	err = d.CreateNetworkIntegration(networkIntegration)
 	if err != nil {
 		return err
 	}
 
 	if !c.global.flagQuiet {
-		fmt.Printf(i18n.G("Network integration %s created")+"\n", resource.name)
+		fmt.Printf(i18n.G("Network integration %s created")+"\n", formatRemote(c.global.conf, parsed[0]))
 	}
 
 	return nil
@@ -173,48 +163,46 @@ type cmdNetworkIntegrationDelete struct {
 	networkIntegration *cmdNetworkIntegration
 }
 
-// Command returns a cobra command for inclusion.
-func (c *cmdNetworkIntegrationDelete) Command() *cobra.Command {
+var cmdNetworkIntegrationDeleteUsage = u.Usage{u.NetworkIntegration.Remote().List(1)}
+
+func (c *cmdNetworkIntegrationDelete) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("delete", u.NetworkIntegration.Remote().List(1))
+	cmd.Use = cli.U("delete", cmdNetworkIntegrationDeleteUsage...)
 	cmd.Aliases = []string{"rm", "remove"}
 	cmd.Short = i18n.G("Delete network integrations")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Delete network integrations`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Delete network integrations`))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	return cmd
 }
 
-// Run actually performs the action.
-func (c *cmdNetworkIntegrationDelete) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, -1)
-	if exit {
-		return err
-	}
-
-	// Get the network integration.
-	resources, err := c.global.parseServers(args...)
+func (c *cmdNetworkIntegrationDelete) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkIntegrationDeleteUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	for _, resource := range resources {
-		if resource.name == "" {
-			return errors.New(i18n.G("Missing network integration name"))
-		}
+	var errs []error
+
+	for _, p := range parsed[0].List {
+		d := p.RemoteServer
+		integrationName := p.RemoteObject.String
 
 		// Delete the network integration
-		err = resource.server.DeleteNetworkIntegration(resource.name)
+		err = d.DeleteNetworkIntegration(integrationName)
 		if err != nil {
-			return err
+			errs = append(errs, err)
+			continue
 		}
 
 		if !c.global.flagQuiet {
-			fmt.Printf(i18n.G("Network integration %s deleted")+"\n", resource.name)
+			fmt.Printf(i18n.G("Network integration %s deleted")+"\n", formatRemote(c.global.conf, p))
 		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil
@@ -226,18 +214,19 @@ type cmdNetworkIntegrationEdit struct {
 	networkIntegration *cmdNetworkIntegration
 }
 
-// Command returns a cobra command for inclusion.
-func (c *cmdNetworkIntegrationEdit) Command() *cobra.Command {
+var cmdNetworkIntegrationEditUsage = u.Usage{u.NetworkIntegration.Remote()}
+
+func (c *cmdNetworkIntegrationEdit) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("edit", u.NetworkIntegration.Remote())
+	cmd.Use = cli.U("edit", cmdNetworkIntegrationEditUsage...)
 	cmd.Short = i18n.G("Edit network integration configurations as YAML")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Edit network integration configurations as YAML`))
 	cmd.Example = cli.FormatSection("", i18n.G(
 		`incus network integration edit <network integration> < network-integration.yaml
     Update a network integration using the content of network-integration.yaml`))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	return cmd
 }
@@ -250,49 +239,38 @@ func (c *cmdNetworkIntegrationEdit) helpTemplate() string {
 ### Note that the name is shown but cannot be changed`)
 }
 
-// Run actually performs the action.
-func (c *cmdNetworkIntegrationEdit) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdNetworkIntegrationEdit) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkIntegrationEditUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network integration name"))
-	}
+	d := parsed[0].RemoteServer
+	integrationName := parsed[0].RemoteObject.String
 
 	// If stdin isn't a terminal, read text from it
 	if !termios.IsTerminal(getStdinFd()) {
-		contents, err := io.ReadAll(os.Stdin)
+		loader, err := yaml.NewLoader(os.Stdin)
 		if err != nil {
 			return err
 		}
 
 		newdata := api.NetworkIntegrationPut{}
-		err = yaml.Unmarshal(contents, &newdata)
-		if err != nil {
+		err = loader.Load(&newdata)
+		if err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 
-		return resource.server.UpdateNetworkIntegration(resource.name, newdata, "")
+		return d.UpdateNetworkIntegration(integrationName, newdata, "")
 	}
 
 	// Extract the current value
-	networkIntegration, etag, err := resource.server.GetNetworkIntegration(resource.name)
+	networkIntegration, etag, err := d.GetNetworkIntegration(integrationName)
 	if err != nil {
 		return err
 	}
 
-	data, err := yaml.Marshal(&networkIntegration)
+	data, err := yaml.Dump(&networkIntegration, yaml.V2)
 	if err != nil {
 		return err
 	}
@@ -306,9 +284,9 @@ func (c *cmdNetworkIntegrationEdit) Run(cmd *cobra.Command, args []string) error
 	for {
 		// Parse the text received from the editor
 		newdata := api.NetworkIntegrationPut{}
-		err = yaml.Unmarshal(content, &newdata)
+		err = yaml.Load(content, &newdata)
 		if err == nil {
-			err = resource.server.UpdateNetworkIntegration(resource.name, newdata, etag)
+			err = d.UpdateNetworkIntegration(integrationName, newdata, etag)
 		}
 
 		// Respawn the editor
@@ -348,55 +326,46 @@ type networkIntegrationColumn struct {
 	Data func(api.NetworkIntegration) string
 }
 
-// Command returns a cobra command for inclusion.
-func (c *cmdNetworkIntegrationGet) Command() *cobra.Command {
+var cmdNetworkIntegrationGetUsage = u.Usage{u.NetworkIntegration.Remote(), u.Key}
+
+func (c *cmdNetworkIntegrationGet) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("get", u.NetworkIntegration.Remote(), u.Key)
+	cmd.Use = cli.U("get", cmdNetworkIntegrationGetUsage...)
 	cmd.Short = i18n.G("Get values for network integration configuration keys")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Get values for network integration configuration keys`))
 
-	cmd.RunE = c.Run
-	cmd.Flags().BoolVarP(&c.flagIsProperty, "property", "p", false, i18n.G("Get the key as a network integration property"))
+	cmd.RunE = c.run
+	cli.AddBoolFlag(cmd.Flags(), &c.flagIsProperty, "property|p", i18n.G("Get the key as a network integration property"))
 	return cmd
 }
 
-// Run actually performs the action.
-func (c *cmdNetworkIntegrationGet) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdNetworkIntegrationGet) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkIntegrationGetUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network integration name"))
-	}
+	d := parsed[0].RemoteServer
+	integrationName := parsed[0].RemoteObject.String
+	key := parsed[1].String
 
 	// Get the configuration key
-	networkIntegration, _, err := resource.server.GetNetworkIntegration(resource.name)
+	networkIntegration, _, err := d.GetNetworkIntegration(integrationName)
 	if err != nil {
 		return err
 	}
 
 	if c.flagIsProperty {
 		w := networkIntegration.Writable()
-		res, err := getFieldByJSONTag(&w, args[1])
+		res, err := getFieldByJSONTag(&w, key)
 		if err != nil {
-			return fmt.Errorf(i18n.G("The property %q does not exist on the network integration %q: %v"), args[1], resource.name, err)
+			return fmt.Errorf(i18n.G("The property %q does not exist on the network integration %q: %v"), key, formatRemote(c.global.conf, parsed[0]), err)
 		}
 
 		fmt.Printf("%v\n", res)
 	} else {
-		fmt.Printf("%s\n", networkIntegration.Config[args[1]])
+		fmt.Printf("%s\n", networkIntegration.Config[key])
 	}
 
 	return nil
@@ -411,20 +380,21 @@ type cmdNetworkIntegrationList struct {
 	flagColumns string
 }
 
-// Command returns a cobra command for inclusion.
-func (c *cmdNetworkIntegrationList) Command() *cobra.Command {
+var cmdNetworkIntegrationListUsage = u.Usage{u.RemoteColonOpt}
+
+func (c *cmdNetworkIntegrationList) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("list", u.RemoteColonOpt)
+	cmd.Use = cli.U("list", cmdNetworkIntegrationListUsage...)
 	cmd.Aliases = []string{"ls"}
 	cmd.Short = i18n.G("List network integrations")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`List network integrations
 
 Default column layout: ndtu
 
 == Columns ==
 The -c option takes a comma separated list of arguments that control
-which network zone attributes to output when displaying in table or csv
+which network integrations attributes to output when displaying in table or csv
 format.
 
 Column arguments are either pre-defined shorthand chars (see below),
@@ -438,14 +408,14 @@ Pre-defined column shorthand chars:
 	t - Type
 	u - Used by`))
 
-	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", c.global.defaultListFormat(), i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`)+"``")
-	cmd.Flags().StringVarP(&c.flagColumns, "columns", "c", defaultNetworkIntegrationColumns, i18n.G("Columns")+"``")
+	cli.AddStringFlag(cmd.Flags(), &c.flagFormat, "format|f", c.global.defaultListFormat(), "", i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`))
+	cli.AddStringFlag(cmd.Flags(), &c.flagColumns, "columns|c", defaultNetworkIntegrationColumns, "", i18n.G("Columns"))
 
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		return cli.ValidateFlagFormatForListOutput(cmd.Flag("format").Value.String())
 	}
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	return cmd
 }
@@ -497,31 +467,16 @@ func (c *cmdNetworkIntegrationList) usedByColumnData(integration api.NetworkInte
 	return fmt.Sprintf("%d", len(integration.UsedBy))
 }
 
-// Run actually performs the action.
-func (c *cmdNetworkIntegrationList) Run(cmd *cobra.Command, args []string) error {
-	conf := c.global.conf
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 0, 1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	remote := conf.DefaultRemote
-	if len(args) > 0 {
-		remote = args[0]
-	}
-
-	resources, err := c.global.parseServers(remote)
+func (c *cmdNetworkIntegrationList) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkIntegrationListUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
+	d := parsed[0].RemoteServer
 
 	// List network integrations
-	networkIntegrations, err := resource.server.GetNetworkIntegrations()
+	networkIntegrations, err := d.GetNetworkIntegrations()
 	if err != nil {
 		return err
 	}
@@ -558,48 +513,38 @@ type cmdNetworkIntegrationRename struct {
 	networkIntegration *cmdNetworkIntegration
 }
 
-// Command returns a cobra command for inclusion.
-func (c *cmdNetworkIntegrationRename) Command() *cobra.Command {
+var cmdNetworkIntegrationRenameUsage = u.Usage{u.NetworkIntegration.Remote(), u.NewName(u.NetworkIntegration)}
+
+func (c *cmdNetworkIntegrationRename) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("rename", u.NetworkIntegration.Remote(), u.NewName(u.NetworkIntegration))
+	cmd.Use = cli.U("rename", cmdNetworkIntegrationRenameUsage...)
 	cmd.Aliases = []string{"mv"}
 	cmd.Short = i18n.G("Rename network integrations")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Rename network integrations`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Rename network integrations`))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	return cmd
 }
 
-// Run actually performs the action.
-func (c *cmdNetworkIntegrationRename) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdNetworkIntegrationRename) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkIntegrationRenameUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network integration name"))
-	}
+	d := parsed[0].RemoteServer
+	integrationName := parsed[0].RemoteObject.String
+	newIntegrationName := parsed[1].String
 
 	// Rename the network integration
-	err = resource.server.RenameNetworkIntegration(resource.name, api.NetworkIntegrationPost{Name: args[1]})
+	err = d.RenameNetworkIntegration(integrationName, api.NetworkIntegrationPost{Name: newIntegrationName})
 	if err != nil {
 		return err
 	}
 
 	if !c.global.flagQuiet {
-		fmt.Printf(i18n.G("Network integration %s renamed to %s")+"\n", resource.name, args[1])
+		fmt.Printf(i18n.G("Network integration %s renamed to %s")+"\n", formatRemote(c.global.conf, parsed[0]), newIntegrationName)
 	}
 
 	return nil
@@ -613,50 +558,34 @@ type cmdNetworkIntegrationSet struct {
 	flagIsProperty bool
 }
 
-// Command returns a cobra command for inclusion.
-func (c *cmdNetworkIntegrationSet) Command() *cobra.Command {
+var cmdNetworkIntegrationSetUsage = u.Usage{u.NetworkIntegration.Remote(), u.LegacyKV.List(1)}
+
+func (c *cmdNetworkIntegrationSet) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("set", u.NetworkIntegration.Remote(), u.KV.List(1))
+	cmd.Use = cli.U("set", cmdNetworkIntegrationSetUsage...)
 	cmd.Short = i18n.G("Set network integration configuration keys")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Set network integration configuration keys
 
 For backward compatibility, a single configuration key may still be set with:
     incus network integration set [<remote>:]<network integration> <key> <value>`))
 
-	cmd.RunE = c.Run
-	cmd.Flags().BoolVarP(&c.flagIsProperty, "property", "p", false, i18n.G("Set the key as a network integration property"))
+	cmd.RunE = c.run
+	cli.AddBoolFlag(cmd.Flags(), &c.flagIsProperty, "property|p", i18n.G("Set the key as a network integration property"))
 	return cmd
 }
 
-// Run actually performs the action.
-func (c *cmdNetworkIntegrationSet) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, -1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+// set runs the post-parsing command logic.
+func (c *cmdNetworkIntegrationSet) set(cmd *cobra.Command, parsed []*u.Parsed) error {
+	d := parsed[0].RemoteServer
+	integrationName := parsed[0].RemoteObject.String
+	keys, err := kvToMap(parsed[1])
 	if err != nil {
 		return err
-	}
-
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network integration name"))
 	}
 
 	// Get the network integration
-	networkIntegration, etag, err := resource.server.GetNetworkIntegration(resource.name)
-	if err != nil {
-		return err
-	}
-
-	// Set the configuration key
-	keys, err := getConfig(args[1:]...)
+	networkIntegration, etag, err := d.GetNetworkIntegration(integrationName)
 	if err != nil {
 		return err
 	}
@@ -680,7 +609,16 @@ func (c *cmdNetworkIntegrationSet) Run(cmd *cobra.Command, args []string) error 
 		maps.Copy(writable.Config, keys)
 	}
 
-	return resource.server.UpdateNetworkIntegration(resource.name, writable, etag)
+	return d.UpdateNetworkIntegration(integrationName, writable, etag)
+}
+
+func (c *cmdNetworkIntegrationSet) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkIntegrationSetUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
+		return err
+	}
+
+	return c.set(cmd, parsed)
 }
 
 // Unset.
@@ -692,31 +630,28 @@ type cmdNetworkIntegrationUnset struct {
 	flagIsProperty bool
 }
 
-// Command returns a cobra command for inclusion.
-func (c *cmdNetworkIntegrationUnset) Command() *cobra.Command {
+var cmdNetworkIntegrationUnsetUsage = u.Usage{u.NetworkIntegration.Remote(), u.Key}
+
+func (c *cmdNetworkIntegrationUnset) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("unset", u.NetworkIntegration.Remote(), u.Key)
+	cmd.Use = cli.U("unset", cmdNetworkIntegrationUnsetUsage...)
 	cmd.Short = i18n.G("Unset network integration configuration keys")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Unset network integration configuration keys`))
 
-	cmd.RunE = c.Run
-	cmd.Flags().BoolVarP(&c.flagIsProperty, "property", "p", false, i18n.G("Unset the key as a network integration property"))
+	cmd.RunE = c.run
+	cli.AddBoolFlag(cmd.Flags(), &c.flagIsProperty, "property|p", i18n.G("Unset the key as a network integration property"))
 	return cmd
 }
 
-// Run actually performs the action.
-func (c *cmdNetworkIntegrationUnset) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, 2)
-	if exit {
+func (c *cmdNetworkIntegrationUnset) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkIntegrationUnsetUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
 		return err
 	}
 
 	c.networkIntegrationSet.flagIsProperty = c.flagIsProperty
-
-	args = append(args, "")
-	return c.networkIntegrationSet.Run(cmd, args)
+	return unsetKey(c.networkIntegrationSet, cmd, parsed)
 }
 
 // Show.
@@ -725,46 +660,35 @@ type cmdNetworkIntegrationShow struct {
 	networkIntegration *cmdNetworkIntegration
 }
 
-// Command returns a cobra command for inclusion.
-func (c *cmdNetworkIntegrationShow) Command() *cobra.Command {
-	cmd := &cobra.Command{}
-	cmd.Use = cli.U("show", u.NetworkIntegration.Remote())
-	cmd.Short = i18n.G("Show network integration options")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Show network integration options`))
+var cmdNetworkIntegrationShowUsage = u.Usage{u.NetworkIntegration.Remote()}
 
-	cmd.RunE = c.Run
+func (c *cmdNetworkIntegrationShow) command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = cli.U("show", cmdNetworkIntegrationShowUsage...)
+	cmd.Short = i18n.G("Show network integration options")
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Show network integration options`))
+
+	cmd.RunE = c.run
 
 	return cmd
 }
 
-// Run actually performs the action.
-func (c *cmdNetworkIntegrationShow) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdNetworkIntegrationShow) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdNetworkIntegrationShowUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	if resource.name == "" {
-		return errors.New(i18n.G("Missing network integration name"))
-	}
+	d := parsed[0].RemoteServer
+	integrationName := parsed[0].RemoteObject.String
 
 	// Show the network integration
-	networkIntegration, _, err := resource.server.GetNetworkIntegration(resource.name)
+	networkIntegration, _, err := d.GetNetworkIntegration(integrationName)
 	if err != nil {
 		return err
 	}
 
-	data, err := yaml.Marshal(&networkIntegration)
+	data, err := yaml.Dump(&networkIntegration, yaml.V2)
 	if err != nil {
 		return err
 	}

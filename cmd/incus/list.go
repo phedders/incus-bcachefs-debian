@@ -14,13 +14,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	incus "github.com/lxc/incus/v6/client"
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/internal/instance"
-	"github.com/lxc/incus/v6/shared/api"
-	cli "github.com/lxc/incus/v6/shared/cmd"
-	"github.com/lxc/incus/v6/shared/units"
+	incus "github.com/lxc/incus/v7/client"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/internal/instance"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
+	"github.com/lxc/incus/v7/shared/units"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 type column struct {
@@ -44,13 +46,14 @@ type cmdList struct {
 	shorthandFilters map[string]func(*api.Instance, *api.InstanceState, string) bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdList) Command() *cobra.Command {
+var cmdListUsage = u.Usage{u.RemoteColonOpt, u.Filter.List(0)}
+
+func (c *cmdList) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("list", u.RemoteColonOpt, u.Filter.List(0))
+	cmd.Use = cli.U("list", cmdListUsage...)
 	cmd.Aliases = []string{"ls"}
 	cmd.Short = i18n.G("List instances")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`List instances
 
 Default column layout: ns46tS
@@ -133,11 +136,11 @@ Custom columns are defined with "[config:|devices:]key[:name][:maxWidth]":
 incus list -c ns,user.comment:comment
   List instances with their running state and user comment.`))
 
-	cmd.RunE = c.Run
-	cmd.Flags().StringVarP(&c.flagColumns, "columns", "c", defaultColumns, i18n.G("Columns")+"``")
-	cmd.Flags().StringVarP(&c.flagFormat, "format", "f", c.global.defaultListFormat(), i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`)+"``")
-	cmd.Flags().BoolVar(&c.flagFast, "fast", false, i18n.G("Fast mode (same as --columns=nsacPt)"))
-	cmd.Flags().BoolVar(&c.flagAllProjects, "all-projects", false, i18n.G("Display instances from all projects"))
+	cmd.RunE = c.run
+	cli.AddStringFlag(cmd.Flags(), &c.flagColumns, "columns|c", defaultColumns, "", i18n.G("Columns"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagFormat, "format|f", c.global.defaultListFormat(), "", i18n.G(`Format (csv|json|table|yaml|compact|markdown), use suffix ",noheader" to disable headers and ",header" to enable it if missing, e.g. csv,header`))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagFast, "fast", i18n.G("Fast mode (same as --columns=nsacPt)"))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagAllProjects, "all-projects", i18n.G("Display instances from all projects"))
 
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		return cli.ValidateFlagFormatForListOutput(cmd.Flag("format").Value.String())
@@ -396,15 +399,14 @@ func (c *cmdList) showInstances(instances []api.InstanceFull, filters []string, 
 	return cli.RenderTable(os.Stdout, c.flagFormat, headers, data, instancesFiltered)
 }
 
-// Run runs the actual command logic.
-func (c *cmdList) Run(cmd *cobra.Command, args []string) error {
-	conf := c.global.conf
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 0, -1)
-	if exit {
+func (c *cmdList) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdListUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
 		return err
 	}
+
+	d := parsed[0].RemoteServer
+	filters := parsed[1].StringList
 
 	if c.global.flagProject != "" && c.flagAllProjects {
 		return errors.New(i18n.G("Can't specify --project with --all-projects"))
@@ -417,42 +419,6 @@ func (c *cmdList) Run(cmd *cobra.Command, args []string) error {
 		if slices.Contains(formatOptions, "raw") {
 			c.rawFormat = true
 		}
-	}
-
-	// Parse the remote
-	var remote string
-	var name string
-	var filters []string
-
-	if len(args) != 0 {
-		filters = args
-		if strings.Contains(args[0], ":") && !strings.Contains(args[0], "=") {
-			var err error
-			remote, name, err = conf.ParseRemote(args[0])
-			if err != nil {
-				return err
-			}
-
-			filters = args[1:]
-		} else if !strings.Contains(args[0], "=") {
-			remote = conf.DefaultRemote
-			name = args[0]
-			filters = args[1:]
-		}
-	}
-
-	if name != "" {
-		filters = append(filters, name)
-	}
-
-	if remote == "" {
-		remote = conf.DefaultRemote
-	}
-
-	// Connect to the daemon.
-	d, err := conf.GetInstanceServer(remote)
-	if err != nil {
-		return err
 	}
 
 	// Get the list of columns
@@ -823,15 +789,21 @@ func (c *cmdList) diskUsageColumnData(cInfo api.InstanceFull) string {
 }
 
 func (c *cmdList) typeColumnData(cInfo api.InstanceFull) string {
-	if cInfo.Type == "" {
-		cInfo.Type = "container"
+	ret := strings.ToUpper(cInfo.Type)
+
+	if ret == "" {
+		ret = "CONTAINER"
+	}
+
+	if util.IsTrue(cInfo.ExpandedConfig["volatile.container.oci"]) {
+		ret = fmt.Sprintf("%s (%s)", ret, i18n.G("APP"))
 	}
 
 	if cInfo.Ephemeral {
-		return fmt.Sprintf("%s (%s)", strings.ToUpper(cInfo.Type), i18n.G("EPHEMERAL"))
+		ret = fmt.Sprintf("%s (%s)", ret, i18n.G("EPHEMERAL"))
 	}
 
-	return strings.ToUpper(cInfo.Type)
+	return ret
 }
 
 func (c *cmdList) numberSnapshotsColumnData(cInfo api.InstanceFull) string {

@@ -15,28 +15,29 @@ import (
 
 	"github.com/mdlayher/netx/eui64"
 
-	"github.com/lxc/incus/v6/internal/linux"
-	"github.com/lxc/incus/v6/internal/server/db"
-	dbCluster "github.com/lxc/incus/v6/internal/server/db/cluster"
-	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
-	pcidev "github.com/lxc/incus/v6/internal/server/device/pci"
-	"github.com/lxc/incus/v6/internal/server/dnsmasq/dhcpalloc"
-	"github.com/lxc/incus/v6/internal/server/instance"
-	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
-	"github.com/lxc/incus/v6/internal/server/ip"
-	"github.com/lxc/incus/v6/internal/server/network"
-	"github.com/lxc/incus/v6/internal/server/network/acl"
-	"github.com/lxc/incus/v6/internal/server/network/ovn"
-	"github.com/lxc/incus/v6/internal/server/project"
-	"github.com/lxc/incus/v6/internal/server/state"
-	localUtil "github.com/lxc/incus/v6/internal/server/util"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/resources"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/units"
-	"github.com/lxc/incus/v6/shared/util"
-	"github.com/lxc/incus/v6/shared/validate"
+	"github.com/lxc/incus/v7/internal/linux"
+	"github.com/lxc/incus/v7/internal/server/db"
+	dbCluster "github.com/lxc/incus/v7/internal/server/db/cluster"
+	deviceConfig "github.com/lxc/incus/v7/internal/server/device/config"
+	pcidev "github.com/lxc/incus/v7/internal/server/device/pci"
+	"github.com/lxc/incus/v7/internal/server/dnsmasq/dhcpalloc"
+	"github.com/lxc/incus/v7/internal/server/instance"
+	"github.com/lxc/incus/v7/internal/server/instance/instancetype"
+	"github.com/lxc/incus/v7/internal/server/ip"
+	"github.com/lxc/incus/v7/internal/server/network"
+	"github.com/lxc/incus/v7/internal/server/network/acl"
+	addressset "github.com/lxc/incus/v7/internal/server/network/address-set"
+	"github.com/lxc/incus/v7/internal/server/network/ovn"
+	"github.com/lxc/incus/v7/internal/server/project"
+	"github.com/lxc/incus/v7/internal/server/state"
+	localUtil "github.com/lxc/incus/v7/internal/server/util"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/resources"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/units"
+	"github.com/lxc/incus/v7/shared/util"
+	"github.com/lxc/incus/v7/shared/validate"
 )
 
 // ovnNet defines an interface for accessing instance specific functions on OVN network.
@@ -82,7 +83,7 @@ func (d *nicOVN) UpdatableFields(oldDevice Type) []string {
 }
 
 // validateConfig checks the supplied config for correctness.
-func (d *nicOVN) validateConfig(instConf instance.ConfigReader) error {
+func (d *nicOVN) validateConfig(instConf instance.ConfigReader, partialValidation bool) error {
 	if !instanceSupported(instConf.Type(), instancetype.Container, instancetype.VM) {
 		return ErrUnsupportedDevType
 	}
@@ -334,6 +335,15 @@ func (d *nicOVN) validateConfig(instConf instance.ConfigReader) error {
 		//  required: no
 		//  shortdesc: Whether the NIC is connected to the host network (requires `acceleration` set to `none`)
 		"connected",
+
+		// gendoc:generate(entity=devices, group=nic_ovn, key=io.bus)
+		//
+		// ---
+		//  type: string
+		//  default: `virtio`
+		//  managed: no
+		//  shortdesc: Override the bus for the device (can be `virtio` or `usb`, requires `acceleration` set to `none`) (VM only)
+		"io.bus",
 	}
 
 	// The NIC's network may be a non-default project, so lookup project and get network's project name.
@@ -592,9 +602,16 @@ func (d *nicOVN) validateConfig(instConf instance.ConfigReader) error {
 		}
 	}
 
-	// The connected option can only be handled properly if acceleration is set to none.
-	if d.config["connected"] != "" && !d.canSetLink() {
-		return errors.New("The \"connected\" option requires setting acceleration=none for OVN NICs")
+	if !d.isVirtualNIC() {
+		// The connected option can only be handled properly if acceleration is set to none.
+		if d.config["connected"] != "" {
+			return errors.New("The \"connected\" option requires setting acceleration=none for OVN NICs")
+		}
+
+		// The bus can only be set if we actually have control over the guest device.
+		if d.config["io.bus"] != "" {
+			return errors.New("The \"io.bus\" option requires setting acceleration=none for OVN NICs")
+		}
 	}
 
 	return nil
@@ -1014,7 +1031,7 @@ func (d *nicOVN) Start() (*deviceConfig.RunConfig, error) {
 			{Key: "link", Value: peerName},
 		}
 
-		if d.canSetLink() {
+		if d.isVirtualNIC() {
 			runConf.NetworkInterface = append(runConf.NetworkInterface, deviceConfig.RunConfigItem{Key: "connected", Value: d.config["connected"]})
 		}
 
@@ -1054,6 +1071,10 @@ func (d *nicOVN) Start() (*deviceConfig.RunConfig, error) {
 			runConf.NetworkInterface = append(runConf.NetworkInterface,
 				deviceConfig.RunConfigItem{Key: "hwaddr", Value: d.config["hwaddr"]},
 			)
+		}
+
+		if d.config["io.bus"] == "usb" {
+			runConf.UseUSBBus = true
 		}
 	}
 
@@ -1107,6 +1128,12 @@ func (d *nicOVN) Update(oldDevices deviceConfig.Devices, isRunning bool) error {
 			}
 		}
 
+		// Setup address sets for new ACLs
+		_, err := addressset.OVNEnsureAddressSetsViaACLs(d.state, d.logger, d.ovnnb, d.network.Project(), newACLs)
+		if err != nil {
+			return fmt.Errorf("Failed removing unused OVN address sets: %w", err)
+		}
+
 		// Setup the logical port with new ACLs if running.
 		if isRunning {
 			// Load uplink network config.
@@ -1143,7 +1170,12 @@ func (d *nicOVN) Update(oldDevices deviceConfig.Devices, isRunning bool) error {
 		}
 
 		if len(removedACLs) > 0 {
-			err := acl.OVNPortGroupDeleteIfUnused(d.state, d.logger, d.ovnnb, d.network.Project(), d.inst, d.name, newACLs...)
+			err := addressset.OVNDeleteAddressSetsViaACLs(d.state, d.logger, d.ovnnb, d.network.Project(), removedACLs)
+			if err != nil {
+				return fmt.Errorf("Failed removing unused OVN address sets: %w", err)
+			}
+
+			err = acl.OVNPortGroupDeleteIfUnused(d.state, d.logger, d.ovnnb, d.network.Project(), d.inst, d.name, newACLs...)
 			if err != nil {
 				return fmt.Errorf("Failed removing unused OVN port groups: %w", err)
 			}
@@ -1161,7 +1193,7 @@ func (d *nicOVN) Update(oldDevices deviceConfig.Devices, isRunning bool) error {
 		return err
 	}
 
-	if isRunning && d.canSetLink() {
+	if isRunning && d.isVirtualNIC() {
 		return d.setNICLink()
 	}
 
@@ -1346,7 +1378,7 @@ func (d *nicOVN) postStop() error {
 }
 
 // Remove is run when the device is removed from the instance or the instance is deleted.
-func (d *nicOVN) Remove() error {
+func (d *nicOVN) Remove(cleanupDependencies bool) error {
 	// Check for port groups that will become unused (and need deleting) as this NIC is deleted.
 	securityACLs := util.SplitNTrimSpace(d.config["security.acls"], ",", -1, true)
 	if len(securityACLs) > 0 {
@@ -1563,7 +1595,7 @@ func (d *nicOVN) setupHostNIC(hostName string, ovnPortName ovn.OVNSwitchPort) (r
 	return cleanup, err
 }
 
-// canSetLink determines whether the device supports setting a link state.
-func (d *nicOVN) canSetLink() bool {
+// isVirtualNIC determines whether the device is non-accelerated.
+func (d *nicOVN) isVirtualNIC() bool {
 	return slices.Contains([]string{"", "none"}, d.config["acceleration"])
 }

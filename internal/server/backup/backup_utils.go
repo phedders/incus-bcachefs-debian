@@ -3,7 +3,6 @@ package backup
 import (
 	"archive/tar"
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -11,12 +10,16 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/lxc/incus/v6/internal/server/sys"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/archive"
+	"github.com/lxc/incus/v7/internal/server/storage/s3util"
+	"github.com/lxc/incus/v7/internal/server/sys"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/archive"
+	localtls "github.com/lxc/incus/v7/shared/tls"
 )
 
 // TarReader rewinds backup file handle r and returns new tar reader and process cleanup function.
@@ -59,29 +62,35 @@ func Upload(reader *io.PipeReader, req *api.BackupTarget) error {
 		return err
 	}
 
-	creds := credentials.NewStaticV4(req.AccessKey, req.SecretKey, "")
+	// Get a basic TLS client.
+	tlsConfig := localtls.InitTLSConfig()
 
+	// Setup the transport.
 	ts := &http.Transport{
 		MaxIdleConns:       10,
 		IdleConnTimeout:    30 * time.Second,
 		DisableCompression: true,
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-			MinVersion:         tls.VersionTLS12,
-		},
+		TLSClientConfig:    tlsConfig,
 	}
 
-	client, err := minio.New(uri.Host, &minio.Options{
-		BucketLookup: minio.BucketLookupPath,
-		Creds:        creds,
-		Secure:       uri.Scheme == "https",
-		Transport:    ts,
+	cfg := aws.Config{
+		Region:      s3util.RegionFromURL(uri),
+		Credentials: credentials.NewStaticCredentialsProvider(req.AccessKey, req.SecretKey, ""),
+		HTTPClient:  &http.Client{Transport: ts},
+	}
+
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(fmt.Sprintf("%s://%s", uri.Scheme, uri.Host))
+		o.UsePathStyle = true
 	})
-	if err != nil {
-		return err
-	}
 
-	_, err = client.PutObject(context.Background(), req.BucketName, req.Path, reader, -1, minio.PutObjectOptions{})
+	uploader := transfermanager.New(client)
+
+	_, err = uploader.UploadObject(context.Background(), &transfermanager.UploadObjectInput{
+		Bucket: aws.String(req.BucketName),
+		Key:    aws.String(req.Path),
+		Body:   reader,
+	})
 	if err != nil {
 		return err
 	}

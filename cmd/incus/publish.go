@@ -8,12 +8,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	incus "github.com/lxc/incus/v6/client"
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/internal/instance"
-	"github.com/lxc/incus/v6/shared/api"
-	cli "github.com/lxc/incus/v6/shared/cmd"
+	incus "github.com/lxc/incus/v7/client"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/internal/instance"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
 )
 
 type cmdPublish struct {
@@ -28,22 +29,22 @@ type cmdPublish struct {
 	flagFormat               string
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdPublish) Command() *cobra.Command {
-	cmd := &cobra.Command{}
-	cmd.Use = cli.U("publish", u.MakePath(u.Instance, u.Snapshot.Optional()).Remote(), u.RemoteColonOpt, u.KV.List(0))
-	cmd.Short = i18n.G("Publish instances as images")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Publish instances as images`))
+var cmdPublishUsage = u.Usage{u.MakePath(u.Instance, u.Snapshot.Optional()).Remote(), u.RemoteColonOpt, u.LegacyKV.List(0)}
 
-	cmd.RunE = c.Run
-	cmd.Flags().BoolVar(&c.flagMakePublic, "public", false, i18n.G("Make the image public"))
-	cmd.Flags().StringArrayVar(&c.flagAliases, "alias", nil, i18n.G("New alias to define at target")+"``")
-	cmd.Flags().BoolVarP(&c.flagForce, "force", "f", false, i18n.G("Stop the instance if currently running"))
-	cmd.Flags().StringVar(&c.flagCompressionAlgorithm, "compression", "", i18n.G("Compression algorithm to use (`none` for uncompressed)"))
-	cmd.Flags().StringVar(&c.flagExpiresAt, "expire", "", i18n.G("Image expiration date (format: rfc3339)")+"``")
-	cmd.Flags().BoolVar(&c.flagReuse, "reuse", false, i18n.G("If the image alias already exists, delete and create a new one"))
-	cmd.Flags().StringVar(&c.flagFormat, "format", "unified", i18n.G("Image format")+"``")
+func (c *cmdPublish) command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = cli.U("publish", cmdPublishUsage...)
+	cmd.Short = i18n.G("Publish instances as images")
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Publish instances as images`))
+
+	cmd.RunE = c.run
+	cli.AddBoolFlag(cmd.Flags(), &c.flagMakePublic, "public", i18n.G("Make the image public"))
+	cli.AddStringArrayFlag(cmd.Flags(), &c.flagAliases, "alias", i18n.G("New alias to define at target"))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagForce, "force|f", i18n.G("Stop the instance if currently running"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagCompressionAlgorithm, "compression", "", "", i18n.G("Compression algorithm to use (`none` for uncompressed)"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagExpiresAt, "expire", "", "", i18n.G("Image expiration date (format: rfc3339)"))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagReuse, "reuse", i18n.G("If the image alias already exists, delete and create a new one"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagFormat, "format", "unified", "", i18n.G("Image format"))
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -60,78 +61,39 @@ func (c *cmdPublish) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
-	conf := c.global.conf
-
-	iName := ""
-	iRemote := ""
-	properties := map[string]string{}
-	firstprop := 1 // first property is arg[2] if arg[1] is image remote, else arg[1]
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, -1)
-	if exit {
-		return err
-	}
-
-	cRemote, cName, err := conf.ParseRemote(args[0])
+func (c *cmdPublish) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdPublishUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	if len(args) >= 2 && !strings.Contains(args[1], "=") {
-		firstprop = 2
-		iRemote, iName, err = conf.ParseRemote(args[1])
-		if err != nil {
-			return err
-		}
-	} else {
-		iRemote, iName, err = conf.ParseRemote("")
-		if err != nil {
-			return err
-		}
-	}
-
-	if cName == "" {
-		return errors.New(i18n.G("Instance name is mandatory"))
-	}
-
-	if iName != "" {
-		return errors.New(i18n.G("There is no \"image name\".  Did you want an alias?"))
-	}
-
-	d, err := conf.GetInstanceServer(iRemote)
+	srcServer := parsed[0].RemoteServer
+	isSnapshot := !parsed[0].RemoteObject.List[1].Skipped
+	objectName := parsed[0].RemoteObject.String
+	dstServer := parsed[1].RemoteServer
+	keys, err := kvToMap(parsed[2])
 	if err != nil {
 		return err
 	}
 
-	s := d
-	if cRemote != iRemote {
-		s, err = conf.GetInstanceServer(cRemote)
-		if err != nil {
-			return err
-		}
-	}
-
-	if !instance.IsSnapshot(cName) {
-		ct, etag, err := s.GetInstance(cName)
+	if !isSnapshot {
+		inst, etag, err := srcServer.GetInstance(objectName)
 		if err != nil {
 			return err
 		}
 
-		wasRunning := ct.StatusCode != 0 && ct.StatusCode != api.Stopped
-		wasEphemeral := ct.Ephemeral
+		wasRunning := inst.StatusCode != 0 && inst.StatusCode != api.Stopped
+		wasEphemeral := inst.Ephemeral
 
 		if wasRunning {
 			if !c.flagForce {
 				return errors.New(i18n.G("The instance is currently running. Use --force to have it stopped and restarted"))
 			}
 
-			if ct.Ephemeral {
+			if inst.Ephemeral {
 				// Clear the ephemeral flag so the instance can be stopped without being destroyed.
-				ct.Ephemeral = false
-				op, err := s.UpdateInstance(cName, ct.Writable(), etag)
+				inst.Ephemeral = false
+				op, err := srcServer.UpdateInstance(objectName, inst.Writable(), etag)
 				if err != nil {
 					return err
 				}
@@ -149,7 +111,7 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 				Force:   true,
 			}
 
-			op, err := s.UpdateInstanceState(cName, req, "")
+			op, err := srcServer.UpdateInstanceState(objectName, req, "")
 			if err != nil {
 				return err
 			}
@@ -162,7 +124,7 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 			// Start the instance back up on exit.
 			defer func() {
 				req.Action = string(instance.Start)
-				op, err = s.UpdateInstanceState(cName, req, "")
+				op, err = srcServer.UpdateInstanceState(objectName, req, "")
 				if err != nil {
 					return
 				}
@@ -172,13 +134,13 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 
 			// If we had to clear the ephemeral flag, restore it now.
 			if wasEphemeral {
-				ct, etag, err := s.GetInstance(cName)
+				inst, etag, err := srcServer.GetInstance(objectName)
 				if err != nil {
 					return err
 				}
 
-				ct.Ephemeral = true
-				op, err := s.UpdateInstance(cName, ct.Writable(), etag)
+				inst.Ephemeral = true
+				op, err := srcServer.UpdateInstance(objectName, inst.Writable(), etag)
 				if err != nil {
 					return err
 				}
@@ -189,23 +151,6 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 				}
 			}
 		}
-	}
-
-	for i := firstprop; i < len(args); i++ {
-		entry := strings.SplitN(args[i], "=", 2)
-		if len(entry) < 2 {
-			return fmt.Errorf(i18n.G("Bad key=value pair: %s"), entry)
-		}
-
-		properties[entry[0]] = entry[1]
-	}
-
-	// We should only set the properties field if there actually are any.
-	// Otherwise we will only delete any existing properties on publish.
-	// This is something which only direct callers of the API are allowed to
-	// do.
-	if len(properties) == 0 {
-		properties = nil
 	}
 
 	// Reformat aliases
@@ -220,20 +165,26 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 	req := api.ImagesPost{
 		Source: &api.ImagesPostSource{
 			Type: "instance",
-			Name: cName,
+			Name: objectName,
 		},
 		CompressionAlgorithm: c.flagCompressionAlgorithm,
 	}
 
-	req.Properties = properties
+	// We should only set the properties field if there actually are any.
+	// Otherwise we will only delete any existing properties on publish.
+	// This is something which only direct callers of the API are allowed to
+	// do.
+	if len(keys) > 0 {
+		req.Properties = keys
+	}
 
-	if instance.IsSnapshot(cName) {
+	if isSnapshot {
 		req.Source.Type = "snapshot"
-	} else if !s.HasExtension("instances") {
+	} else if !srcServer.HasExtension("instances") {
 		req.Source.Type = "container"
 	}
 
-	if cRemote == iRemote {
+	if srcServer == dstServer {
 		req.Public = c.flagMakePublic
 	}
 
@@ -246,7 +197,7 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 		req.ExpiresAt = expiresAt
 	}
 
-	existingAliases, err := GetCommonAliases(d, aliases...)
+	existingAliases, err := getCommonAliases(dstServer, aliases...)
 	if err != nil {
 		return fmt.Errorf(i18n.G("Error retrieving aliases: %w"), err)
 	}
@@ -262,7 +213,7 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 
 	req.Format = c.flagFormat
 
-	op, err := s.CreateImage(req, nil)
+	op, err := srcServer.CreateImage(req, nil)
 	if err != nil {
 		return err
 	}
@@ -297,11 +248,11 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// For remote publish, copy to target now
-	if cRemote != iRemote {
-		defer func() { _, _ = s.DeleteImage(fingerprint) }()
+	if srcServer != dstServer {
+		defer func() { _, _ = srcServer.DeleteImage(fingerprint) }()
 
 		// Get the source image
-		image, _, err := s.GetImage(fingerprint)
+		image, _, err := srcServer.GetImage(fingerprint)
 		if err != nil {
 			return err
 		}
@@ -312,7 +263,7 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 		}
 
 		// Copy the image to the destination host
-		op, err := d.CopyImage(s, *image, &args)
+		op, err := dstServer.CopyImage(srcServer, *image, &args)
 		if err != nil {
 			return err
 		}
@@ -325,13 +276,13 @@ func (c *cmdPublish) Run(cmd *cobra.Command, args []string) error {
 
 	// Delete images if necessary
 	if c.flagReuse {
-		err = deleteImagesByAliases(d, aliases)
+		err = deleteImagesByAliases(dstServer, aliases)
 		if err != nil {
 			return err
 		}
 	}
 
-	err = ensureImageAliases(d, aliases, fingerprint)
+	err = ensureImageAliases(dstServer, aliases, fingerprint)
 	if err != nil {
 		return err
 	}

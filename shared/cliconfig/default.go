@@ -1,7 +1,7 @@
 package cliconfig
 
 import (
-	"github.com/lxc/incus/v6/shared/util"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 // LocalRemote is the default local remote (over the unix socket).
@@ -40,6 +40,9 @@ type DefaultSettings struct {
 
 	// Alternative SPICE command (SOCKET will be replaced by the socket path).
 	ConsoleSpiceCommand string `yaml:"console_spice_command"`
+
+	// NoColor disables colors in the client.
+	NoColor bool `yaml:"no_color"`
 }
 
 // DefaultConfig returns the default configuration.

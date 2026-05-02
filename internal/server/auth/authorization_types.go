@@ -20,17 +20,18 @@ const (
 	EntitlementCanViewSensitive                    Entitlement = "can_view_sensitive"
 
 	// Project entitlements.
-	EntitlementCanCreateImageAliases   Entitlement = "can_create_image_aliases"
-	EntitlementCanCreateImages         Entitlement = "can_create_images"
-	EntitlementCanCreateInstances      Entitlement = "can_create_instances"
-	EntitlementCanCreateNetworkACLs    Entitlement = "can_create_network_acls"
-	EntitlementCanCreateNetworks       Entitlement = "can_create_networks"
-	EntitlementCanCreateNetworkZones   Entitlement = "can_create_network_zones"
-	EntitlementCanCreateProfiles       Entitlement = "can_create_profiles"
-	EntitlementCanCreateStorageBuckets Entitlement = "can_create_storage_buckets"
-	EntitlementCanCreateStorageVolumes Entitlement = "can_create_storage_volumes"
-	EntitlementCanViewEvents           Entitlement = "can_view_events"
-	EntitlementCanViewOperations       Entitlement = "can_view_operations"
+	EntitlementCanCreateImageAliases       Entitlement = "can_create_image_aliases"
+	EntitlementCanCreateImages             Entitlement = "can_create_images"
+	EntitlementCanCreateInstances          Entitlement = "can_create_instances"
+	EntitlementCanCreateNetworkACLs        Entitlement = "can_create_network_acls"
+	EntitlementCanCreateNetworkAddressSets Entitlement = "can_create_network_address_sets"
+	EntitlementCanCreateNetworks           Entitlement = "can_create_networks"
+	EntitlementCanCreateNetworkZones       Entitlement = "can_create_network_zones"
+	EntitlementCanCreateProfiles           Entitlement = "can_create_profiles"
+	EntitlementCanCreateStorageBuckets     Entitlement = "can_create_storage_buckets"
+	EntitlementCanCreateStorageVolumes     Entitlement = "can_create_storage_volumes"
+	EntitlementCanViewEvents               Entitlement = "can_view_events"
+	EntitlementCanViewOperations           Entitlement = "can_view_operations"
 
 	// Instance entitlements.
 	EntitlementCanAccessConsole Entitlement = "can_access_console"
@@ -39,6 +40,7 @@ const (
 
 	// Instance and storage volume entitlements.
 	EntitlementCanAccessFiles     Entitlement = "can_access_files"
+	EntitlementCanConnectNBD      Entitlement = "can_connect_nbd"
 	EntitlementCanConnectSFTP     Entitlement = "can_connect_sftp"
 	EntitlementCanManageBackups   Entitlement = "can_manage_backups"
 	EntitlementCanManageSnapshots Entitlement = "can_manage_snapshots"
@@ -77,6 +79,9 @@ const (
 
 	// ObjectTypeNetworkACL represents a network ACL.
 	ObjectTypeNetworkACL ObjectType = "network_acl"
+
+	// ObjectTypeNetworkAddressSet represents a network address set.
+	ObjectTypeNetworkAddressSet ObjectType = "network_address_set"
 
 	// ObjectTypeNetworkIntegration represents a network integration.
 	ObjectTypeNetworkIntegration ObjectType = "network_integration"

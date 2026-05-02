@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/lxc/incus/v6/internal/server/db"
-	"github.com/lxc/incus/v6/internal/server/instance"
-	"github.com/lxc/incus/v6/internal/server/instance/instancetype"
+	"github.com/lxc/incus/v7/internal/server/db"
+	"github.com/lxc/incus/v7/internal/server/instance"
+	"github.com/lxc/incus/v7/internal/server/instance/instancetype"
 )
 
 type snapshotCommonTestSuite struct {
@@ -21,7 +21,7 @@ func (s *snapshotCommonTestSuite) TestSnapshotScheduling() {
 		Name:      "hal9000",
 	}
 
-	c, op, _, err := instance.CreateInternal(s.d.State(), args, nil, true, true)
+	c, op, _, err := instance.CreateInternal(s.d.State(), args, nil, true, true, false)
 	s.Req.Nil(err)
 	s.Equal(true, snapshotIsScheduledNow("* * * * *",
 		int64(c.ID())),

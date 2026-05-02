@@ -16,6 +16,31 @@ User keys can be used in search.
 ```
 
 <!-- config group cluster-cluster end -->
+<!-- config group cluster_group-common start -->
+```{config:option} instances.vm.cpu.ARCHITECTURE.baseline cluster_group-common
+:shortdesc: "CPU base architecture name"
+:type: "string"
+The CPU base architecture name as can be found through `qemu -cpu ?`.
+
+This can be a generic definition like `qemu64` or `kvm64`, or it can be a specific hardware architecture like `EPYC-v2`.
+It's important to ensure that all servers in the group match that baseline.
+```
+
+```{config:option} instances.vm.cpu.ARCHITECTURE.flags cluster_group-common
+:shortdesc: "CPU flags to add/remove to/from the baseline"
+:type: "string"
+A comma separated list of CPU flags to add on top of CPU baseline or a list of flags to remove from it.
+
+To remove a flag, use `-flag`.
+```
+
+```{config:option} user.* cluster_group-common
+:shortdesc: "Free form user key/value storage"
+:type: "string"
+User keys can be used in search.
+```
+
+<!-- config group cluster_group-common end -->
 <!-- config group devices-disk start -->
 ```{config:option} attached devices-disk
 :default: "`true`"
@@ -48,11 +73,27 @@ User keys can be used in search.
 
 ```
 
+```{config:option} dependent devices-disk
+:default: "`false`"
+:required: "no"
+:shortdesc: "Specifies if the disk is instance dependent"
+:type: "bool"
+
+```
+
 ```{config:option} initial.* devices-disk
 :required: "no"
 :shortdesc: "Initial volume configuration for instance root disk devices"
 :type: "string"
+For root disk devices, this is used to override the storage pool's default volume
+configuration when creating the instance's root volume.
 
+For custom volumes, only `initial.uid`, `initial.gid` and `initial.mode` are
+accepted and they are used when auto-creating sub-directories inside the custom
+volume (when the `source` includes a sub-path that doesn't exist).
+
+`initial.uid`, `initial.gid` and `initial.mode` are also used to set the ownership
+and mode of the file system when the `source` is `tmpfs:` or `tmpfs-overlay:`.
 ```
 
 ```{config:option} io.bus devices-disk
@@ -895,6 +936,14 @@ With VMs, this option supports mounting file system disk devices and paths withi
 
 ```
 
+```{config:option} io.bus devices-nic_ovn
+:default: "`virtio`"
+:managed: "no"
+:shortdesc: "Override the bus for the device (can be `virtio` or `usb`, requires `acceleration` set to `none`) (VM only)"
+:type: "string"
+
+```
+
 ```{config:option} ipv4.address devices-nic_ovn
 :managed: "no"
 :shortdesc: "An IPv4 address to assign to the instance through DHCP, `none` can be used to disable IP allocation"
@@ -1183,6 +1232,7 @@ With VMs, this option supports mounting file system disk devices and paths withi
 ```
 
 ```{config:option} gvrp devices-nic_physical
+:condition: "container"
 :default: "false"
 :managed: "no"
 :shortdesc: "Register VLAN using GARP VLAN Registration Protocol"
@@ -1191,6 +1241,7 @@ With VMs, this option supports mounting file system disk devices and paths withi
 ```
 
 ```{config:option} hwaddr devices-nic_physical
+:condition: "container"
 :default: "randomly assigned"
 :managed: "no"
 :shortdesc: "The MAC address of the new interface"
@@ -1199,6 +1250,7 @@ With VMs, this option supports mounting file system disk devices and paths withi
 ```
 
 ```{config:option} mtu devices-nic_physical
+:condition: "container"
 :default: "MTU of the parent device"
 :managed: "no"
 :shortdesc: "The Maximum Transmit Unit (MTU) of the new interface"
@@ -1229,6 +1281,7 @@ With VMs, this option supports mounting file system disk devices and paths withi
 ```
 
 ```{config:option} vlan devices-nic_physical
+:condition: "container"
 :managed: "no"
 :shortdesc: "The VLAN ID to attach to"
 :type: "integer"
@@ -1236,6 +1289,7 @@ With VMs, this option supports mounting file system disk devices and paths withi
 ```
 
 ```{config:option} vlan.tagged devices-nic_physical
+:condition: "container"
 :managed: "no"
 :shortdesc: "Comma-delimited list of VLAN IDs or VLAN ranges to join for tagged traffic"
 :type: "integer"
@@ -1838,6 +1892,12 @@ The custom policy routing table ID to add IPv6 static routes to (in addition to 
 
 ```
 
+```{config:option} requirements.cdrom_cloud_init image-requirements
+:shortdesc: "If set to `true`, indicates that the VM requires a `cloud-init:config` disk be present every time `cloud-init` should be run."
+:type: "bool"
+
+```
+
 ```{config:option} requirements.cgroup image-requirements
 :shortdesc: "If set to `v1`, indicates that the image requires the host to run cgroup v1."
 :type: "string"
@@ -2141,6 +2201,40 @@ The specified version expression is used to set `libnvidia-container NVIDIA_REQU
 ```
 
 <!-- config group instance-nvidia end -->
+<!-- config group instance-oci start -->
+```{config:option} oci.cwd instance-oci
+:condition: "OCI container"
+:liveupdate: "no"
+:shortdesc: "OCI container working directory"
+:type: "string"
+Override the working directory of an OCI container.
+```
+
+```{config:option} oci.entrypoint instance-oci
+:condition: "OCI container"
+:liveupdate: "no"
+:shortdesc: "OCI container entry point"
+:type: "string"
+Override the entry point of an OCI container.
+```
+
+```{config:option} oci.gid instance-oci
+:condition: "OCI container"
+:liveupdate: "no"
+:shortdesc: "OCI container GID"
+:type: "string"
+Override the GID of the process run in an OCI container.
+```
+
+```{config:option} oci.uid instance-oci
+:condition: "OCI container"
+:liveupdate: "no"
+:shortdesc: "OCI container UID"
+:type: "string"
+Override the UID of the process run in an OCI container.
+```
+
+<!-- config group instance-oci end -->
 <!-- config group instance-raw start -->
 ```{config:option} raw.apparmor instance-raw
 :liveupdate: "yes"
@@ -2950,6 +3044,13 @@ The cluster group(s) that the instance was restricted to at creation time.
 This is used during re-scheduling events like an evacuation to keep the instance within the requested set.
 ```
 
+```{config:option} volatile.container.oci instance-volatile
+:defaultdesc: "`false`"
+:shortdesc: "Whether the container is an OCI application container"
+:type: "bool"
+
+```
+
 ```{config:option} volatile.cpu.nodes instance-volatile
 :shortdesc: "Instance NUMA node"
 :type: "string"
@@ -3017,14 +3118,8 @@ The instance generation UUID changes whenever the instance's place in time moves
 It is globally unique across all servers and projects.
 ```
 
-```{config:option} volatile.vm.definition instance-volatile
-:shortdesc: "QEMU VM definition name (used for migration between versions)"
-:type: "string"
-
-```
-
-```{config:option} volatile.vm.hotplug.memory instance-volatile
-:shortdesc: "Memory setup of the VM as needed for state restoration"
+```{config:option} volatile.vm.boot_state instance-volatile
+:shortdesc: "JSON encoded VM properties used during live migration and other state restoration."
 :type: "string"
 
 ```
@@ -3140,6 +3235,14 @@ Real Time Clock offset to allow virtual machines to run on a different base than
 ```
 
 <!-- config group kernel-limits end -->
+<!-- config group network_address_set-common start -->
+```{config:option} user.* network_address_set-common
+:shortdesc: "Free form user key/value storage"
+:type: "string"
+User keys can be used in search.
+```
+
+<!-- config group network_address_set-common end -->
 <!-- config group network_bridge-bgp start -->
 ```{config:option} bgp.peers.NAME.address network_bridge-bgp
 :condition: "BGP server"
@@ -3306,7 +3409,7 @@ Real Time Clock offset to allow virtual machines to run on a different base than
 ```{config:option} ipv4.dhcp.gateway network_bridge-common
 :condition: "IPv4 DHCP"
 :default: "IPv4 address"
-:shortdesc: "Address of the gateway for the subnet"
+:shortdesc: "Address of the gateway for the subnet (use `none` to turn off gateway announcement)"
 :type: "string"
 
 ```
@@ -3836,6 +3939,14 @@ User keys can be used in search.
 :condition: "IPv4 DHCP"
 :default: "`1h`"
 :shortdesc: "When to expire DHCP leases"
+:type: "string"
+
+```
+
+```{config:option} ipv4.dhcp.gateway network_ovn-common
+:condition: "IPv4 DHCP"
+:default: "IPv4 address"
+:shortdesc: "Address of the gateway for the subnet (use `none` to turn off gateway announcement)"
 :type: "string"
 
 ```
@@ -4602,6 +4713,13 @@ Specify a comma-delimited list of network zones that can be used (or something u
 
 ```
 
+```{config:option} restricted.storage-pools.access project-restricted
+:shortdesc: "Which storage pool names are allowed for use in this project"
+:type: "string"
+Specify a comma-delimited list of storage pool names that are allowed for use in this project.
+If this option is not set, all storage pools are accessible.
+```
+
 ```{config:option} restricted.virtual-machines.lowlevel project-restricted
 :defaultdesc: "`block`"
 :shortdesc: "Whether to prevent using low-level VM options"
@@ -4956,6 +5074,15 @@ If this option is not specified, the daemon falls back to the `NO_PROXY` environ
 
 ```
 
+```{config:option} core.shutdown_action server-core
+:defaultdesc: "`shutdown`"
+:scope: "global"
+:shortdesc: "Action to perform on server shutdown"
+:type: "string"
+Specify the action to take when the daemon is being shut down.
+Supported values are `shutdown` (stop all instances) and `evacuate` (attempt to evacuate the clustered server).
+```
+
 ```{config:option} core.shutdown_timeout server-core
 :defaultdesc: "`5`"
 :scope: "global"
@@ -5301,6 +5428,41 @@ Specify the volume using the syntax `POOL/VOLUME`.
 Specify the volume using the syntax `POOL/VOLUME`.
 ```
 
+```{config:option} storage.linstor.ca_cert server-miscellaneous
+:scope: "global"
+:shortdesc: "LINSTOR SSL certificate authority"
+:type: "string"
+
+```
+
+```{config:option} storage.linstor.client_cert server-miscellaneous
+:scope: "global"
+:shortdesc: "LINSTOR SSL client certificate"
+:type: "string"
+
+```
+
+```{config:option} storage.linstor.client_key server-miscellaneous
+:scope: "global"
+:shortdesc: "LINSTOR SSL client key"
+:type: "string"
+
+```
+
+```{config:option} storage.linstor.controller_connection server-miscellaneous
+:scope: "global"
+:shortdesc: "LINSTOR controller connection string"
+:type: "string"
+
+```
+
+```{config:option} storage.linstor.satellite.name server-miscellaneous
+:scope: "global"
+:shortdesc: "LINSTOR satellite node name override"
+:type: "string"
+Set this option to the name of the local LINSTOR satellite node, should it be different from the Incus server name.
+```
+
 ```{config:option} storage.logs_volume server-miscellaneous
 :scope: "local"
 :shortdesc: "Volume to use to store instance log directories"
@@ -5333,7 +5495,7 @@ This value is required by some providers.
 :scope: "global"
 :shortdesc: "OpenID Connect claim to use as the username"
 :type: "string"
-
+Note that the claim must be contained in the access token.
 ```
 
 ```{config:option} oidc.client.id server-oidc
@@ -5702,6 +5864,80 @@ This value is required by some providers.
 ```
 
 <!-- config group storage_dir-common end -->
+<!-- config group storage_linstor-common start -->
+```{config:option} drbd.auto_add_quorum_tiebreaker storage_linstor-common
+:default: "`true`"
+:scope: "global"
+:shortdesc: "Whether to allow LINSTOR to automatically create diskless resources to act as quorum tiebreakers if needed (applied to the resource group)"
+:type: "bool"
+
+```
+
+```{config:option} drbd.auto_diskful storage_linstor-common
+:default: "-"
+:scope: "global"
+:shortdesc: "A duration string describing the time after which a primary diskless resource can be converted to diskful if storage is available on the node (applied to the resource group)"
+:type: "string"
+
+```
+
+```{config:option} drbd.on_no_quorum storage_linstor-common
+:default: "-"
+:scope: "global"
+:shortdesc: "The DRBD policy to use on resources when quorum is lost (applied to the resource group)"
+:type: "string"
+
+```
+
+```{config:option} linstor.resource_group.name storage_linstor-common
+:default: "`incus`"
+:scope: "global"
+:shortdesc: "Name of the LINSTOR resource group that will be used for the storage pool"
+:type: "string"
+
+```
+
+```{config:option} linstor.resource_group.place_count storage_linstor-common
+:default: "`2`"
+:scope: "global"
+:shortdesc: "Number of diskful replicas that should be created for resources in the resource group. Increasing the value of this option on a pool that already has volumes will result in LINSTOR creating new diskful replicas for all existing resources to match the new value"
+:type: "int"
+
+```
+
+```{config:option} linstor.resource_group.storage_pool storage_linstor-common
+:default: "-"
+:scope: "global"
+:shortdesc: "The storage pool name in which resources should be placed on satellite nodes"
+:type: "string"
+
+```
+
+```{config:option} linstor.volume.prefix storage_linstor-common
+:default: "`incus-volume-`"
+:scope: "global"
+:shortdesc: "The prefix to use for the internal names of LINSTOR-managed volumes. Cannot be updated after the storage pool is created"
+:type: "string"
+
+```
+
+```{config:option} source storage_linstor-common
+:default: "`incus`"
+:scope: "global"
+:shortdesc: "LINSTOR storage pool name. Alias for `linstor.resource_group.name`. Use either either one or the other or make sure they have the same value."
+:type: "string"
+
+```
+
+```{config:option} volatile.pool.pristine storage_linstor-common
+:default: "`true`"
+:scope: "global"
+:shortdesc: "Whether the pool was empty on creation time"
+:type: "string"
+
+```
+
+<!-- config group storage_linstor-common end -->
 <!-- config group storage_lvm-common start -->
 ```{config:option} block.type storage_lvm-common
 :condition: "block-based volume"
@@ -5783,6 +6019,88 @@ This value is required by some providers.
 ```
 
 <!-- config group storage_lvm-common end -->
+<!-- config group storage_truenas-common start -->
+```{config:option} source storage_truenas-common
+:default: "-"
+:scope: "local"
+:shortdesc: "ZFS dataset to use on the remote TrueNAS host. Format: `[<host>:]<pool>[/<dataset>][/]`. If `host` is omitted here, it must be set via `truenas.host`."
+:type: "string"
+
+```
+
+```{config:option} truenas.allow_insecure storage_truenas-common
+:default: "`false`"
+:scope: "global"
+:shortdesc: "If set to `true`, allows insecure (non-TLS) connections to the TrueNAS API."
+:type: "bool"
+
+```
+
+```{config:option} truenas.api_key storage_truenas-common
+:default: "-"
+:scope: "global"
+:shortdesc: "API key used to authenticate with the TrueNAS host."
+:type: "string"
+
+```
+
+```{config:option} truenas.clone_copy storage_truenas-common
+:default: "`true`"
+:scope: "global"
+:shortdesc: "Whether to use lightweight clones rather than full {spellexception}`dataset` copies."
+:type: "bool"
+
+```
+
+```{config:option} truenas.config storage_truenas-common
+:default: "-"
+:scope: "global"
+:shortdesc: "Path to a configuration file for the TrueNAS client tool."
+:type: "string"
+
+```
+
+```{config:option} truenas.dataset storage_truenas-common
+:default: "-"
+:scope: "global"
+:shortdesc: "Remote dataset name. Typically inferred from `source`, but can be overridden."
+:type: "string"
+
+```
+
+```{config:option} truenas.force_reuse storage_truenas-common
+:default: "`false`"
+:scope: "global"
+:shortdesc: "Allow to use an existing non-empty pool."
+:type: "bool"
+
+```
+
+```{config:option} truenas.host storage_truenas-common
+:default: "-"
+:scope: "global"
+:shortdesc: "Hostname or IP address of the remote TrueNAS system. Optional if included in the `source`, or a configuration is used."
+:type: "string"
+
+```
+
+```{config:option} truenas.initiator storage_truenas-common
+:default: "-"
+:scope: "global"
+:shortdesc: "iSCSI initiator name used during block volume attachment."
+:type: "string"
+
+```
+
+```{config:option} truenas.portal storage_truenas-common
+:default: "-"
+:scope: "global"
+:shortdesc: "iSCSI portal address to use for block volume connections."
+:type: "string"
+
+```
+
+<!-- config group storage_truenas-common end -->
 <!-- config group storage_volume_btrfs-common start -->
 ```{config:option} initial.gid storage_volume_btrfs-common
 :condition: "custom volume with content type `filesystem`"
@@ -6159,6 +6477,144 @@ This value is required by some providers.
 ```
 
 <!-- config group storage_volume_dir-common end -->
+<!-- config group storage_volume_linstor-common start -->
+```{config:option} block.filesystem storage_volume_linstor-common
+:condition: "block-based volume with content type `filesystem`"
+:default: "same as `volume.block.filesystem`"
+:shortdesc: "{{block_filesystem}}"
+:type: "string"
+
+```
+
+```{config:option} block.mount_options storage_volume_linstor-common
+:condition: "block-based volume with content type `filesystem`"
+:default: "same as `volume.block.mount_options`"
+:shortdesc: "Mount options for block-backed file system volumes"
+:type: "string"
+
+```
+
+```{config:option} drbd.auto_add_quorum_tiebreaker storage_volume_linstor-common
+:condition: "-"
+:default: "`true`"
+:shortdesc: "Whether to allow LINSTOR to automatically create diskless resources to act as quorum tiebreakers if needed (applied to the resource definition)"
+:type: "bool"
+
+```
+
+```{config:option} drbd.auto_diskful storage_volume_linstor-common
+:condition: "-"
+:default: "-"
+:shortdesc: "A duration string describing the time after which a primary diskless resource can be converted to diskful if storage is available on the node (applied to the resource definition)"
+:type: "string"
+
+```
+
+```{config:option} drbd.on_no_quorum storage_volume_linstor-common
+:condition: "-"
+:default: "-"
+:shortdesc: "The DRBD policy to use on resources when quorum is lost (applied to the resource definition)"
+:type: "string"
+
+```
+
+```{config:option} initial.gid storage_volume_linstor-common
+:condition: "custom volume with content type `filesystem`"
+:default: "same as `volume.initial.gid` or `0`"
+:shortdesc: "GID of the volume owner in the instance"
+:type: "int"
+
+```
+
+```{config:option} initial.mode storage_volume_linstor-common
+:condition: "custom volume with content type `filesystem`"
+:default: "same as `volume.initial.mode` or `711`"
+:shortdesc: "Mode of the volume in the instance"
+:type: "int"
+
+```
+
+```{config:option} initial.uid storage_volume_linstor-common
+:condition: "custom volume with content type `filesystem`"
+:default: "same as `volume.initial.uid` or `0`"
+:shortdesc: "UID of the volume owner in the instance"
+:type: "int"
+
+```
+
+```{config:option} linstor.remove_snapshots storage_volume_linstor-common
+:condition: "-"
+:default: "same as `volume.linstor.remove_snapshots` or `false`"
+:shortdesc: "Remove snapshots as needed"
+:type: "bool"
+
+```
+
+```{config:option} security.shared storage_volume_linstor-common
+:condition: "custom block volume"
+:default: "same as `volume.security.shared` or `false`"
+:shortdesc: "Enable sharing the volume across multiple instances"
+:type: "bool"
+
+```
+
+```{config:option} security.shifted storage_volume_linstor-common
+:condition: "custom volume"
+:default: "same as `volume.security.shifted` or `false`"
+:shortdesc: "{{enable_ID_shifting}}"
+:type: "bool"
+
+```
+
+```{config:option} security.unmapped storage_volume_linstor-common
+:condition: "custom volume"
+:default: "same as `volume.security.unmapped` or `false`"
+:shortdesc: "Disable ID mapping for the volume"
+:type: "bool"
+
+```
+
+```{config:option} size storage_volume_linstor-common
+:condition: "-"
+:default: "same as `volume.size`"
+:shortdesc: "Size/quota of the storage volume"
+:type: "string"
+
+```
+
+```{config:option} snapshots.expiry storage_volume_linstor-common
+:condition: "custom volume"
+:default: "same as `volume.snapshot.expiry`"
+:shortdesc: "{{snapshot_expiry_format}}"
+:type: "string"
+
+```
+
+```{config:option} snapshots.expiry.manual storage_volume_linstor-common
+:condition: "custom volume"
+:default: "same as `volume.snapshot.expiry.manual`"
+:shortdesc: "{{snapshot_expiry_format}}"
+:type: "string"
+
+```
+
+```{config:option} snapshots.pattern storage_volume_linstor-common
+:condition: "custom volume"
+:default: "same as `volume.snapshot.pattern` or `snap%d`"
+:shortdesc: "{{snapshot_pattern_format}} [^*]"
+:type: "string"
+
+```
+
+```{config:option} snapshots.schedule storage_volume_linstor-common
+:condition: "custom volume"
+:default: "same as `volume.snapshot.schedule`"
+:shortdesc: "{{snapshot_schedule_format}}"
+:type: "string"
+
+```
+
+<!-- config group storage_volume_linstor-common end -->
 <!-- config group storage_volume_lvm-common start -->
 ```{config:option} block.filesystem storage_volume_lvm-common
 :condition: "block-based volume with content type `filesystem`"
@@ -6288,6 +6744,136 @@ This value is required by some providers.
 ```
 
 <!-- config group storage_volume_lvm-common end -->
+<!-- config group storage_volume_truenas-common start -->
+```{config:option} block.filesystem storage_volume_truenas-common
+:condition: "-"
+:default: "same as `volume.block.filesystem`"
+:shortdesc: "{{block_filesystem}}"
+:type: "string"
+
+```
+
+```{config:option} block.mount_options storage_volume_truenas-common
+:condition: "-"
+:default: "same as `volume.block.mount_options`"
+:shortdesc: "Mount options for block-backed file system volumes"
+:type: "string"
+
+```
+
+```{config:option} initial.gid storage_volume_truenas-common
+:condition: "custom volume with content type `filesystem`"
+:default: "same as `volume.initial.gid` or `0`"
+:shortdesc: "GID of the volume owner in the instance"
+:type: "int"
+
+```
+
+```{config:option} initial.mode storage_volume_truenas-common
+:condition: "custom volume with content type `filesystem`"
+:default: "same as `volume.initial.mode` or `711`"
+:shortdesc: "Mode of the volume in the instance"
+:type: "int"
+
+```
+
+```{config:option} initial.uid storage_volume_truenas-common
+:condition: "custom volume with content type `filesystem`"
+:default: "same as `volume.initial.uid` or `0`"
+:shortdesc: "UID of the volume owner in the instance"
+:type: "int"
+
+```
+
+```{config:option} security.shared storage_volume_truenas-common
+:condition: "custom block volume"
+:default: "same as `volume.security.shared` or `false`"
+:shortdesc: "Enable sharing the volume across multiple instances"
+:type: "bool"
+
+```
+
+```{config:option} security.shifted storage_volume_truenas-common
+:condition: "custom volume"
+:default: "same as `volume.security.shifted` or `false`"
+:shortdesc: "{{enable_ID_shifting}}"
+:type: "bool"
+
+```
+
+```{config:option} security.unmapped storage_volume_truenas-common
+:condition: "custom volume"
+:default: "same as `volume.security.unmapped` or `false`"
+:shortdesc: "Disable ID mapping for the volume"
+:type: "bool"
+
+```
+
+```{config:option} size storage_volume_truenas-common
+:condition: "appropriate driver"
+:default: "same as `volume.size`"
+:shortdesc: "Size/quota of the storage volume"
+:type: "string"
+
+```
+
+```{config:option} snapshots.expiry storage_volume_truenas-common
+:condition: "custom volume"
+:default: "same as `volume.snapshot.expiry`"
+:shortdesc: "{{snapshot_expiry_format}}"
+:type: "string"
+
+```
+
+```{config:option} snapshots.expiry.manual storage_volume_truenas-common
+:condition: "custom volume"
+:default: "same as `volume.snapshot.expiry.manual`"
+:shortdesc: "{{snapshot_expiry_format}}"
+:type: "string"
+
+```
+
+```{config:option} snapshots.pattern storage_volume_truenas-common
+:condition: "custom volume"
+:default: "same as `volume.snapshot.pattern` or `snap%d`"
+:shortdesc: "{{snapshot_pattern_format}}"
+:type: "string"
+
+```
+
+```{config:option} snapshots.schedule storage_volume_truenas-common
+:condition: "custom volume"
+:default: "same as `volume.snapshot.schedule`"
+:shortdesc: "{{snapshot_schedule_format}}"
+:type: "string"
+
+```
+
+```{config:option} truenas.blocksize storage_volume_truenas-common
+:condition: "-"
+:default: "same as `volume.truenas.blocksize`"
+:shortdesc: "Size of the ZFS block in range from 512 bytes to 16 MiB (must be power of 2) - for block volume, a maximum value of 128 KiB will be used even if a higher value is set"
+:type: "string"
+
+```
+
+```{config:option} truenas.remove_snapshots storage_volume_truenas-common
+:condition: "-"
+:default: "same as `volume.truenas.remove_snapshots` or `false`"
+:shortdesc: "Remove snapshots as needed"
+:type: "bool"
+
+```
+
+```{config:option} truenas.use_refquota storage_volume_truenas-common
+:condition: "-"
+:default: "same as `volume.truenas.use_refquota` or `false`"
+:shortdesc: "Use `refquota` instead of `quota` for space"
+:type: "bool"
+
+```
+
+<!-- config group storage_volume_truenas-common end -->
 <!-- config group storage_volume_zfs-common start -->
 ```{config:option} block.filesystem storage_volume_zfs-common
 :condition: "block-based volume with content type `filesystem` (`zfs.block_mode` enabled)"

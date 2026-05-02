@@ -1,9 +1,9 @@
 package lifecycle
 
 import (
-	"github.com/lxc/incus/v6/internal/server/operations"
-	"github.com/lxc/incus/v6/internal/version"
-	"github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v7/internal/server/operations"
+	"github.com/lxc/incus/v7/internal/version"
+	"github.com/lxc/incus/v7/shared/api"
 )
 
 // Internal copy of the instance interface.
@@ -18,6 +18,8 @@ type InstanceAction string
 
 // All supported lifecycle events for instances.
 const (
+	InstanceAgentStarted     = InstanceAction(api.EventLifecycleInstanceAgentStarted)
+	InstanceAgentStopped     = InstanceAction(api.EventLifecycleInstanceAgentStopped)
 	InstanceConsole          = InstanceAction(api.EventLifecycleInstanceConsole)
 	InstanceConsoleReset     = InstanceAction(api.EventLifecycleInstanceConsoleReset)
 	InstanceConsoleRetrieved = InstanceAction(api.EventLifecycleInstanceConsoleRetrieved)

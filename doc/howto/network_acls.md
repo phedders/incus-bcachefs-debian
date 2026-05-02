@@ -83,6 +83,7 @@ Incus automatically orders the rules based on the `action` property as follows:
 This means that when you apply multiple ACLs to a NIC, there is no need to specify a combined rule ordering.
 If one of the rules in the ACLs matches, the action for that rule is taken and no other rules are considered.
 
+(network-acls-rules-properties)=
 ### Rule properties
 
 ACL rules have the following properties:
@@ -110,6 +111,23 @@ This feature is supported only for the {ref}`OVN NIC type <nic-ovn>` and the {re
 The `source` field (for ingress rules) and the `destination` field (for egress rules) support using selectors instead of CIDR or IP ranges.
 
 With this method, you can use ACL groups or network selectors to define rules for groups of instances without needing to maintain IP lists or create additional subnets.
+
+(network-acls-address-sets)=
+### Use address sets in rules
+
+```{note}
+This feature is supported only for the {ref}`bridge network using <network-bridge-firewall>` `nftables` and the {ref}`network-ovn`.
+```
+
+The `source` field (for ingress rules) and the `destination` field (for egress rules) support using address sets.
+
+With this feature you can create groups of addresses and / or networks to match rules against. You can eventually mix them with literals addresses and CIDR.
+
+To use one in a rule:
+
+```
+source=\$<name>
+```
 
 (network-acls-groups)=
 #### ACL groups
@@ -210,10 +228,8 @@ incus config device set <instance_name> <device_name> security.acls.default.ingr
 When using network ACLs with a bridge network, be aware of the following limitations:
 
 - Unlike OVN ACLs, bridge ACLs are applied only on the boundary between the bridge and the Incus host.
-  This means they can only be used to apply network policies for traffic going to or from external networks (see exception for `nftables` firewall driver below).
-  They cannot be used for to create {spellexception}`intra-bridge` firewalls, thus firewalls that control traffic between instances connected to the same bridge.
-- When using the `nftables` firewall driver you can apply ACLs to the NIC device and control traffic between the instances. In this case the `reject` ACL rules applied to the ingress traffic are converted to `drop` to address `nftables` limitation.
+  This means they can only be used to apply network policies for traffic going to or from external networks.
+  They cannot be used for to create {spellexception}`intra-bridge` firewalls, thus firewalls that control traffic between instances connected to the same bridge, except when ACLs are applied directly to the NIC device. In that case the `reject` ACL rules applied to the ingress traffic are converted to `drop` to address `nftables` limitation.
 - {ref}`ACL groups and network selectors <network-acls-selectors>` are not supported.
-- When using the `iptables` firewall driver, you cannot use IP range subjects (for example, `192.0.2.1-192.0.2.10`).
 - Baseline network service rules are added before ACL rules (in their respective INPUT/OUTPUT chains), because we cannot differentiate between INPUT/OUTPUT and FORWARD traffic once we have jumped into the ACL chain.
   Because of this, ACL rules cannot be used to block baseline service rules.

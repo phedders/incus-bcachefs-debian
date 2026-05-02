@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	internalInstance "github.com/lxc/incus/v6/internal/instance"
-	"github.com/lxc/incus/v6/internal/server/db/query"
-	"github.com/lxc/incus/v6/internal/server/db/schema"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/osarch"
+	internalInstance "github.com/lxc/incus/v7/internal/instance"
+	"github.com/lxc/incus/v7/internal/server/db/query"
+	"github.com/lxc/incus/v7/internal/server/db/schema"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/osarch"
 )
 
 // Schema for the cluster database.
@@ -110,6 +110,79 @@ var updates = map[int]schema.Update{
 	71: updateFromV70,
 	72: updateFromV71,
 	73: updateFromV72,
+	74: updateFromV73,
+	75: updateFromV74,
+	76: updateFromV75,
+	77: updateFromV76,
+}
+
+func updateFromV76(ctx context.Context, tx *sql.Tx) error {
+	stmts := `
+ALTER TABLE instances_backups ADD COLUMN root_only INTEGER NOT NULL DEFAULT 0;
+`
+	_, err := tx.Exec(stmts)
+	return err
+}
+
+func updateFromV75(ctx context.Context, tx *sql.Tx) error {
+	q := `
+CREATE TABLE "networks_address_sets" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    project_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    addresses TEXT NOT NULL,
+    description TEXT,
+    UNIQUE (name)
+    UNIQUE (project_id, name),
+    FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
+);
+
+CREATE TABLE "networks_address_sets_config" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    network_address_set_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    UNIQUE (network_address_set_id, key),
+    FOREIGN KEY (network_address_set_id) REFERENCES networks_address_sets (id) ON DELETE CASCADE
+);
+`
+	_, err := tx.Exec(q)
+	if err != nil {
+		return fmt.Errorf("Failed creating networks_address_sets and networks_address_sets_external_ids tables: %w", err)
+	}
+
+	return nil
+}
+
+// updateFromV74 removes the index preventing the same integration to be used multiple times.
+func updateFromV74(ctx context.Context, tx *sql.Tx) error {
+	q := `DROP INDEX IF EXISTS networks_peers_unique_network_id_target_network_integration_id;`
+	_, err := tx.Exec(q)
+	if err != nil {
+		return fmt.Errorf("Failed dropping network peer index: %w", err)
+	}
+
+	return nil
+}
+
+// updateFromV73 adds a config table to cluster groups.
+func updateFromV73(ctx context.Context, tx *sql.Tx) error {
+	q := `
+CREATE TABLE cluster_groups_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    cluster_group_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    UNIQUE (cluster_group_id, key),
+    FOREIGN KEY (cluster_group_id) REFERENCES cluster_groups (id) ON DELETE CASCADE
+);
+`
+	_, err := tx.Exec(q)
+	if err != nil {
+		return fmt.Errorf("Failed adding cluster group config table: %w", err)
+	}
+
+	return nil
 }
 
 // updateFromV72 removes the openfga.store.model_id server config key.
@@ -262,7 +335,7 @@ JOIN
 	for _, projectID := range projectIDs {
 		_, err = tx.Exec(`INSERT OR REPLACE INTO projects_config (project_id,key,value) VALUES(?,?,?);`, projectID, "features.networks.zones", "true")
 		if err != nil {
-			return fmt.Errorf("Failed adding features.networks.zones=true to project ID %q: %w", projectID, err)
+			return fmt.Errorf("Failed adding features.networks.zones=true to project ID %d: %w", projectID, err)
 		}
 
 		logger.Info("Added features.networks.zones=true on project with features.networks=true", logger.Ctx{"projectID": projectID})

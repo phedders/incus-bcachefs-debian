@@ -7,31 +7,25 @@ import (
 	"io"
 	"os"
 
-	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v4"
 
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/shared/api"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/shared/api"
 )
 
-// RunPreseed runs the actual command logic.
-func (c *cmdAdminInit) RunPreseed(cmd *cobra.Command, args []string) (*api.InitPreseed, error) {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 0, 1)
-	if exit {
-		return nil, err
-	}
-
+func (c *cmdAdminInit) runPreseed(p *u.Parsed) (*api.InitPreseed, error) {
 	// Read the YAML
 	var bytes []byte
+	var err error
 
-	if len(args) == 0 {
+	if p.Skipped || p.String == "-" {
 		bytes, err = io.ReadAll(os.Stdin)
 		if err != nil {
 			return nil, fmt.Errorf(i18n.G("Failed to read from stdin: %w"), err)
 		}
 	} else {
-		bytes, err = os.ReadFile(args[0])
+		bytes, err = os.ReadFile(p.String)
 		if err != nil {
 			return nil, fmt.Errorf(i18n.G("Failed to read from file: %w"), err)
 		}
@@ -40,7 +34,7 @@ func (c *cmdAdminInit) RunPreseed(cmd *cobra.Command, args []string) (*api.InitP
 	// Parse the YAML
 	config := api.InitPreseed{}
 	// Use strict checking to notify about unknown keys.
-	err = yaml.UnmarshalStrict(bytes, &config)
+	err = yaml.Load(bytes, &config, yaml.WithKnownFields())
 	if err != nil {
 		return nil, fmt.Errorf(i18n.G("Failed to parse the preseed: %w"), err)
 	}

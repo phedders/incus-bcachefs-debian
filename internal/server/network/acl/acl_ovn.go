@@ -10,16 +10,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lxc/incus/v6/internal/server/db"
-	"github.com/lxc/incus/v6/internal/server/db/cluster"
-	"github.com/lxc/incus/v6/internal/server/instance"
-	"github.com/lxc/incus/v6/internal/server/network/ovn"
-	"github.com/lxc/incus/v6/internal/server/state"
-	"github.com/lxc/incus/v6/shared/api"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/revert"
-	"github.com/lxc/incus/v6/shared/util"
-	"github.com/lxc/incus/v6/shared/validate"
+	"github.com/lxc/incus/v7/internal/server/db"
+	"github.com/lxc/incus/v7/internal/server/db/cluster"
+	"github.com/lxc/incus/v7/internal/server/instance"
+	"github.com/lxc/incus/v7/internal/server/network/ovn"
+	"github.com/lxc/incus/v7/internal/server/state"
+	"github.com/lxc/incus/v7/shared/api"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/revert"
+	"github.com/lxc/incus/v7/shared/util"
+	"github.com/lxc/incus/v7/shared/validate"
 )
 
 // OVN ACL rule priorities.
@@ -485,6 +485,22 @@ func ovnAddReferencedACLs(info *api.NetworkACL, referencedACLNames map[string]st
 	}
 }
 
+// replaceAddressSetNames performs replacements of address set names with OVN identifiers.
+func replaceAddressSetNames(subject string, addressSetIDs map[string]int) string {
+	subjects := util.SplitNTrimSpace(subject, ",", -1, true)
+	for i, subj := range subjects {
+		after, ok := strings.CutPrefix(subj, "$")
+		if ok {
+			setID, found := addressSetIDs[after]
+			if found {
+				subjects[i] = fmt.Sprintf("$incus_set%d", setID)
+			}
+		}
+	}
+
+	return strings.Join(subjects, ",")
+}
+
 // ovnApplyToPortGroup applies the rules in the specified ACL to the specified port group.
 func ovnApplyToPortGroup(s *state.State, l logger.Logger, client *ovn.NB, aclInfo *api.NetworkACL, aclName string, aclNameIDs map[string]int64, aclNets map[string]NetworkACLUsage, peerTargetNetIDs map[cluster.NetworkPeerConnection]int64) error {
 	directionalPortGroups := OVNACLDirectionalPortGroups(aclNameIDs[aclName])
@@ -496,13 +512,60 @@ func ovnApplyToPortGroup(s *state.State, l logger.Logger, client *ovn.NB, aclInf
 	allPGRules := make([]ovn.OVNACLRule, 0)
 	networkRules := make([]ovn.OVNACLRule, 0)
 	networkPeersNeeded := make([]cluster.NetworkPeerConnection, 0)
+	// First gather used address sets
+	addressSetNamesSet := make(map[string]struct{})
 
+	extractAddressSets := func(rules []api.NetworkACLRule) {
+		for _, rule := range rules {
+			for _, subj := range util.SplitNTrimSpace(rule.Source, ",", -1, true) {
+				if strings.HasPrefix(subj, "$") {
+					addressSetNamesSet[subj] = struct{}{}
+				}
+			}
+			for _, subj := range util.SplitNTrimSpace(rule.Destination, ",", -1, true) {
+				if strings.HasPrefix(subj, "$") {
+					addressSetNamesSet[subj] = struct{}{}
+				}
+			}
+		}
+	}
+
+	extractAddressSets(aclInfo.Ingress)
+	extractAddressSets(aclInfo.Egress)
+
+	addressSetNames := make([]string, 0, len(addressSetNamesSet))
+	for setName := range addressSetNamesSet {
+		addressSetNames = append(addressSetNames, setName)
+	}
+
+	// Map address set names to ID
+	addressSetIDs := make(map[string]int, len(addressSetNames))
+	if len(addressSetNames) > 0 {
+		for _, setName := range addressSetNames {
+			err := s.DB.Cluster.Transaction(context.TODO(), func(ctx context.Context, tx *db.ClusterTx) error {
+				set, err := cluster.GetNetworkAddressSet(ctx, tx.Tx(), aclInfo.Project, strings.TrimPrefix(setName, "$"))
+				if err != nil {
+					return err
+				}
+
+				addressSetIDs[set.Name] = set.ID
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("Failed fetching address set %s IDs in project %s err: %w", strings.TrimPrefix(setName, "$"), aclInfo.Project, err)
+			}
+		}
+	}
 	// convertACLRules converts the ACL rules to OVN ACL rules.
 	convertACLRules := func(portGroupName ovn.OVNPortGroup, direction string, reversed bool, rules ...api.NetworkACLRule) error {
 		for ruleIndex, rule := range rules {
 			if rule.State == "disabled" {
 				continue
 			}
+
+			// Replace address set subjects
+			rule.Source = replaceAddressSetNames(rule.Source, addressSetIDs)
+			rule.Destination = replaceAddressSetNames(rule.Destination, addressSetIDs)
 
 			ovnACLRule, isAllRule, networkSpecific, networkPeers, err := ovnRuleCriteriaToOVNACLRule(s, direction, &rule, portGroupName, aclNameIDs, peerTargetNetIDs, reversed)
 			if err != nil {
@@ -776,7 +839,7 @@ func ovnRuleSubjectToOVNACLMatch(s *state.State, direction string, aclNameIDs ma
 
 				fieldParts = append(fieldParts, fmt.Sprintf("%s.%s == %s", protocol, direction, subjectCriterion))
 			} else {
-				// If not valid IP subnet, check if subject is ACL name or network peer name.
+				// If not valid IP subnet, check if subject is ACL name or address set or network peer name.
 				var subjectPortSelector ovn.OVNPortGroup
 				if slices.Contains(ruleSubjectInternalAliases, subjectCriterion) {
 					// Use pseudo port group name for special reserved port selector types.
@@ -790,6 +853,11 @@ func ovnRuleSubjectToOVNACLMatch(s *state.State, direction string, aclNameIDs ma
 					// Convert deprecated #external to non-deprecated @external if needed.
 					subjectPortSelector = ovn.OVNPortGroup(ruleSubjectExternal)
 					networkSpecific = true
+				} else if strings.HasPrefix(subjectCriterion, "$") {
+					// Check if subject is an address set if so we use it as it is.
+					fieldParts = append(fieldParts, fmt.Sprintf("ip6.%s == %s_ip6 || ip4.%s == %s_ip4", direction, subjectCriterion, direction, subjectCriterion))
+
+					continue
 				} else {
 					after, ok := strings.CutPrefix(subjectCriterion, "@")
 					if ok {

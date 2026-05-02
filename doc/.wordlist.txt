@@ -65,12 +65,16 @@ DHCP
 DHCPv
 Diátaxis
 Diffie
+diskful
+diskless
+Diskless
 Distrobuilder
 DNAT
 DNS
 dnsmasq
 DNSSEC
 DoS
+DRBD
 DRM
 EB
 Ebit
@@ -89,6 +93,7 @@ ETag
 failover
 formatters
 FQDNs
+FreeBSD
 frontend
 Furo
 gapped
@@ -108,8 +113,10 @@ GPUs
 Grafana
 HAProxy
 hardcoded
+HDDs
 Hellman
 Homebrew
+hostname
 hotplug
 hotplugged
 hotplugging
@@ -134,6 +141,7 @@ IPAM
 IPs
 IPv
 IPVLAN
+iSCSI
 JIT
 jq
 JSON
@@ -144,6 +152,9 @@ kibi
 Kibit
 Kubernetes
 KVM
+LINBIT
+LINSTOR
+LINSTOR's
 LLM
 LLMs
 lookups
@@ -185,7 +196,9 @@ NIC
 NICs
 NixOS
 NUMA
+NVMe
 NVRAM
+OCI
 OData
 OIDC
 OpenFGA
@@ -219,6 +232,7 @@ PNG
 Podman
 Pongo
 POSIX
+PPA
 pre
 preselects
 preseed
@@ -308,6 +322,7 @@ tmpfs
 toolchain
 topologies
 TPM
+TrueNAS
 TSIG
 TTL
 UDP

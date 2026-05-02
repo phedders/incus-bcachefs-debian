@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"maps"
 
-	"github.com/lxc/incus/v6/internal/ports"
-	"github.com/lxc/incus/v6/internal/server/config"
-	"github.com/lxc/incus/v6/internal/server/db"
-	internalUtil "github.com/lxc/incus/v6/internal/util"
-	"github.com/lxc/incus/v6/shared/validate"
+	"github.com/lxc/incus/v7/internal/ports"
+	"github.com/lxc/incus/v7/internal/server/config"
+	"github.com/lxc/incus/v7/internal/server/db"
+	internalUtil "github.com/lxc/incus/v7/internal/util"
+	"github.com/lxc/incus/v7/shared/validate"
 )
 
 // Config holds member-local configuration values.
@@ -119,6 +119,11 @@ func (c *Config) StorageImagesVolume() string {
 // StorageLogsVolume returns the name of the pool/volume to use for storing instance log directories.
 func (c *Config) StorageLogsVolume() string {
 	return c.m.GetString("storage.logs_volume")
+}
+
+// LinstorSatelliteName returns the LINSTOR satellite name override.
+func (c *Config) LinstorSatelliteName() string {
+	return c.m.GetString("storage.linstor.satellite.name")
 }
 
 // SyslogSocket returns true if the syslog socket is enabled, otherwise false.
@@ -270,6 +275,7 @@ var ConfigSchema = config.Schema{
 	//  scope: local
 	//  shortdesc: Volume to use to store backup tarballs
 	"storage.backups_volume": {},
+
 	// gendoc:generate(entity=server, group=miscellaneous, key=storage.images_volume)
 	// Specify the volume using the syntax `POOL/VOLUME`.
 	// ---
@@ -285,4 +291,14 @@ var ConfigSchema = config.Schema{
 	//  scope: local
 	//  shortdesc: Volume to use to store instance log directories
 	"storage.logs_volume": {},
+
+	// LINSTOR
+
+	// gendoc:generate(entity=server, group=miscellaneous, key=storage.linstor.satellite.name)
+	// Set this option to the name of the local LINSTOR satellite node, should it be different from the Incus server name.
+	// ---
+	//  type: string
+	//  scope: global
+	//  shortdesc: LINSTOR satellite node name override
+	"storage.linstor.satellite.name": {},
 }

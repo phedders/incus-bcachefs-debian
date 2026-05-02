@@ -13,33 +13,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/shared/util"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
-// Run runs the actual command logic.
-func (c *cmdWebui) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 0, 1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	remote := ""
-	if len(args) > 0 {
-		remote = args[0]
-	}
-
-	remoteName, _, err := c.global.conf.ParseRemote(remote)
+func (c *cmdWebui) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdWebuiUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	s, err := c.global.conf.GetInstanceServer(remoteName)
-	if err != nil {
-		return err
-	}
+	d := parsed[0].RemoteServer
 
 	// Create localhost socket.
 	server, err := net.Listen("tcp", "127.0.0.1:0")
@@ -48,7 +32,7 @@ func (c *cmdWebui) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get the connection info.
-	info, err := s.GetConnectionInfo()
+	info, err := d.GetConnectionInfo()
 	if err != nil {
 		return err
 	}
@@ -64,7 +48,7 @@ func (c *cmdWebui) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	resp, err := s.DoHTTP(req)
+	resp, err := d.DoHTTP(req)
 	if err != nil {
 		return err
 	}
@@ -74,7 +58,7 @@ func (c *cmdWebui) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Enable keep-alive for proxied connections.
-	httpClient, err := s.GetHTTPClient()
+	httpClient, err := d.GetHTTPClient()
 	if err != nil {
 		return err
 	}
@@ -85,7 +69,7 @@ func (c *cmdWebui) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get server info.
-	api10, api10Etag, err := s.GetServer()
+	api10, api10Etag, err := d.GetServer()
 	if err != nil {
 		return err
 	}
@@ -95,7 +79,7 @@ func (c *cmdWebui) Run(cmd *cobra.Command, args []string) error {
 
 	// Handle inbound connections.
 	transport := remoteProxyTransport{
-		s:       s,
+		s:       d,
 		baseURL: uri,
 	}
 
@@ -103,7 +87,7 @@ func (c *cmdWebui) Run(cmd *cobra.Command, args []string) error {
 	transactions := uint64(0)
 
 	handler := remoteProxyHandler{
-		s:         s,
+		s:         d,
 		transport: transport,
 		api10:     api10,
 		api10Etag: api10Etag,
@@ -113,6 +97,7 @@ func (c *cmdWebui) Run(cmd *cobra.Command, args []string) error {
 		transactions: &transactions,
 
 		token: token,
+		url:   "http://" + server.Addr().String(),
 	}
 
 	// Print address.

@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
 
-	"github.com/lxc/incus/v6/internal/linux"
-	"github.com/lxc/incus/v6/shared/util"
+	"github.com/lxc/incus/v7/internal/linux"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 type cmdForkstart struct {
@@ -91,6 +91,12 @@ func (c *cmdForkstart) run(cmd *cobra.Command, args []string) error {
 	if err == nil {
 		_ = unix.Dup3(int(logFile.Fd()), 1, 0)
 		_ = unix.Dup3(int(logFile.Fd()), 2, 0)
+	}
+
+	// Handle application containers.
+	execCmd := d.ConfigItem("lxc.execute.cmd")
+	if len(execCmd) > 0 && execCmd[0] != "" {
+		return d.StartExecute(nil)
 	}
 
 	return d.Start()

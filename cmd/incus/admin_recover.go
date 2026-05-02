@@ -1,5 +1,3 @@
-//go:build linux
-
 package main
 
 import (
@@ -11,57 +9,42 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/internal/recover"
-	"github.com/lxc/incus/v6/shared/api"
-	cli "github.com/lxc/incus/v6/shared/cmd"
-	"github.com/lxc/incus/v6/shared/validate"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/internal/recover"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
+	"github.com/lxc/incus/v7/shared/validate"
 )
 
 type cmdAdminRecover struct {
 	global *cmdGlobal
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdAdminRecover) Command() *cobra.Command {
+var cmdAdminRecoverUsage = u.Usage{u.RemoteColonOpt}
+
+func (c *cmdAdminRecover) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("recover", u.RemoteColonOpt)
+	cmd.Use = cli.U("recover", cmdAdminRecoverUsage...)
 	cmd.Short = i18n.G("Recover missing instances and volumes from existing and unknown storage pools")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(`Recover missing instances and volumes from existing and unknown storage pools
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Recover missing instances and volumes from existing and unknown storage pools
 
   This command is mostly used for disaster recovery. It will ask you about unknown storage pools and attempt to
   access them, along with existing storage pools, and identify any missing instances and volumes that exist on the
   pools but are not in the database. It will then offer to recreate these database records.`))
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdAdminRecover) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 0, 1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	remote := ""
-	if len(args) > 0 {
-		remote = args[0]
-	}
-
-	remoteName, _, err := c.global.conf.ParseRemote(remote)
+func (c *cmdAdminRecover) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdAdminRecoverUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	d, err := c.global.conf.GetInstanceServer(remoteName)
-	if err != nil {
-		return err
-	}
-
+	d := parsed[0].RemoteServer
 	server, _, err := d.GetServer()
 	if err != nil {
 		return err

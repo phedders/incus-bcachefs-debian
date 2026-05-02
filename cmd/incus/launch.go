@@ -5,10 +5,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	"github.com/lxc/incus/v6/shared/api"
-	cli "github.com/lxc/incus/v6/shared/cmd"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	"github.com/lxc/incus/v7/internal/i18n"
+	"github.com/lxc/incus/v7/shared/api"
+	cli "github.com/lxc/incus/v7/shared/cmd"
 )
 
 type cmdLaunch struct {
@@ -18,15 +18,15 @@ type cmdLaunch struct {
 	flagConsole string
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdLaunch) Command() *cobra.Command {
-	cmd := c.init.Command()
-	cmd.Use = cli.U("launch", u.Image.Remote(), u.NewName(u.Instance).Optional().Remote())
+func (c *cmdLaunch) command() *cobra.Command {
+	cmd := c.init.command()
+	cmd.Use = cli.U("launch", cmdCreateUsage...)
 	cmd.Short = i18n.G("Create and start instances from images")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Create and start instances from images`))
 	cmd.Example = cli.FormatSection("", i18n.G(
 		`incus launch images:debian/12 u1
+    Create and start a container named u1
 
 incus launch images:debian/12 u1 < config.yaml
     Create and start a container with configuration from config.yaml
@@ -41,10 +41,9 @@ incus launch images:debian/12 v2 --vm -d root,size=50GiB -d root,io.bus=nvme
     Create and start a virtual machine, overriding the disk size and bus`))
 	cmd.Hidden = false
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
-	cmd.Flags().StringVar(&c.flagConsole, "console", "", i18n.G("Immediately attach to the console")+"``")
-	cmd.Flags().Lookup("console").NoOptDefVal = "console"
+	cli.AddStringFlag(cmd.Flags(), &c.flagConsole, "console", "", "console", i18n.G("Immediately attach to the console"))
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) != 0 {
@@ -57,21 +56,21 @@ incus launch images:debian/12 v2 --vm -d root,size=50GiB -d root,io.bus=nvme
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdLaunch) Run(cmd *cobra.Command, args []string) error {
+func (c *cmdLaunch) run(cmd *cobra.Command, args []string) error {
 	conf := c.global.conf
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 2)
-	if exit {
+	parsed, err := cmdCreateUsage.Parse(conf, cmd, args)
+	if err != nil {
 		return err
 	}
 
 	// Call the matching code from init
-	d, name, err := c.init.create(conf, args, true)
+	p, err := c.init.create(conf, parsed, true)
 	if err != nil {
 		return err
 	}
+
+	d := p.RemoteServer
+	instanceName := p.RemoteObject.String
 
 	// Check if the instance was started by the server.
 	if d.HasExtension("instance_create_start") {
@@ -81,10 +80,10 @@ func (c *cmdLaunch) Run(cmd *cobra.Command, args []string) error {
 			console.global = c.global
 			console.flagType = c.flagConsole
 
-			consoleErr := console.console(d, name)
+			consoleErr := console.console(d, instanceName)
 			if consoleErr != nil {
 				// Check if still running.
-				state, _, err := d.GetInstanceState(name)
+				state, _, err := d.GetInstanceState(instanceName)
 				if err != nil {
 					return err
 				}
@@ -94,30 +93,16 @@ func (c *cmdLaunch) Run(cmd *cobra.Command, args []string) error {
 				}
 
 				console.flagShowLog = true
-				return console.console(d, name)
+				return console.console(d, instanceName)
 			}
 		}
 
 		return nil
 	}
 
-	// Get the remote
-	var remote string
-	if len(args) == 2 {
-		remote, _, err = conf.ParseRemote(args[1])
-		if err != nil {
-			return err
-		}
-	} else {
-		remote, _, err = conf.ParseRemote("")
-		if err != nil {
-			return err
-		}
-	}
-
 	// Start the instance
 	if !c.global.flagQuiet {
-		fmt.Printf(i18n.G("Starting %s")+"\n", name)
+		fmt.Printf(i18n.G("Starting %s")+"\n", formatRemote(conf, p))
 	}
 
 	req := api.InstanceStatePut{
@@ -125,7 +110,7 @@ func (c *cmdLaunch) Run(cmd *cobra.Command, args []string) error {
 		Timeout: -1,
 	}
 
-	op, err := d.UpdateInstanceState(name, req, "")
+	op, err := d.UpdateInstanceState(instanceName, req, "")
 	if err != nil {
 		return err
 	}
@@ -144,17 +129,13 @@ func (c *cmdLaunch) Run(cmd *cobra.Command, args []string) error {
 	err = cli.CancelableWait(op, &progress)
 	if err != nil {
 		progress.Done("")
-		prettyName := name
-		if remote != "" {
-			prettyName = fmt.Sprintf("%s:%s", remote, name)
-		}
 
 		projectArg := ""
 		if conf.ProjectOverride != "" && conf.ProjectOverride != api.ProjectDefaultName {
 			projectArg = " --project " + conf.ProjectOverride
 		}
 
-		return fmt.Errorf("%s\n"+i18n.G("Try `incus info --show-log %s%s` for more info"), err, prettyName, projectArg)
+		return fmt.Errorf("%s\n"+i18n.G("Try `incus info --show-log %s%s` for more info"), err, formatRemote(conf, p), projectArg)
 	}
 
 	progress.Done("")
@@ -165,10 +146,10 @@ func (c *cmdLaunch) Run(cmd *cobra.Command, args []string) error {
 		console.global = c.global
 		console.flagType = c.flagConsole
 
-		consoleErr := console.console(d, name)
+		consoleErr := console.console(d, instanceName)
 		if consoleErr != nil {
 			// Check if still running.
-			state, _, err := d.GetInstanceState(name)
+			state, _, err := d.GetInstanceState(instanceName)
 			if err != nil {
 				return err
 			}
@@ -178,7 +159,7 @@ func (c *cmdLaunch) Run(cmd *cobra.Command, args []string) error {
 			}
 
 			console.flagShowLog = true
-			return console.console(d, name)
+			return console.console(d, instanceName)
 		}
 	}
 

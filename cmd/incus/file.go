@@ -15,16 +15,17 @@ import (
 	"github.com/pkg/sftp"
 	"github.com/spf13/cobra"
 
-	incus "github.com/lxc/incus/v6/client"
-	u "github.com/lxc/incus/v6/cmd/incus/usage"
-	"github.com/lxc/incus/v6/internal/i18n"
-	internalIO "github.com/lxc/incus/v6/internal/io"
-	cli "github.com/lxc/incus/v6/shared/cmd"
-	"github.com/lxc/incus/v6/shared/ioprogress"
-	"github.com/lxc/incus/v6/shared/logger"
-	"github.com/lxc/incus/v6/shared/termios"
-	"github.com/lxc/incus/v6/shared/units"
-	"github.com/lxc/incus/v6/shared/util"
+	incus "github.com/lxc/incus/v7/client"
+	"github.com/lxc/incus/v7/cmd/incus/color"
+	u "github.com/lxc/incus/v7/cmd/incus/usage"
+	"github.com/lxc/incus/v7/internal/i18n"
+	internalIO "github.com/lxc/incus/v7/internal/io"
+	cli "github.com/lxc/incus/v7/shared/cmd"
+	"github.com/lxc/incus/v7/shared/ioprogress"
+	"github.com/lxc/incus/v7/shared/logger"
+	"github.com/lxc/incus/v7/shared/termios"
+	"github.com/lxc/incus/v7/shared/units"
+	"github.com/lxc/incus/v7/shared/util"
 )
 
 const (
@@ -41,41 +42,38 @@ type cmdFile struct {
 	flagGID  int
 	flagMode string
 
-	flagMkdir     bool
-	flagRecursive bool
+	flagMkdir bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdFile) Command() *cobra.Command {
+func (c *cmdFile) command() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Use = cli.U("file")
 	cmd.Short = i18n.G("Manage files in instances")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Manage files in instances`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Manage files in instances`))
 
 	// Create
 	fileCreateCmd := cmdFileCreate{global: c.global, file: c}
-	cmd.AddCommand(fileCreateCmd.Command())
+	cmd.AddCommand(fileCreateCmd.command())
 
 	// Delete
 	fileDeleteCmd := cmdFileDelete{global: c.global, file: c}
-	cmd.AddCommand(fileDeleteCmd.Command())
+	cmd.AddCommand(fileDeleteCmd.command())
 
 	// Mount
 	fileMountCmd := cmdFileMount{global: c.global, file: c}
-	cmd.AddCommand(fileMountCmd.Command())
+	cmd.AddCommand(fileMountCmd.command())
 
 	// Pull
-	filePullCmd := cmdFilePull{global: c.global, file: c}
-	cmd.AddCommand(filePullCmd.Command())
+	filePullCmd := cmdFilePull{global: c.global, file: c, puller: &pullable{}}
+	cmd.AddCommand(filePullCmd.command())
 
 	// Push
-	filePushCmd := cmdFilePush{global: c.global, file: c}
-	cmd.AddCommand(filePushCmd.Command())
+	filePushCmd := cmdFilePush{global: c.global, file: c, pusher: &pushable{}}
+	cmd.AddCommand(filePushCmd.command())
 
 	// Edit
 	fileEditCmd := cmdFileEdit{global: c.global, file: c, filePull: &filePullCmd, filePush: &filePushCmd}
-	cmd.AddCommand(fileEditCmd.Command())
+	cmd.AddCommand(fileEditCmd.command())
 
 	// Workaround for subcommand usage errors. See: https://github.com/spf13/cobra/issues/706
 	cmd.Args = cobra.NoArgs
@@ -92,12 +90,13 @@ type cmdFileCreate struct {
 	flagType  string
 }
 
-// Command returns the cobra command for `file create`.
-func (c *cmdFileCreate) Command() *cobra.Command {
+var cmdFileCreateUsage = u.Usage{u.MakePath(u.Instance, u.Path).Remote(), u.SymlinkTargetPath.Optional()}
+
+func (c *cmdFileCreate) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("create", u.MakePath(u.Instance, u.Path).Remote(), u.SymlinkTargetPath.Optional())
+	cmd.Use = cli.U("create", cmdFileCreateUsage...)
 	cmd.Short = i18n.G("Create files and directories in instances")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Create files and directories in instances`))
 	cmd.Example = cli.FormatSection("", i18n.G(
 		`incus file create foo/bar
@@ -106,14 +105,14 @@ func (c *cmdFileCreate) Command() *cobra.Command {
 incus file create --type=symlink foo/bar baz
    To create a symlink /bar in instance foo whose target is baz.`))
 
-	cmd.Flags().BoolVarP(&c.file.flagMkdir, "create-dirs", "p", false, i18n.G("Create any directories necessary")+"``")
-	cmd.Flags().BoolVarP(&c.flagForce, "force", "f", false, i18n.G("Force creating files or directories")+"``")
-	cmd.Flags().IntVar(&c.file.flagGID, "gid", -1, i18n.G("Set the file's gid on create")+"``")
-	cmd.Flags().IntVar(&c.file.flagUID, "uid", -1, i18n.G("Set the file's uid on create")+"``")
-	cmd.Flags().StringVar(&c.file.flagMode, "mode", "", i18n.G("Set the file's perms on create")+"``")
-	cmd.Flags().StringVar(&c.flagType, "type", "file", i18n.G("The type to create (file, symlink, or directory)")+"``")
+	cli.AddBoolFlag(cmd.Flags(), &c.file.flagMkdir, "create-dirs|p", i18n.G("Create any directories necessary"))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagForce, "force|f", i18n.G("Force creating files or directories"))
+	cli.AddIntFlag(cmd.Flags(), &c.file.flagGID, "gid", -1, i18n.G("Set the file's gid on create"))
+	cli.AddIntFlag(cmd.Flags(), &c.file.flagUID, "uid", -1, i18n.G("Set the file's uid on create"))
+	cli.AddStringFlag(cmd.Flags(), &c.file.flagMode, "mode", "", "", i18n.G("Set the file's perms on create"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagType, "type|t", "file", "", i18n.G("The type to create (file, symlink, or directory)"))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -126,62 +125,41 @@ incus file create --type=symlink foo/bar baz
 	return cmd
 }
 
-// Run runs the `file create` command.
-func (c *cmdFileCreate) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 2)
-	if exit {
+func (c *cmdFileCreate) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdFileCreateUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
 		return err
 	}
+
+	d := parsed[0].RemoteServer
+	instanceName := parsed[0].RemoteObject.List[0].String
+	targetPath, isDir := normalizePath(parsed[0].RemoteObject.List[1].String)
+	hasSymlink := !parsed[1].Skipped
+	symlinkTargetPath := parsed[1].String
 
 	if !slices.Contains([]string{"file", "symlink", "directory"}, c.flagType) {
 		return fmt.Errorf(i18n.G("Invalid type %q"), c.flagType)
 	}
 
-	if len(args) == 2 && c.flagType != "symlink" {
-		return errors.New(i18n.G(`Symlink target path can only be used for type "symlink"`))
+	if hasSymlink {
+		if c.flagType != "symlink" {
+			return errors.New(i18n.G(`Symlink target path can only be used for type "symlink"`))
+		}
+
+		symlinkTargetPath = filepath.Clean(symlinkTargetPath)
 	}
 
-	if strings.HasSuffix(args[0], "/") {
+	if isDir {
 		c.flagType = "directory"
 	}
 
-	pathSpec := strings.SplitN(args[0], "/", 2)
-
-	if len(pathSpec) != 2 {
-		return fmt.Errorf(i18n.G("Invalid target %s"), args[0])
-	}
-
-	// Parse remote.
-	resources, err := c.global.parseServers(pathSpec[0])
-	if err != nil {
-		return err
-	}
-
-	resource := resources[0]
-
 	// Connect to SFTP.
-	sftpConn, err := resource.server.GetInstanceFileSFTP(resource.name)
+	sftpConn, err := d.GetInstanceFileSFTP(instanceName)
 	if err != nil {
 		return err
 	}
 
 	defer func() { _ = sftpConn.Close() }()
-
-	// re-add leading / that got stripped by the SplitN
-	targetPath := filepath.Clean("/" + pathSpec[1])
-
-	// normalization may reveal that path is still a dir, e.g. /.
-	if strings.HasSuffix(targetPath, "/") {
-		c.flagType = "directory"
-	}
-
-	var symlinkTargetPath string
-
-	// Determine the target if specified.
-	if len(args) == 2 {
-		symlinkTargetPath = filepath.Clean(args[1])
-	}
 
 	// Determine the target uid
 	uid := max(c.file.flagUID, 0)
@@ -286,18 +264,18 @@ type cmdFileDelete struct {
 	flagForce bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdFileDelete) Command() *cobra.Command {
+var cmdFileDeleteUsage = u.Usage{u.MakePath(u.Instance, u.Path).Remote().List(1)}
+
+func (c *cmdFileDelete) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("delete", u.MakePath(u.Instance, u.Path).Remote().List(1))
+	cmd.Use = cli.U("delete", cmdFileDeleteUsage...)
 	cmd.Aliases = []string{"rm", "remove"}
 	cmd.Short = i18n.G("Delete files in instances")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Delete files in instances`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Delete files in instances`))
 
-	cmd.Flags().BoolVarP(&c.flagForce, "force", "f", false, i18n.G("Force deleting files, directories, and subdirectories")+"``")
+	cli.AddBoolFlag(cmd.Flags(), &c.flagForce, "force|f", i18n.G("Force deleting files, directories, and subdirectories"))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return c.global.cmpFiles(toComplete, false)
@@ -306,16 +284,8 @@ func (c *cmdFileDelete) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdFileDelete) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, -1)
-	if exit {
-		return err
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(args...)
+func (c *cmdFileDelete) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdFileDeleteUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
@@ -329,35 +299,43 @@ func (c *cmdFileDelete) Run(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	for _, resource := range resources {
-		pathSpec := strings.SplitN(resource.name, "/", 2)
-		if len(pathSpec) != 2 {
-			return fmt.Errorf(i18n.G("Invalid path %s"), resource.name)
-		}
+	var errs []error
 
-		sftpConn, ok := sftpClients[pathSpec[0]]
-		if !ok {
-			sftpConn, err = resource.server.GetInstanceFileSFTP(pathSpec[0])
-			if err != nil {
-				return err
+	for _, p := range parsed[0].List {
+		err := func() error {
+			d := p.RemoteServer
+			instanceName := p.RemoteObject.List[0].String
+			path, _ := normalizePath(p.RemoteObject.List[1].String)
+			instanceID := p.RemoteName + ":" + instanceName
+
+			sftpConn, ok := sftpClients[instanceID]
+			if !ok {
+				sftpConn, err = d.GetInstanceFileSFTP(instanceName)
+				if err != nil {
+					return err
+				}
+
+				sftpClients[instanceID] = sftpConn
 			}
 
-			sftpClients[pathSpec[0]] = sftpConn
-		}
+			if c.flagForce {
+				err = sftpConn.RemoveAll(path)
+				if err != nil {
+					return err
+				}
 
-		if c.flagForce {
-			err = sftpConn.RemoveAll(pathSpec[1])
-			if err != nil {
-				return err
+				return nil
 			}
 
-			return nil
-		}
-
-		err = sftpConn.Remove(pathSpec[1])
+			return sftpConn.Remove(path)
+		}()
 		if err != nil {
-			return err
+			errs = append(errs, err)
 		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil
@@ -371,15 +349,15 @@ type cmdFileEdit struct {
 	filePush *cmdFilePush
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdFileEdit) Command() *cobra.Command {
-	cmd := &cobra.Command{}
-	cmd.Use = cli.U("edit", u.MakePath(u.Instance, u.Path).Remote())
-	cmd.Short = i18n.G("Edit files in instances")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Edit files in instances`))
+var cmdFileEditUsage = u.Usage{u.MakePath(u.Instance, u.Path).Remote()}
 
-	cmd.RunE = c.Run
+func (c *cmdFileEdit) command() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Use = cli.U("edit", cmdFileEditUsage...)
+	cmd.Short = i18n.G("Edit files in instances")
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Edit files in instances`))
+
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -392,23 +370,22 @@ func (c *cmdFileEdit) Command() *cobra.Command {
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdFileEdit) Run(cmd *cobra.Command, args []string) error {
-	c.filePush.noModeChange = true
-
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 1)
-	if exit {
+func (c *cmdFileEdit) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdFileEditUsage.Parse(c.global.conf, cmd, args)
+	if err != nil {
 		return err
 	}
 
+	fileName := parsed[0].RemoteObject.List[1].String
+	c.filePush.noModeChange = true
+
 	// If stdin isn't a terminal, read text from it
 	if !termios.IsTerminal(getStdinFd()) {
-		return c.filePush.Run(cmd, append([]string{os.Stdin.Name()}, args[0]))
+		return c.filePush.push([]string{os.Stdin.Name()}, parsed[0])
 	}
 
 	// Create temp file
-	f, err := os.CreateTemp("", fmt.Sprintf("incus_file_edit_*%s", filepath.Ext(args[0])))
+	f, err := os.CreateTemp("", fmt.Sprintf("incus_file_edit_*%s", filepath.Ext(fileName)))
 	if err != nil {
 		return fmt.Errorf(i18n.G("Unable to create a temporary file: %v"), err)
 	}
@@ -423,7 +400,7 @@ func (c *cmdFileEdit) Run(cmd *cobra.Command, args []string) error {
 
 	// Extract current value
 	defer func() { _ = os.Remove(fname) }()
-	err = c.filePull.Run(cmd, append([]string{args[0]}, fname))
+	err = c.filePull.pull(parsed, fname)
 	if err != nil {
 		return err
 	}
@@ -435,7 +412,7 @@ func (c *cmdFileEdit) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Push the result
-	err = c.filePush.Run(cmd, append([]string{fname}, args[0]))
+	err = c.filePush.push([]string{fname}, parsed[0])
 	if err != nil {
 		return err
 	}
@@ -447,17 +424,18 @@ func (c *cmdFileEdit) Run(cmd *cobra.Command, args []string) error {
 type cmdFilePull struct {
 	global *cmdGlobal
 	file   *cmdFile
+	puller *pullable
 
 	edit bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdFilePull) Command() *cobra.Command {
+var cmdFilePullUsage = u.Usage{u.MakePath(u.Instance, u.Path).Remote().List(1), u.Target(u.Path)}
+
+func (c *cmdFilePull) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("pull", u.MakePath(u.Instance, u.Path).Remote().List(1), u.Target(u.Path))
+	cmd.Use = cli.U("pull", cmdFilePullUsage...)
 	cmd.Short = i18n.G("Pull files from instances")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Pull files from instances`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Pull files from instances`))
 	cmd.Example = cli.FormatSection("", i18n.G(
 		`incus file pull foo/etc/hosts .
    To pull /etc/hosts from the instance and write it to the current directory.
@@ -465,10 +443,13 @@ func (c *cmdFilePull) Command() *cobra.Command {
 incus file pull foo/etc/hosts -
    To pull /etc/hosts from the instance and write its output to standard output.`))
 
-	cmd.Flags().BoolVarP(&c.file.flagMkdir, "create-dirs", "p", false, i18n.G("Create any directories necessary"))
-	cmd.Flags().BoolVarP(&c.file.flagRecursive, "recursive", "r", false, i18n.G("Recursively transfer files"))
+	cli.AddBoolFlag(cmd.Flags(), &c.file.flagMkdir, "create-dirs|p", i18n.G("Create any directories necessary"))
+	cli.AddBoolFlag(cmd.Flags(), &c.puller.flagRecursive, "recursive|r", i18n.G("Recursively transfer files"))
+	cli.AddBoolFlag(cmd.Flags(), &c.puller.flagNoDereference, "no-dereference|P", i18n.G("Never follow symbolic links in source path"))
+	cli.AddBoolFlag(cmd.Flags(), &c.puller.flagFollow, "follow|H", i18n.G("Follow command-line symbolic links in source path"))
+	cli.AddBoolFlag(cmd.Flags(), &c.puller.flagDereference, "dereference|L", i18n.G("Always follow symbolic links in source path"))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -481,22 +462,21 @@ incus file pull foo/etc/hosts -
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdFilePull) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, -1)
-	if exit {
-		return err
+// pull runs the post-parsing command logic.
+func (c *cmdFilePull) pull(parsedFiles []*u.Parsed, target string) error {
+	targetIsDir := strings.HasSuffix(target, "/")
+	targetExists := true
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+
+		targetExists = false
 	}
 
-	// Determine the target
-	target := filepath.Clean(args[len(args)-1])
-
-	targetIsDir := false
-	targetIsLink := false
-
-	targetInfo, err := os.Stat(target)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	err = c.puller.preCheck(target)
+	if err != nil {
 		return err
 	}
 
@@ -508,12 +488,12 @@ func (c *cmdFilePull) Run(cmd *cobra.Command, args []string) error {
 	 *      should be a directory so we can save all the files into it.
 	 *   3. We are dealing with recursive copy
 	 */
-	if err == nil {
+	if targetExists {
 		targetIsDir = targetInfo.IsDir()
-		if !targetIsDir && len(args)-1 > 1 {
+		if !targetIsDir && len(parsedFiles) > 1 {
 			return errors.New(i18n.G("More than one file to download, but target is not a directory"))
 		}
-	} else if strings.HasSuffix(args[len(args)-1], string(os.PathSeparator)) || len(args)-1 > 1 {
+	} else if targetIsDir || len(parsedFiles) > 1 {
 		err := os.MkdirAll(target, DirMode)
 		if err != nil {
 			return err
@@ -527,12 +507,6 @@ func (c *cmdFilePull) Run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Parse remote
-	resources, err := c.global.parseServers(args[:len(args)-1]...)
-	if err != nil {
-		return err
-	}
-
 	sftpClients := map[string]*sftp.Client{}
 
 	defer func() {
@@ -541,163 +515,155 @@ func (c *cmdFilePull) Run(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	for _, resource := range resources {
-		pathSpec := strings.SplitN(resource.name, "/", 2)
-		if len(pathSpec) != 2 {
-			return fmt.Errorf(i18n.G("Invalid source %s"), resource.name)
-		}
+	var errs []error
 
-		// Make sure we have a leading / for the path.
-		if !strings.HasPrefix(pathSpec[1], "/") {
-			pathSpec[1] = "/" + pathSpec[1]
-		}
+	for _, p := range parsedFiles {
+		err := func() error {
+			d := p.RemoteServer
+			instanceName := p.RemoteObject.List[0].String
+			path := p.RemoteObject.List[1].String
+			instanceID := p.RemoteName + ":" + instanceName
 
-		sftpConn, ok := sftpClients[pathSpec[0]]
-		if !ok {
-			sftpConn, err = resource.server.GetInstanceFileSFTP(pathSpec[0])
-			if err != nil {
-				return err
-			}
-
-			sftpClients[pathSpec[0]] = sftpConn
-		}
-
-		src, err := sftpConn.Open(pathSpec[1])
-		if err != nil {
-			return err
-		}
-
-		srcInfo, err := sftpConn.Lstat(pathSpec[1])
-		if err != nil {
-			return err
-		}
-
-		// Deal with recursion.
-		if srcInfo.IsDir() {
-			if c.file.flagRecursive {
-				if !util.PathExists(target) {
-					err := os.MkdirAll(target, DirMode)
-					if err != nil {
-						return err
-					}
-
-					targetIsDir = true
-				}
-
-				err := sftpRecursivePullFile(sftpConn, pathSpec[1], target, c.global.flagQuiet)
+			sftpConn, ok := sftpClients[instanceID]
+			if !ok {
+				sftpConn, err = d.GetInstanceFileSFTP(instanceName)
 				if err != nil {
 					return err
 				}
 
-				continue
+				sftpClients[instanceID] = sftpConn
 			}
 
-			return errors.New(i18n.G("Can't pull a directory without --recursive"))
-		}
-
-		// Determine the target path.
-		var targetPath string
-		if targetIsDir {
-			targetPath = filepath.Join(target, filepath.Base(pathSpec[1]))
-		} else {
-			targetPath = target
-		}
-
-		// Unless we're writing to stdout, symlinks get re-created as symlinks.
-		if srcInfo.Mode()&os.ModeSymlink == os.ModeSymlink && targetPath != "-" {
-			targetIsLink = true
-		}
-
-		// Prepare target.
-		var f *os.File
-		var linkName string
-
-		if targetPath == "-" {
-			f = os.Stdout
-		} else if targetIsLink {
-			linkName, err = sftpConn.ReadLink(pathSpec[1])
-			if err != nil {
-				return err
-			}
-		} else {
-			f, err = os.Create(targetPath)
+			srcInfo, normalizedPath, err := c.puller.statFile(sftpConn, path)
 			if err != nil {
 				return err
 			}
 
-			defer func() { _ = f.Close() }() // nolint:revive
-
-			err = os.Chmod(targetPath, os.FileMode(srcInfo.Mode()))
-			if err != nil {
-				return err
+			// Recursively copy directories.
+			if srcInfo.IsDir() {
+				return sftpRecursivePullFile(sftpConn, srcInfo, path, normalizedPath, target, c.global.flagQuiet, c.puller.flagDereference, len(parsedFiles) > 1 || util.PathExists(target))
 			}
-		}
 
-		progress := cli.ProgressRenderer{
-			Format: fmt.Sprintf(i18n.G("Pulling %s from %s: %%s"), targetPath, pathSpec[1]),
-			Quiet:  c.global.flagQuiet,
-		}
-
-		writer := &ioprogress.ProgressWriter{
-			WriteCloser: f,
-			Tracker: &ioprogress.ProgressTracker{
-				Handler: func(bytesReceived int64, speed int64) {
-					if targetPath == "-" {
-						return
-					}
-
-					progress.UpdateProgress(ioprogress.ProgressData{
-						Text: fmt.Sprintf("%s (%s/s)",
-							units.GetByteSizeString(bytesReceived, 2),
-							units.GetByteSizeString(speed, 2)),
-					})
-				},
-			},
-		}
-
-		if targetIsLink {
-			err = os.Symlink(linkName, targetPath)
-			if err != nil {
-				progress.Done("")
-				return err
+			// Determine the target path.
+			var targetPath string
+			if targetIsDir {
+				targetPath = filepath.Join(target, filepath.Base(normalizedPath))
+			} else {
+				targetPath = target
 			}
-		} else {
-			for {
-				// Read 1MB at a time.
-				_, err = io.CopyN(writer, src, 1024*1024)
+
+			// Prepare target.
+			targetIsLink := srcInfo.Mode()&os.ModeSymlink != 0
+			var f *os.File
+			var linkName string
+
+			if isStdout(targetPath) {
+				f = os.Stdout
+			} else if targetIsLink {
+				linkName, err = sftpConn.ReadLink(normalizedPath)
 				if err != nil {
-					if err == io.EOF {
-						break
-					}
+					return err
+				}
+			} else {
+				f, err = os.Create(targetPath)
+				if err != nil {
+					return err
+				}
 
+				defer func() { _ = f.Close() }() // nolint:revive
+
+				err = os.Chmod(targetPath, os.FileMode(srcInfo.Mode()))
+				if err != nil {
+					return err
+				}
+			}
+
+			progress := cli.ProgressRenderer{
+				Format: fmt.Sprintf(i18n.G("Pulling %s from %s: %%s"), targetPath, normalizedPath),
+				Quiet:  c.global.flagQuiet,
+			}
+
+			writer := &ioprogress.ProgressWriter{
+				WriteCloser: f,
+				Tracker: &ioprogress.ProgressTracker{
+					Handler: func(bytesReceived int64, speed int64) {
+						if isStdout(targetPath) {
+							return
+						}
+
+						progress.UpdateProgress(ioprogress.ProgressData{
+							Text: fmt.Sprintf("%s (%s/s)",
+								units.GetByteSizeString(bytesReceived, 2),
+								units.GetByteSizeString(speed, 2)),
+						})
+					},
+				},
+			}
+
+			if targetIsLink {
+				err = os.Symlink(linkName, targetPath)
+				if err != nil {
+					progress.Done("")
+					return err
+				}
+			} else {
+				src, err := sftpConn.Open(normalizedPath)
+				if err != nil {
+					return err
+				}
+
+				defer func() { _ = src.Close() }()
+
+				_, err = util.SafeCopy(writer, src)
+				if err != nil {
 					progress.Done("")
 					return err
 				}
 			}
-		}
 
-		progress.Done("")
+			progress.Done("")
+			return nil
+		}()
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil
+}
+
+func (c *cmdFilePull) run(cmd *cobra.Command, args []string) error {
+	// Do NOT blindly copy the following parsing line; it performs right-to-left parsing, which in
+	// most cases is NOT what you want.
+	parsed, err := cmdFilePullUsage.Parse(c.global.conf, cmd, args, true)
+	if err != nil {
+		return err
+	}
+
+	return c.pull(parsed[0].List, parsed[1].String)
 }
 
 // Push.
 type cmdFilePush struct {
 	global *cmdGlobal
 	file   *cmdFile
+	pusher *pushable
 
 	edit         bool
 	noModeChange bool
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdFilePush) Command() *cobra.Command {
+var cmdFilePushUsage = u.Usage{u.Path.List(1), u.MakePath(u.Instance, u.Target(u.Path)).Remote()}
+
+func (c *cmdFilePush) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("push", u.Path.List(1), u.MakePath(u.Instance, u.Target(u.Path)).Remote())
+	cmd.Use = cli.U("push", cmdFilePushUsage...)
 	cmd.Short = i18n.G("Push files into instances")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
-		`Push files into instances`))
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(`Push files into instances`))
 	cmd.Example = cli.FormatSection("", i18n.G(
 		`incus file push /etc/hosts foo/etc/hosts
    To push /etc/hosts into the instance "foo".
@@ -705,13 +671,16 @@ func (c *cmdFilePush) Command() *cobra.Command {
 echo "Hello world" | incus file push - foo/root/test
    To read "Hello world" from standard input and write it into /root/test in instance "foo".`))
 
-	cmd.Flags().BoolVarP(&c.file.flagRecursive, "recursive", "r", false, i18n.G("Recursively transfer files"))
-	cmd.Flags().BoolVarP(&c.file.flagMkdir, "create-dirs", "p", false, i18n.G("Create any directories necessary"))
-	cmd.Flags().IntVar(&c.file.flagUID, "uid", -1, i18n.G("Set the file's uid on push")+"``")
-	cmd.Flags().IntVar(&c.file.flagGID, "gid", -1, i18n.G("Set the file's gid on push")+"``")
-	cmd.Flags().StringVar(&c.file.flagMode, "mode", "", i18n.G("Set the file's perms on push")+"``")
+	cli.AddBoolFlag(cmd.Flags(), &c.file.flagMkdir, "create-dirs|p", i18n.G("Create any directories necessary"))
+	cli.AddIntFlag(cmd.Flags(), &c.file.flagUID, "uid", -1, i18n.G("Set the files' UIDs on push (in recursive mode, only sets the target directory's UID if it doesn't exist and -p is used)"))
+	cli.AddIntFlag(cmd.Flags(), &c.file.flagGID, "gid", -1, i18n.G("Set the files' GIDs on push (in recursive mode, only sets the target directory's GID if it doesn't exist and -p is used)"))
+	cli.AddStringFlag(cmd.Flags(), &c.file.flagMode, "mode", "", "", i18n.G("Set the file's perms on push (in recursive mode, sets the target directory's permissions if it doesn't exist)"))
+	cli.AddBoolFlag(cmd.Flags(), &c.pusher.flagRecursive, "recursive|r", i18n.G("Recursively transfer files"))
+	cli.AddBoolFlag(cmd.Flags(), &c.pusher.flagNoDereference, "no-dereference|P", i18n.G("Never follow symbolic links in source path"))
+	cli.AddBoolFlag(cmd.Flags(), &c.pusher.flagFollow, "follow|H", i18n.G("Follow command-line symbolic links in source path"))
+	cli.AddBoolFlag(cmd.Flags(), &c.pusher.flagDereference, "dereference|L", i18n.G("Always follow symbolic links in source path"))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -724,57 +693,41 @@ echo "Hello world" | incus file push - foo/root/test
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdFilePush) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 2, -1)
-	if exit {
-		return err
-	}
+// push runs the post-parsing command logic.
+func (c *cmdFilePush) push(srcFiles []string, parsedTarget *u.Parsed) error {
+	d := parsedTarget.RemoteServer
+	instanceName := parsedTarget.RemoteObject.List[0].String
+	target, targetIsDir := normalizePath(parsedTarget.RemoteObject.List[1].String)
+	targetExists := false
 
-	// Parse the destination
-	target := args[len(args)-1]
-	pathSpec := strings.SplitN(target, "/", 2)
-
-	if len(pathSpec) != 2 {
-		return fmt.Errorf(i18n.G("Invalid target %s"), target)
-	}
-
-	targetIsDir := strings.HasSuffix(target, "/")
-	// re-add leading / that got stripped by the SplitN
-	targetPath := "/" + pathSpec[1]
-	// clean various /./, /../, /////, etc. that users add (#2557)
-	targetPath = filepath.Clean(targetPath)
-
-	// normalization may reveal that path is still a dir, e.g. /.
-	if strings.HasSuffix(targetPath, "/") {
-		targetIsDir = true
-	}
-
-	// Parse remote
-	resources, err := c.global.parseServers(pathSpec[0])
+	err := c.pusher.preCheck()
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
 	// Connect to SFTP.
-	sftpConn, err := resource.server.GetInstanceFileSFTP(resource.name)
+	sftpConn, err := d.GetInstanceFileSFTP(instanceName)
 	if err != nil {
 		return err
 	}
 
 	defer func() { _ = sftpConn.Close() }()
 
-	// Make a list of paths to transfer
-	sourcefilenames := []string{}
-	for _, fname := range args[:len(args)-1] {
-		sourcefilenames = append(sourcefilenames, filepath.Clean(fname))
+	targetInfo, err := sftpConn.Stat(target)
+	if err == nil {
+		targetExists = true
+		if targetInfo.IsDir() {
+			targetIsDir = true
+		} else if len(srcFiles) > 1 || targetIsDir {
+			// Let’s be extra careful and check that explicit requests for directories actually point to
+			// directories.
+			return fmt.Errorf(i18n.G("%s is not a directory"), target)
+		}
+	} else if len(srcFiles) > 1 && !c.file.flagMkdir {
+		return errors.New(i18n.G("Missing target directory"))
 	}
 
-	// Determine the target mode
-	mode := os.FileMode(DirMode)
+	var mode os.FileMode
 	if c.file.flagMode != "" {
 		if len(c.file.flagMode) == 3 {
 			c.file.flagMode = "0" + c.file.flagMode
@@ -788,185 +741,163 @@ func (c *cmdFilePush) Run(cmd *cobra.Command, args []string) error {
 		mode = os.FileMode(m)
 	}
 
-	// Recursive calls
-	if c.file.flagRecursive {
-		// Quick checks.
-		if c.file.flagUID != -1 || c.file.flagGID != -1 || c.file.flagMode != "" {
-			return errors.New(i18n.G("Can't supply uid/gid/mode in recursive mode"))
-		}
-
-		// Create needed paths if requested
-		if c.file.flagMkdir {
-			f, err := os.Open(sourcefilenames[0])
-			if err != nil {
-				return err
-			}
-
-			finfo, err := f.Stat()
-			_ = f.Close()
-			if err != nil {
-				return err
-			}
-
-			mode, uid, gid := internalIO.GetOwnerMode(finfo)
-
-			err = sftpRecursiveMkdir(sftpConn, targetPath, &mode, int64(uid), int64(gid))
-			if err != nil {
-				return err
-			}
-		}
-
-		// Transfer the files
-		for _, fname := range sourcefilenames {
-			err := sftpRecursivePushFile(sftpConn, fname, targetPath, c.global.flagQuiet)
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	// Determine the target uid
-	uid := max(c.file.flagUID, 0)
-
-	// Determine the target gid
-	gid := max(c.file.flagGID, 0)
-
-	if (len(sourcefilenames) > 1) && !targetIsDir {
-		return errors.New(i18n.G("Missing target directory"))
-	}
-
-	// Make sure all of the files are accessible by us before trying to push any of them
-	var files []*os.File
-	for _, f := range sourcefilenames {
-		var file *os.File
-		if f == "-" {
-			file = os.Stdin
-		} else {
-			file, err = os.Open(f)
-			if err != nil {
-				return fmt.Errorf(i18n.G("Failed to open source file %q: %v"), f, err)
-			}
-		}
-
-		defer func() { _ = file.Close() }() // nolint:revive
-		files = append(files, file)
-	}
+	var errs []error
+	canProcessStdin := len(srcFiles) == 1
 
 	// Push the files
-	for _, f := range files {
-		fpath := targetPath
-		if targetIsDir {
-			fpath = filepath.Join(fpath, filepath.Base(f.Name()))
-		}
-
-		// Create needed paths if requested
-		if c.file.flagMkdir {
-			finfo, err := f.Stat()
-			if err != nil {
-				return err
-			}
-
-			if c.file.flagUID == -1 || c.file.flagGID == -1 {
-				_, dUID, dGID := internalIO.GetOwnerMode(finfo)
-
-				if c.file.flagUID == -1 {
-					uid = dUID
+	for _, path := range srcFiles {
+		err := func() error {
+			var f *os.File
+			var linkTarget string
+			var size int64
+			m := mode
+			uid := max(c.file.flagUID, 0)
+			gid := max(c.file.flagGID, 0)
+			if isStdin(path) {
+				if !canProcessStdin {
+					return errors.New(i18n.G("stdin can only be used once, with no other source arguments"))
 				}
 
-				if c.file.flagGID == -1 {
-					gid = dGID
+				if targetIsDir {
+					return errors.New(i18n.G("A target file name must be specified when pushing from stdin; the target is a directory"))
 				}
-			}
 
-			err = sftpRecursiveMkdir(sftpConn, filepath.Dir(fpath), nil, int64(uid), int64(gid))
-			if err != nil {
-				return err
-			}
-		}
-
-		// Transfer the files.
-		args := incus.InstanceFileArgs{
-			UID:  -1,
-			GID:  -1,
-			Mode: -1,
-		}
-
-		// Check if the path already exists.
-		_, err := sftpConn.Stat(fpath)
-		fileExists := err == nil
-
-		if !c.noModeChange {
-			if !fileExists && (c.file.flagMode == "" || c.file.flagUID == -1 || c.file.flagGID == -1) {
-				finfo, err := f.Stat()
+				canProcessStdin = false
+				f = os.Stdin
+			} else {
+				srcInfo, wPath, err := c.pusher.statFile(path)
 				if err != nil {
 					return err
 				}
 
-				fMode, fUID, fGID := internalIO.GetOwnerMode(finfo)
-
-				if c.file.flagMode == "" {
-					mode = fMode
+				// Recursively copy directories.
+				if srcInfo.IsDir() {
+					return sftpRecursivePushFile(sftpConn, wPath, path, target, c.global.flagQuiet, c.pusher.flagDereference, len(srcFiles) > 1 || targetExists)
 				}
 
-				if c.file.flagUID == -1 {
-					uid = fUID
+				if srcInfo.Mode()&os.ModeSymlink != 0 {
+					linkTarget, err = os.Readlink(path)
+					if err != nil {
+						return err
+					}
+				} else {
+					f, err = os.Open(path)
+					if err != nil {
+						return fmt.Errorf(i18n.G("Failed to open source file %q: %v"), f, err)
+					}
+
+					size = srcInfo.Size()
+					defer func() { _ = f.Close() }()
 				}
 
-				if c.file.flagGID == -1 {
-					gid = fGID
+				if c.file.flagUID == -1 || c.file.flagGID == -1 {
+					dMode, dUID, dGID := internalIO.GetOwnerMode(srcInfo)
+
+					if c.file.flagMode == "" {
+						m = dMode
+					}
+
+					if c.file.flagUID == -1 {
+						uid = dUID
+					}
+
+					if c.file.flagGID == -1 {
+						gid = dGID
+					}
 				}
 			}
 
-			if !fileExists || c.file.flagUID != -1 {
-				args.UID = int64(uid)
+			// Determine the target path.
+			var targetPath string
+			if targetIsDir {
+				targetPath = filepath.Join(target, filepath.Base(path))
+			} else {
+				targetPath = target
 			}
 
-			if !fileExists || c.file.flagGID != -1 {
-				args.GID = int64(gid)
+			// Create needed paths if requested
+			if c.file.flagMkdir {
+				mode := os.FileMode(DirMode)
+				err = sftpRecursiveMkdir(sftpConn, filepath.Dir(targetPath), &mode, int64(uid), int64(gid))
+				if err != nil {
+					return err
+				}
 			}
 
-			if !fileExists || c.file.flagMode != "" {
-				args.Mode = int(mode.Perm())
+			// Transfer the files.
+			args := incus.InstanceFileArgs{
+				UID:  -1,
+				GID:  -1,
+				Mode: -1,
 			}
-		}
 
-		args.Type = "file"
+			// Check if the path already exists.
+			_, err := sftpConn.Stat(targetPath)
+			fileExists := err == nil
 
-		fstat, err := f.Stat()
-		if err != nil {
-			return err
-		}
+			if !c.noModeChange {
+				if !fileExists || c.file.flagUID != -1 {
+					args.UID = int64(uid)
+				}
 
-		progress := cli.ProgressRenderer{
-			Format: fmt.Sprintf(i18n.G("Pushing %s to %s: %%s"), f.Name(), fpath),
-			Quiet:  c.global.flagQuiet,
-		}
+				if !fileExists || c.file.flagGID != -1 {
+					args.GID = int64(gid)
+				}
 
-		args.Content = internalIO.NewReadSeeker(&ioprogress.ProgressReader{
-			ReadCloser: f,
-			Tracker: &ioprogress.ProgressTracker{
-				Length: fstat.Size(),
-				Handler: func(percent int64, speed int64) {
-					progress.UpdateProgress(ioprogress.ProgressData{
-						Text: fmt.Sprintf("%d%% (%s/s)", percent, units.GetByteSizeString(speed, 2)),
-					})
-				},
-			},
-		}, f)
+				if !fileExists || c.file.flagMode != "" {
+					args.Mode = int(m.Perm())
+				}
+			}
 
-		logger.Infof("Pushing %s to %s (%s)", f.Name(), fpath, args.Type)
-		err = sftpCreateFile(sftpConn, fpath, args, true)
-		if err != nil {
+			progress := cli.ProgressRenderer{
+				Format: fmt.Sprintf(i18n.G("Pushing %s to %s: %%s"), path, targetPath),
+				Quiet:  c.global.flagQuiet,
+			}
+
+			if f == nil {
+				args.Type = "symlink"
+				args.Content = strings.NewReader(linkTarget)
+			} else {
+				args.Type = "file"
+				args.Content = internalIO.NewReadSeeker(&ioprogress.ProgressReader{
+					ReadCloser: f,
+					Tracker: &ioprogress.ProgressTracker{
+						Length: size,
+						Handler: func(percent int64, speed int64) {
+							progress.UpdateProgress(ioprogress.ProgressData{
+								Text: fmt.Sprintf("%d%% (%s/s)", percent, units.GetByteSizeString(speed, 2)),
+							})
+						},
+					},
+				}, f)
+			}
+
+			logger.Infof("Pushing %s to %s (%s)", path, targetPath, args.Type)
+			err = sftpCreateFile(sftpConn, targetPath, args, true)
 			progress.Done("")
 			return err
+		}()
+		if err != nil {
+			errs = append(errs, err)
 		}
+	}
 
-		progress.Done("")
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil
+}
+
+func (c *cmdFilePush) run(cmd *cobra.Command, args []string) error {
+	// Do NOT blindly copy the following parsing line; it performs right-to-left parsing, which in
+	// most cases is NOT what you want.
+	parsed, err := cmdFilePushUsage.Parse(c.global.conf, cmd, args, true)
+	if err != nil {
+		return err
+	}
+
+	return c.push(parsed[0].StringList, parsed[1])
 }
 
 // Mount.
@@ -979,12 +910,13 @@ type cmdFileMount struct {
 	flagAuthUser string
 }
 
-// Command returns a cobra.Command for use with (*cobra.Command).AddCommand.
-func (c *cmdFileMount) Command() *cobra.Command {
+var cmdFileMountUsage = u.Usage{u.MakePath(u.Instance, u.Path.Optional()).Remote(), u.Target(u.Path).Optional()}
+
+func (c *cmdFileMount) command() *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Use = cli.U("mount", u.MakePath(u.Instance, u.Path.Optional()).Remote(), u.Target(u.Path).Optional())
+	cmd.Use = cli.U("mount", cmdFileMountUsage...)
 	cmd.Short = i18n.G("Mount files from instances")
-	cmd.Long = cli.FormatSection(i18n.G("Description"), i18n.G(
+	cmd.Long = cli.FormatSection(color.DescriptionPrefix, i18n.G(
 		`Mount files from instances.
 If no target path is provided, start an SSH SFTP listener instead.`))
 	cmd.Example = cli.FormatSection("", i18n.G(
@@ -994,11 +926,11 @@ If no target path is provided, start an SSH SFTP listener instead.`))
 incus file mount foo
    To start an SSH SFTP listener for the root filesystem of instance foo.`))
 
-	cmd.Flags().StringVar(&c.flagListen, "listen", "", i18n.G("Setup SSH SFTP listener on address:port instead of mounting"))
-	cmd.Flags().BoolVar(&c.flagAuthNone, "no-auth", false, i18n.G("Disable authentication when using SSH SFTP listener"))
-	cmd.Flags().StringVar(&c.flagAuthUser, "auth-user", "", i18n.G("Set authentication user when using SSH SFTP listener"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagListen, "listen", "", "", i18n.G("Setup SSH SFTP listener on address:port instead of mounting"))
+	cli.AddBoolFlag(cmd.Flags(), &c.flagAuthNone, "no-auth", i18n.G("Disable authentication when using SSH SFTP listener"))
+	cli.AddStringFlag(cmd.Flags(), &c.flagAuthUser, "auth-user", "", "", i18n.G("Set authentication user when using SSH SFTP listener"))
 
-	cmd.RunE = c.Run
+	cmd.RunE = c.run
 
 	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -1015,27 +947,21 @@ incus file mount foo
 	return cmd
 }
 
-// Run runs the actual command logic.
-func (c *cmdFileMount) Run(cmd *cobra.Command, args []string) error {
-	// Quick checks.
-	exit, err := c.global.checkArgs(cmd, args, 1, 2)
-	if exit {
-		return err
-	}
-
-	// Parse remote.
-	resources, err := c.global.parseServers(args[0])
+func (c *cmdFileMount) run(cmd *cobra.Command, args []string) error {
+	parsed, err := cmdFileMountUsage.Parse(c.global.conf, cmd, args)
 	if err != nil {
 		return err
 	}
 
-	resource := resources[0]
-
-	var targetPath string
+	d := parsed[0].RemoteServer
+	instanceName := parsed[0].RemoteObject.List[0].String
+	hasInstancePath := !parsed[0].RemoteObject.List[1].Skipped
+	instancePath := parsed[0].RemoteObject.List[1].String
+	hasTarget := !parsed[1].Skipped
+	targetPath := filepath.Clean(parsed[1].String)
 
 	// Determine the target if specified.
-	if len(args) >= 2 {
-		targetPath = filepath.Clean(args[len(args)-1])
+	if hasTarget {
 		sb, err := os.Stat(targetPath)
 		if err != nil {
 			return err
@@ -1047,48 +973,43 @@ func (c *cmdFileMount) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check which mode we should operate in. If target path is provided we use sshfs mode.
-	if targetPath != "" && c.flagListen != "" {
+	if hasTarget && c.flagListen != "" {
 		return errors.New(i18n.G("Target path and --listen flag cannot be used together"))
 	}
 
-	instSpec := strings.SplitN(resource.name, "/", 2)
-
 	// Check instance path is provided in sshfs mode.
-	if len(instSpec) < 2 && targetPath != "" {
-		return fmt.Errorf(i18n.G("Invalid instance path: %q"), resource.name)
+	if !hasInstancePath && hasTarget {
+		return fmt.Errorf(i18n.G("An instance path is required for %s"), formatRemote(c.global.conf, parsed[0]))
 	}
 
 	// Check instance path isn't provided in listener mode.
-	if len(instSpec) > 1 && targetPath == "" {
+	if hasInstancePath && !hasTarget {
 		return errors.New(i18n.G("Instance path cannot be used in SSH SFTP listener mode"))
 	}
 
-	instName := instSpec[0]
-
 	// Look for sshfs command if no SSH SFTP listener mode specified and a target mount path was specified.
-	if c.flagListen == "" && targetPath != "" {
+	if c.flagListen == "" && hasTarget {
 		// Setup sourcePath with leading / to ensure we reference the instance path from / location.
-		instPath := instSpec[1]
-		if len(instPath) == 0 || instPath[0] != '/' {
-			instPath = "/" + instPath
+		if len(instancePath) == 0 || instancePath[0] != '/' {
+			instancePath = "/" + instancePath
 		}
 
 		// Connect to SFTP.
-		sftpConn, err := resource.server.GetInstanceFileSFTPConn(instName)
+		sftpConn, err := d.GetInstanceFileSFTPConn(instanceName)
 		if err != nil {
 			return fmt.Errorf(i18n.G("Failed connecting to instance SFTP: %w"), err)
 		}
 
 		defer func() { _ = sftpConn.Close() }()
 
-		return sshfsMount(cmd.Context(), sftpConn, instName, instPath, targetPath)
+		return sshfsMount(cmd.Context(), sftpConn, instanceName, instancePath, targetPath)
 	}
 
 	// Check the instance exists before starting the SFTP server.
-	_, _, err = resource.server.GetInstance(instName)
+	_, _, err = d.GetInstance(instanceName)
 	if err != nil {
 		return err
 	}
 
-	return sshSFTPServer(cmd.Context(), func() (net.Conn, error) { return resource.server.GetInstanceFileSFTPConn(instName) }, c.flagAuthNone, c.flagAuthUser, c.flagListen)
+	return sshSFTPServer(cmd.Context(), func() (net.Conn, error) { return d.GetInstanceFileSFTPConn(instanceName) }, c.flagAuthNone, c.flagAuthUser, c.flagListen)
 }

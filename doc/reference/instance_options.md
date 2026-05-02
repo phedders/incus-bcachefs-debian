@@ -14,6 +14,7 @@ The following options are available:
 - {ref}`instance-options-limits`
 - {ref}`instance-options-migration`
 - {ref}`instance-options-nvidia`
+- {ref}`instance-options-oci`
 - {ref}`instance-options-raw`
 - {ref}`instance-options-security`
 - {ref}`instance-options-snapshots`
@@ -196,7 +197,7 @@ When Incus intercepts a `hugetlbfs` `mount` syscall, it mounts the `hugetlbfs` f
 This makes it possible to use huge pages from unprivileged containers.
 However, it is recommended to limit the number of huge pages available to the container through `limits.hugepages.[size]` to stop the container from being able to exhaust the huge pages available to the host.
 
-Limiting huge pages is done through the `hugetlb` cgroup controller, which means that the host system must expose the `hugetlb` controller in the legacy or unified cgroup hierarchy for these limits to apply.
+Limiting huge pages is done through the `hugetlb` cgroup controller, which means that the host system must expose the `hugetlb` controller for these limits to apply.
 
 (instance-options-limits-kernel)=
 ### Kernel resource limits
@@ -248,6 +249,17 @@ The following instance options specify the NVIDIA and CUDA configuration of the 
 ```{include} ../config_options.txt
     :start-after: <!-- config group instance-nvidia start -->
     :end-before: <!-- config group instance-nvidia end -->
+```
+
+(instance-options-oci)=
+## OCI configuration
+
+The following instance options specify the OCI configuration of the instance:
+
+% Include content from [../config_options.txt](../config_options.txt)
+```{include} ../config_options.txt
+    :start-after: <!-- config group instance-oci start -->
+    :end-before: <!-- config group instance-oci end -->
 ```
 
 (instance-options-raw)=

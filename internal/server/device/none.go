@@ -1,8 +1,8 @@
 package device
 
 import (
-	deviceConfig "github.com/lxc/incus/v6/internal/server/device/config"
-	"github.com/lxc/incus/v6/internal/server/instance"
+	deviceConfig "github.com/lxc/incus/v7/internal/server/device/config"
+	"github.com/lxc/incus/v7/internal/server/instance"
 )
 
 type none struct {
@@ -21,7 +21,7 @@ func (d *none) CanHotPlug() bool {
 
 // validateConfig checks the supplied config for correctness.
 // validateConfig checks the supplied config for correctness.
-func (d *none) validateConfig(instConf instance.ConfigReader) error {
+func (d *none) validateConfig(instConf instance.ConfigReader, partialValidation bool) error {
 	rules := map[string]func(string) error{} // No fields allowed.
 	err := d.config.Validate(rules)
 	if err != nil {
