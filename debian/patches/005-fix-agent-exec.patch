@@ -1,0 +1,13 @@
+From: Mathias Gibbens <gibmat@debian.org>
+Description: Building with GO111MODULE=off defaults to pre-1.22 behavior in net/http. Force modern behavior, otherwise attempting to exec into a VM results in a websocket bad handshake error.
+Forwarded: https://github.com/lxc/incus/issues/2513
+diff --git a/cmd/incus-agent/main.go b/cmd/incus-agent/main.go
+index 9e018f9ba..387f9683c 100644
+--- a/cmd/incus-agent/main.go
++++ b/cmd/incus-agent/main.go
+@@ -1,3 +1,5 @@
++//go:debug httpmuxgo121=0
++
+ package main
+ 
+ import (

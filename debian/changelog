@@ -1,3 +1,14 @@
+incus (6.0.6-3) unstable; urgency=high
+
+  * Cherry-pick fixes for the following security issues:
+    - CVE-2026-34178 / GHSA-q96j-3fmm-7fv4
+    - CVE-2026-34179 / GHSA-c3h3-89qf-jqm5
+  * Update Standards-Version to 4.7.4 in d/control (no changes needed)
+  * Remove "systemd-service-file-missing-hardening-features" lintian overrides
+  * Update d/watch to v5
+
+ -- Mathias Gibbens <gibmat@debian.org>  Tue, 14 Apr 2026 15:50:47 +0000
+
 incus (6.23.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release:
@@ -286,6 +297,7 @@ incus (6.0.3-1) unstable; urgency=medium
 incus (6.0.2-1) unstable; urgency=medium
 
   * New upstream release
+    - Includes fix for CVE-2026-34177 / GHSA-fm2x-c5qw-4h6f
     - Rebase d/p/002-adjust-import-paths.patch
   * d/control:
     - Bump minimum required version of golang-any to 1.22 per go.mod
