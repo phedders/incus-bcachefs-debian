@@ -1,3 +1,31 @@
+incus (7.0.0-1) UNRELEASED; urgency=medium
+
+  * New upstream LTS 7.0 release:
+    - Includes fixes for the following security issues (Closes: #1135644):
+      * CVE-2026-35527 / GHSA-8gw4-p4wq-4hcv
+      * CVE-2026-40195 / GHSA-gc7j-g665-rxr9
+      * CVE-2026-40197 / GHSA-r7w7-mmxr-47r9
+      * CVE-2026-40243 / GHSA-c839-4qxr-j4x3
+      * CVE-2026-40251 / GHSA-4m88-wxj4-9qj6
+      * CVE-2026-41647 / GHSA-fwj8-62r8-8p8m
+      * CVE-2026-41648 / GHSA-67wx-r9xr-x75x
+      * CVE-2026-41684 / GHSA-x5r6-jr56-89pv
+      * CVE-2026-41685 / GHSA-98vh-x9cx-9cfp
+    - Rebase/update/drop patches as needed
+    - Add patch to skip flaky tests that occasionally fail on slower
+      architectures
+    - Cherry-pick some post-release fixes
+  * d/control:
+    - Update package descriptions
+    - Update Build-Depends and Depends
+    - Update Breaks for distrobuilder
+    - No longer Suggest minio-client
+    - Update minimum required versions of dependencies
+  * Add an entry for the 7.0 release in d/NEWS
+  * Update d/README.Debian and d/README.source
+
+ -- Mathias Gibbens <gibmat@debian.org>  Tue, 05 May 2026 22:51:05 +0000
+
 incus (6.0.6-3) unstable; urgency=high
 
   * Cherry-pick fixes for the following security issues:
