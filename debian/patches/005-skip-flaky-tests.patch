@@ -1,0 +1,38 @@
+From: Mathias Gibbens <gibmat@debian.org>
+Description: Skip flaky tests that occasionally fail on slower architectures
+Forwarded: https://github.com/lxc/incus/issues/3252
+diff --git a/internal/server/endpoints/dev_incus_test.go b/internal/server/endpoints/dev_incus_test.go
+index 869bfcddd..1b070e17b 100644
+--- a/internal/server/endpoints/dev_incus_test.go
++++ b/internal/server/endpoints/dev_incus_test.go
+@@ -12,6 +12,8 @@ import (
+ // If no socket-based activation is detected, a new local unix socket will be
+ // created.
+ func TestEndpoints_DevIncusCreateUnixSocket(t *testing.T) {
++	t.Skip("Skipping flaky test")
++
+ 	endpoints, config, cleanup := newEndpoints(t)
+ 	defer cleanup()
+ 
+diff --git a/internal/server/endpoints/local_test.go b/internal/server/endpoints/local_test.go
+index 658511984..026c339d9 100644
+--- a/internal/server/endpoints/local_test.go
++++ b/internal/server/endpoints/local_test.go
+@@ -14,6 +14,8 @@ import (
+ // If no socket-based activation is detected, a new local unix socket will be
+ // created.
+ func TestEndpoints_LocalCreateUnixSocket(t *testing.T) {
++	t.Skip("Skipping flaky test")
++
+ 	endpoints, config, cleanup := newEndpoints(t)
+ 	defer cleanup()
+ 
+@@ -30,6 +32,8 @@ func TestEndpoints_LocalCreateUnixSocket(t *testing.T) {
+ // If socket-based activation is detected, it will be used for binding the API
+ // Endpoints' unix socket.
+ func TestEndpoints_LocalSocketBasedActivation(t *testing.T) {
++	t.Skip("Skipping flaky test")
++
+ 	listener := newUnixListener(t)
+ 	defer func() { _ = listener.Close() }() // This will also remove the underlying file
+ 
