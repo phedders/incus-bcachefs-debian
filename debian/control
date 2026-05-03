@@ -234,7 +234,7 @@ Recommends: apparmor (>= 4.1.0~),
 # First line of suggested packages will enable additional Incus storage backends
 # Second line lists additional optional tools
 Suggests: btrfs-progs, ceph-common [!armel !armhf !i386], lvm2, zfsutils-linux,
-          incus-extra, lego, minio-client
+          incus-extra, lego
 Built-Using: ${misc:Built-Using}
 Static-Built-Using: ${misc:Static-Built-Using}
 Breaks: ${runit:Breaks}
