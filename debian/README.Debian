@@ -129,14 +129,21 @@ To enable this capability, on the host system ensure that the "incus" package is
 installed and then restart the Incus service. You will now be able to create virtual
 machine instances by passing the `--vm` flag in your creation command.
 
-RHEL8/9 (and derivatives)
--------------------------
+Operating systems supported by incus-agent
+------------------------------------------
 
-RHEL8/9 do not ship the 9p kernel module, which is used to dynamically mount
+incus-agent is available for FreeBSD, Linux, MacOS, and Windows operating systems. When
+creating a virtual machine for one of these OSes, information about process load, network
+configuration, and resource utilization will be automatically reported, and you can use
+the `incus exec` and `incus file` commands to directly interact with the virtual machine.
+
+RHEL (and derivatives)
+----------------------
+
+RHEL does not ship the 9p kernel module, which is used to dynamically mount
 instance-specific agent configuration and the incus-agent binary into VMs. To work
-around this, Incus 0.5.1 added a new agent drive, providing those files through
-what looks like a CD-ROM drive rather than being retrieved over a networked
-filesystem.
+around this, Incus added a new agent drive, providing those files through what looks
+like a CD-ROM drive rather than being retrieved over a networked filesystem.
 
 For example, to run CentOS 9-Stream, one now needs to do:
 
