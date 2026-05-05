@@ -1,3 +1,17 @@
+incus (7.0.0-1) UNRELEASED; urgency=medium
+
+    Incus 7 adds support for several new features, including creating
+    application (Docker) containers from an OCI registry. For complete
+    details, please refer to the release announcement at
+    https://discuss.linuxcontainers.org/t/incus-7-0-lts-has-been-released/26641
+
+    Support for some legacy features have also been removed, including:
+
+    * CGroupV1
+    * xtables (iptables/ip6tables/ebtables)
+
+ -- Mathias Gibbens <gibmat@debian.org>  Tue, 05 May 2026 22:51:05 +0000
+
 incus (6.0.3-3) unstable; urgency=medium
 
     The organization of binary packages for Incus has been adjusted to more
