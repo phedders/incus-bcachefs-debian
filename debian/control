@@ -163,10 +163,16 @@ Depends: golang-github-adhocore-gronx-dev,
          golang-starlark-dev (>= 0.0~git20240725.42030a7),
          ${misc:Depends}
 Breaks: distrobuilder (<< 3.2-3)
-Description: Powerful system container and virtual machine manager - library
- Incus is a next generation system container and virtual machine manager.
- It offers a unified user experience around full Linux systems running
- inside containers or virtual machines.
+Description: Modern container and virtual machine manager - library
+ Incus is a modern system container, application container and virtual
+ machine manager. It provides a cloud-like environment, creating instances
+ from premade images or any Docker (OCI) registry and offers a wide variety
+ of features, including the ability to seamlessly cluster servers together.
+ .
+ It supports multiple different local or remote storage options, traditional
+ or fully distributed networking and offers most common cloud features,
+ including a full REST API and integrations with common tooling like Ansible,
+ Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
  .
  This package contains the Incus source code for use in building other
  Debian packages -- normal users should not directly use this package in
@@ -188,17 +194,20 @@ Depends: ${misc:Depends},
 Suggests: gdisk
 Built-Using: ${misc:Built-Using}
 Static-Built-Using: ${misc:Static-Built-Using}
-Description: Powerful system container and virtual machine manager - daemon
- Incus is a next generation system container and virtual machine manager.
- It offers a unified user experience around full Linux systems running
- inside containers or virtual machines.
+Description: Modern container and virtual machine manager - daemon
+ Incus is a modern system container, application container and virtual
+ machine manager. It provides a cloud-like environment, creating instances
+ from premade images or any Docker (OCI) registry and offers a wide variety
+ of features, including the ability to seamlessly cluster servers together.
  .
- It's image based with pre-made images available for a wide number of
- Linux distributions and is built around a very powerful, yet pretty
- simple, REST API.
+ It supports multiple different local or remote storage options, traditional
+ or fully distributed networking and offers most common cloud features,
+ including a full REST API and integrations with common tooling like Ansible,
+ Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
  .
- This metapackage will install everything needed to run containers and VMs.
- Only amd64, arm64, ppc64el, and s390x are supported as VM host architectures.
+ This metapackage will install everything needed to run system containers,
+ application (Docker/OCI) containers, and VMs. Only amd64, arm64, ppc64el,
+ and s390x are supported as VM host architectures.
 
 Package: incus-base
 Architecture: linux-any
@@ -230,17 +239,19 @@ Breaks: ${runit:Breaks}
 # The following line is a hack for an academic /usr-move problem (#1099444);
 # Breaks+Replaces is the more Policy-compliant approach.
 Conflicts: incus (<< 6.0.3-3~)
-Description: Powerful system container and virtual machine manager - daemon (container-only)
- Incus is a next generation system container and virtual machine manager.
- It offers a unified user experience around full Linux systems running
- inside containers or virtual machines.
+Description: Modern container and virtual machine manager - daemon (container-only)
+ Incus is a modern system container, application container and virtual
+ machine manager. It provides a cloud-like environment, creating instances
+ from premade images or any Docker (OCI) registry and offers a wide variety
+ of features, including the ability to seamlessly cluster servers together.
  .
- It's image based with pre-made images available for a wide number of
- Linux distributions and is built around a very powerful, yet pretty
- simple, REST API.
+ It supports multiple different local or remote storage options, traditional
+ or fully distributed networking and offers most common cloud features,
+ including a full REST API and integrations with common tooling like Ansible,
+ Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
  .
- This package contains only what is needed to run containers and OCI (docker)
- images.
+ This package contains only what is needed to run system containers and
+ application (Docker/OCI) containers.
 
 Package: incus-client
 # The incus binary doesn't depend on liblxc1, so it can be built for any architecture
@@ -251,13 +262,16 @@ Suggests: bash-completion,
           spice-client-gtk | virt-viewer
 Built-Using: ${misc:Built-Using}
 Static-Built-Using: ${misc:Static-Built-Using}
-Description: Powerful system container and virtual machine manager - client
- Incus is a next generation system container and virtual machine manager.
- It offers a unified user experience around full Linux systems running
- inside containers or virtual machines.
+Description: Modern container and virtual machine manager - client
+ Incus is a modern system container, application container and virtual
+ machine manager. It provides a cloud-like environment, creating instances
+ from premade images or any Docker (OCI) registry and offers a wide variety
+ of features, including the ability to seamlessly cluster servers together.
  .
- A REST API is offered by Incus to remotely manage containers over the network,
- using an image based work-flow and with support for live migration.
+ It supports multiple different local or remote storage options, traditional
+ or fully distributed networking and offers most common cloud features,
+ including a full REST API and integrations with common tooling like Ansible,
+ Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
  .
  This package contains the Incus command line client.
 
@@ -274,10 +288,16 @@ Replaces: incus-tools (<< 6.0.3-3~),
           incus-migrate (<< 6.0.3-3~)
 # lxd-tools also ships a `fuidshift` binary; we expect src:lxd to be RM'ed after the trixie release, so just use a simple Conflicts here
 Conflicts: lxd-tools
-Description: Powerful system container and virtual machine manager - extra tools
- Incus is a next generation system container and virtual machine manager.
- It offers a unified user experience around full Linux systems running
- inside containers or virtual machines.
+Description: Modern container and virtual machine manager - extra tools
+ Incus is a modern system container, application container and virtual
+ machine manager. It provides a cloud-like environment, creating instances
+ from premade images or any Docker (OCI) registry and offers a wide variety
+ of features, including the ability to seamlessly cluster servers together.
+ .
+ It supports multiple different local or remote storage options, traditional
+ or fully distributed networking and offers most common cloud features,
+ including a full REST API and integrations with common tooling like Ansible,
+ Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
  .
  This package contains extra tools provided with Incus.
   - fuidshift - A tool to map/unmap filesystem uids/gids
@@ -292,8 +312,20 @@ Architecture: linux-any
 Depends: ${misc:Depends}
 Built-Using: ${misc:Built-Using}
 Static-Built-Using: ${misc:Static-Built-Using}
-Description: Incus guest agent
- This package provides an agent to run inside Incus virtual machine guests.
+Description: Modern container and virtual machine manager - VM guest agent
+ Incus is a modern system container, application container and virtual
+ machine manager. It provides a cloud-like environment, creating instances
+ from premade images or any Docker (OCI) registry and offers a wide variety
+ of features, including the ability to seamlessly cluster servers together.
+ .
+ It supports multiple different local or remote storage options, traditional
+ or fully distributed networking and offers most common cloud features,
+ including a full REST API and integrations with common tooling like Ansible,
+ Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
+ .
+ This package provides an agent to run inside Incus virtual machines.
+ Currently supported guest operating systems include Linux, FreeBSD, MacOS,
+ and Windows.
  .
  It has to be installed on the Incus host if you want to allow agent
  injection capability when creating a virtual machine.
