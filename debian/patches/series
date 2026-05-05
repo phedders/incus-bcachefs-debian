@@ -3,3 +3,5 @@
 003-Compile-against-go-criu-v7.patch
 004-include-incusos-network-structs.patch
 005-skip-flaky-tests.patch
+006-cherry-pick-initial-fixes.patch
+007-cherry-pick-deprecated-qemu-flag.patch
