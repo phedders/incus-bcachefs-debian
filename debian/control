@@ -164,7 +164,7 @@ Depends: golang-github-adhocore-gronx-dev,
          golang-sslmate-src-go-pkcs12-dev,
          golang-starlark-dev (>= 0.0~git20240725.42030a7),
          ${misc:Depends}
-Breaks: distrobuilder (<< 3.2-3)
+Breaks: distrobuilder (<< 3.3.1-2)
 Description: Modern container and virtual machine manager - library
  Incus is a modern system container, application container and virtual
  machine manager. It provides a cloud-like environment, creating instances
