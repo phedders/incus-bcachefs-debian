@@ -1,4 +1,4 @@
-incus (7.0.0-1) UNRELEASED; urgency=medium
+incus (7.0.0-1) unstable; urgency=medium
 
     Incus 7 adds support for several new features, including creating
     application (Docker) containers from an OCI registry. For complete
@@ -10,7 +10,7 @@ incus (7.0.0-1) UNRELEASED; urgency=medium
     * CGroupV1
     * xtables (iptables/ip6tables/ebtables)
 
- -- Mathias Gibbens <gibmat@debian.org>  Tue, 05 May 2026 22:51:05 +0000
+ -- Mathias Gibbens <gibmat@debian.org>  Wed, 06 May 2026 02:35:00 +0000
 
 incus (6.0.3-3) unstable; urgency=medium
 
