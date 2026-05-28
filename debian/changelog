@@ -1,3 +1,17 @@
+incus (7.0.0-2) unstable; urgency=high
+
+  * Cherry-pick fixes for the following security issues:
+    - CVE-2026-47753 / GHSA-8g7m-96c8-8wwc
+    - CVE-2026-48753 / GHSA-ccjc-4qc3-jxqc
+    - CVE-2026-48754 / GHSA-4xg6-52mh-fpw8
+    - CVE-2026-48756 / GHSA-xhqx-mgh3-3h7q
+  * d/control:
+    - Set minimum required version of golang-github-cenkalti-backoff-dev to
+      assist with backporting
+    - Drop unneeded dependency on golang-github-go-chi-chi-dev
+
+ -- Mathias Gibbens <gibmat@debian.org>  Thu, 28 May 2026 23:43:52 +0000
+
 incus (7.0.0-1) unstable; urgency=medium
 
   * New upstream LTS 7.0 release:
