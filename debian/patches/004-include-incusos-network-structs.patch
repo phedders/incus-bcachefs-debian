@@ -323,7 +323,7 @@ index 000000000..51f7161ac
 +}
 diff --git a/incus-osd/cli/cli_applications.go b/incus-osd/cli/cli_applications.go
 new file mode 100644
-index 000000000..5caa09d23
+index 000000000..883500b7d
 --- /dev/null
 +++ b/incus-osd/cli/cli_applications.go
 @@ -0,0 +1,137 @@
@@ -466,7 +466,7 @@ index 000000000..5caa09d23
 +}
 diff --git a/incus-osd/cli/cli_debug.go b/incus-osd/cli/cli_debug.go
 new file mode 100644
-index 000000000..78ac4a153
+index 000000000..5fae67d4a
 --- /dev/null
 +++ b/incus-osd/cli/cli_debug.go
 @@ -0,0 +1,270 @@
@@ -742,7 +742,7 @@ index 000000000..78ac4a153
 +}
 diff --git a/incus-osd/cli/cli_root.go b/incus-osd/cli/cli_root.go
 new file mode 100644
-index 000000000..2fdd471a7
+index 000000000..5a6d6c311
 --- /dev/null
 +++ b/incus-osd/cli/cli_root.go
 @@ -0,0 +1,54 @@
@@ -802,7 +802,7 @@ index 000000000..2fdd471a7
 +}
 diff --git a/incus-osd/cli/cli_services.go b/incus-osd/cli/cli_services.go
 new file mode 100644
-index 000000000..05cc5dade
+index 000000000..05c24f08e
 --- /dev/null
 +++ b/incus-osd/cli/cli_services.go
 @@ -0,0 +1,47 @@
@@ -855,10 +855,10 @@ index 000000000..05cc5dade
 +}
 diff --git a/incus-osd/cli/cli_system.go b/incus-osd/cli/cli_system.go
 new file mode 100644
-index 000000000..04195fe1d
+index 000000000..c5901ab3b
 --- /dev/null
 +++ b/incus-osd/cli/cli_system.go
-@@ -0,0 +1,302 @@
+@@ -0,0 +1,307 @@
 +package cli
 +
 +import (
@@ -958,6 +958,11 @@ index 000000000..04195fe1d
 +	}
 +
 +	subCommands := []subCommand{
++		{
++			name:        "fallback-listener",
++			description: "System fallback HTTPS listener configuration",
++			isWritable:  true,
++		},
 +		{
 +			name:        "kernel",
 +			description: "System kernel configuration",
@@ -1171,10 +1176,10 @@ index 000000000..611ab0017
 +package cli
 diff --git a/incus-osd/cli/generic.go b/incus-osd/cli/generic.go
 new file mode 100644
-index 000000000..ee4383c37
+index 000000000..f9da903cb
 --- /dev/null
 +++ b/incus-osd/cli/generic.go
-@@ -0,0 +1,597 @@
+@@ -0,0 +1,609 @@
 +package cli
 +
 +import (
@@ -1443,7 +1448,8 @@ index 000000000..ee4383c37
 +	hasFileOutput bool
 +	extraArgs     []cmdGenericRunArgs
 +
-+	flagData string
++	flagData  string
++	flagForce bool
 +
 +	os *cmdAdminOS
 +}
@@ -1487,6 +1493,10 @@ index 000000000..ee4383c37
 +
 +	if c.hasData {
 +		cmd.Flags().StringVarP(&c.flagData, "data", "d", "", "Command data``")
++	}
++
++	if c.confirm != "" {
++		cmd.Flags().BoolVar(&c.flagForce, "force", false, "Skip the confirmation prompt")
 +	}
 +
 +	for i := range c.extraArgs {
@@ -1534,7 +1544,7 @@ index 000000000..ee4383c37
 +	}
 +
 +	// Ask for confirmation if needed.
-+	if c.confirm != "" {
++	if c.confirm != "" && !c.flagForce {
 +		asker := ask.NewAsker(bufio.NewReader(os.Stdin))
 +
 +		confirm, err := asker.AskBool(fmt.Sprintf("Are you sure you want to %s? (yes/no) [default=no]: ", c.confirm), "no")
@@ -1616,7 +1626,14 @@ index 000000000..ee4383c37
 +		if path == "-" {
 +			f = os.Stdout
 +		} else {
-+			f, err = os.Open(args[len(args)-1])
++			_, err := os.Stat(args[len(args)-1])
++			if err == nil {
++				return errors.New("output file '" + args[len(args)-1] + "' already exists")
++			} else if !errors.Is(err, os.ErrNotExist) {
++				return err
++			}
++
++			f, err = os.Create(args[len(args)-1])
 +			if err != nil {
 +				return err
 +			}
@@ -1804,7 +1821,7 @@ index 000000000..e12b0e7a2
 +}
 diff --git a/incus-osd/cli/utils.go b/incus-osd/cli/utils.go
 new file mode 100644
-index 000000000..6a075b05c
+index 000000000..1c12ca06a
 --- /dev/null
 +++ b/incus-osd/cli/utils.go
 @@ -0,0 +1,167 @@

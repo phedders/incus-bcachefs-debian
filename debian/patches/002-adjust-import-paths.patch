@@ -6,7 +6,7 @@ index 1a88e6d4f..7c49e55a6 100644
 --- a/cmd/incusd/daemon.go
 +++ b/cmd/incusd/daemon.go
 @@ -23,7 +23,7 @@ import (
- 	dqliteClient "github.com/cowsql/go-cowsql/client"
+ 	cowsqlClient "github.com/cowsql/go-cowsql/client"
  	"github.com/cowsql/go-cowsql/driver"
  	"github.com/gorilla/mux"
 -	liblxc "github.com/lxc/go-lxc"

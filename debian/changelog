@@ -1,3 +1,13 @@
+incus (7.1.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Drop patches applied upstream
+    - Rebase import paths patch
+    - Update IncusOS network struct and cli patch
+  * Update Build-Depends and Depends in d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 29 May 2026 14:03:27 +0000
+
 incus (7.0.0-2) unstable; urgency=high
 
   * Cherry-pick fixes for the following security issues:
