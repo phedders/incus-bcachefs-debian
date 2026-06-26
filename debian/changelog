@@ -2,14 +2,14 @@ incus (7.2.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release:
     - Includes fixes for the following security issues:
-     * CVE-2026-48749 / GHSA-2q3f-q5pq-g8wv
-     * CVE-2026-48750 / GHSA-73hr-m85f-64v9
-     * CVE-2026-48751 / GHSA-48q5-w887-33wv
-     * CVE-2026-48752 / GHSA-vxp5-584q-c479
-     * CVE-2026-48755 / GHSA-v6mj-8pf4-hhw4
-     * CVE-2026-48769 / GHSA-f6m5-xw2g-xc4x
-     * CVE-2026-55621 / GHSA-64f3-v33m-w89f
-     * CVE-2026-55622 / GHSA-c9f5-j9c3-mhrg
+      * CVE-2026-48749 / GHSA-2q3f-q5pq-g8wv
+      * CVE-2026-48750 / GHSA-73hr-m85f-64v9
+      * CVE-2026-48751 / GHSA-48q5-w887-33wv
+      * CVE-2026-48752 / GHSA-vxp5-584q-c479
+      * CVE-2026-48755 / GHSA-v6mj-8pf4-hhw4
+      * CVE-2026-48769 / GHSA-f6m5-xw2g-xc4x
+      * CVE-2026-55621 / GHSA-64f3-v33m-w89f
+      * CVE-2026-55622 / GHSA-c9f5-j9c3-mhrg
     - Drop the lxd-to-incus binary, as newer versions of LXD are no longer
       compatible with Incus
     - Add two patches to fix issues caused by Debian's use of GO111MODULE=off
