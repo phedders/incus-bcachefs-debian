@@ -2,3 +2,5 @@
 002-adjust-import-paths.patch
 003-Compile-against-go-criu-v7.patch
 004-include-incusos-network-structs.patch
+005-fix-x509keypairleaf.patch
+006-fix-net-http-mux.patch
