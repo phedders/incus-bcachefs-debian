@@ -44,7 +44,6 @@ endif
 	TZ=UTC INCUS_CONF="_build/.config/incus" _build/bin/incusd manpage man1/
 	TZ=UTC help2man _build/bin/fuidshift -n "uid/gid shifter" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/fuidshift.1
 	TZ=UTC HOME="~" help2man _build/bin/lxc-to-incus -n "Convert LXC containers to Incus" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/lxc-to-incus.1
-	TZ=UTC help2man _build/bin/lxd-to-incus -n "Convert LXD containers to Incus" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/lxd-to-incus.1
 	TZ=UTC help2man _build/bin/incus-agent -n "Incus virtual machine guest agent" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/incus-agent.1
 	TZ=UTC help2man _build/bin/incus-benchmark -n "Incus benchmark" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/incus-benchmark.1
 	TZ=UTC help2man _build/bin/incus-migrate -n "Incus physical to instance migration tool" --no-info --no-discard-stderr --version-string=$(DEB_VERSION_UPSTREAM) > man1/incus-migrate.1

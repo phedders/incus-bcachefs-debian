@@ -13,30 +13,9 @@ required for running virtual machines, you can install just the base package:
 Incus initialization
 ====================
 
-If you wish to migrate existing containers or VMs from LXD, please refer to the next
-section. Otherwise, after installing Incus you must perform an initial configuration:
+After installing Incus you must perform an initial configuration:
 
     sudo incus admin init
-
-Migrating from LXD
-==================
-
-Incus includes a tool named `lxd-to-incus`, included in the "incus-extra" package,
-which can be used to convert an existing LXD installation into an Incus one.
-
-For this to work properly, you should install Incus but not initialize it. Instead,
-make sure that both `incus info` and `lxc info` both work properly, then run
-`lxd-to-incus` to migrate your data.
-
-This process transfers the entire database and all storage from LXD to Incus,
-resulting in an identical setup after the migration.
-
-For further information, please visit https://linuxcontainers.org/incus/docs/main/howto/server_migrate_lxd/
-
-WARNING: This should be considered a destructive action from LXD's perspective.
-Afterwards the LXD daemon may not properly start, and running `lxc list` will be
-empty. It is recommend that the LXD packages be purged as part of running
-`lxd-to-incus`, or by hand immediately following the migration.
 
 Configuration
 =============

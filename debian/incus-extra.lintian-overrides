@@ -1,6 +1,3 @@
-# The only access is checking if /var/lib/dpkg/info/lxd.list exists, rather than spawning a dpkg process
-incus-extra: uses-dpkg-database-directly
-
 # Flagged spelling errors come from other golang packages
 incus-extra: spelling-error-in-binary
 
