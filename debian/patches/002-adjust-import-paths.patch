@@ -2,25 +2,25 @@ From: Mathias Gibbens <gibmat@debian.org>
 Description: Adjust import paths to reflect Debian packaging
 Forwarded: not-needed
 diff --git a/cmd/incusd/daemon.go b/cmd/incusd/daemon.go
-index 1a88e6d4f..7c49e55a6 100644
+index caae61fd4..6ca3b1b5f 100644
 --- a/cmd/incusd/daemon.go
 +++ b/cmd/incusd/daemon.go
-@@ -23,7 +23,7 @@ import (
+@@ -22,7 +22,7 @@ import (
+ 
  	cowsqlClient "github.com/cowsql/go-cowsql/client"
  	"github.com/cowsql/go-cowsql/driver"
- 	"github.com/gorilla/mux"
 -	liblxc "github.com/lxc/go-lxc"
 +	liblxc "gopkg.in/lxc/go-lxc.v2"
  	"golang.org/x/sys/unix"
  
  	internalIO "github.com/lxc/incus/v7/internal/io"
 diff --git a/cmd/incusd/instance_console.go b/cmd/incusd/instance_console.go
-index e175c9e50..794a4f1e4 100644
+index 8ccd516fa..702f0a7f3 100644
 --- a/cmd/incusd/instance_console.go
 +++ b/cmd/incusd/instance_console.go
-@@ -17,7 +17,7 @@ import (
+@@ -15,7 +15,7 @@ import (
+ 	"time"
  
- 	"github.com/gorilla/mux"
  	"github.com/gorilla/websocket"
 -	liblxc "github.com/lxc/go-lxc"
 +	liblxc "gopkg.in/lxc/go-lxc.v2"
@@ -40,6 +40,19 @@ index 5befe7a35..a3091f513 100644
  	"github.com/spf13/cobra"
  )
  
+diff --git a/cmd/incusd/main_forklxc.go b/cmd/incusd/main_forklxc.go
+index f2813b941..922d08ed7 100644
+--- a/cmd/incusd/main_forklxc.go
++++ b/cmd/incusd/main_forklxc.go
+@@ -6,7 +6,7 @@ import (
+ 	"os"
+ 	"path/filepath"
+ 
+-	liblxc "github.com/lxc/go-lxc"
++	liblxc "gopkg.in/lxc/go-lxc.v2"
+ 	"github.com/spf13/cobra"
+ 	"golang.org/x/sys/unix"
+ 
 diff --git a/cmd/incusd/main_forkmigrate.go b/cmd/incusd/main_forkmigrate.go
 index eb143e3b5..a37fe6d1a 100644
 --- a/cmd/incusd/main_forkmigrate.go
@@ -53,32 +66,19 @@ index eb143e3b5..a37fe6d1a 100644
  	"github.com/spf13/cobra"
  )
  
-diff --git a/cmd/incusd/main_forkstart.go b/cmd/incusd/main_forkstart.go
-index 37bb25042..ac00735ff 100644
---- a/cmd/incusd/main_forkstart.go
-+++ b/cmd/incusd/main_forkstart.go
-@@ -6,7 +6,7 @@ import (
- 	"os"
- 	"path/filepath"
- 
--	liblxc "github.com/lxc/go-lxc"
-+	liblxc "gopkg.in/lxc/go-lxc.v2"
- 	"github.com/spf13/cobra"
- 	"golang.org/x/sys/unix"
- 
 diff --git a/cmd/incusd/storage_volumes_snapshot.go b/cmd/incusd/storage_volumes_snapshot.go
-index c01c1919b..36fde85f1 100644
+index cffa4f0a3..2eb6daf38 100644
 --- a/cmd/incusd/storage_volumes_snapshot.go
 +++ b/cmd/incusd/storage_volumes_snapshot.go
-@@ -13,7 +13,7 @@ import (
+@@ -12,7 +12,7 @@ import (
  	"sync"
  	"time"
  
 -	"github.com/flosch/pongo2/v6"
 +	"github.com/flosch/pongo2"
- 	"github.com/gorilla/mux"
  
  	internalInstance "github.com/lxc/incus/v7/internal/instance"
+ 	"github.com/lxc/incus/v7/internal/server/auth"
 diff --git a/cmd/lxc-to-incus/main_migrate.go b/cmd/lxc-to-incus/main_migrate.go
 index 1311a7bfb..7d9326a60 100644
 --- a/cmd/lxc-to-incus/main_migrate.go
@@ -119,7 +119,7 @@ index 1d0752de5..320ea1852 100644
  
  func networkGet(container *liblxc.Container, index int, configKey string) map[string]string {
 diff --git a/internal/server/device/proxy.go b/internal/server/device/proxy.go
-index d205fb557..0d9d87634 100644
+index ae706f85f..6b6c47b1a 100644
 --- a/internal/server/device/proxy.go
 +++ b/internal/server/device/proxy.go
 @@ -13,7 +13,7 @@ import (
@@ -132,7 +132,7 @@ index d205fb557..0d9d87634 100644
  	"github.com/lxc/incus/v7/internal/linux"
  	"github.com/lxc/incus/v7/internal/server/apparmor"
 diff --git a/internal/server/instance/drivers/driver_lxc.go b/internal/server/instance/drivers/driver_lxc.go
-index 216c6093c..39a43e7e3 100644
+index 605b4f835..07e23bc61 100644
 --- a/internal/server/instance/drivers/driver_lxc.go
 +++ b/internal/server/instance/drivers/driver_lxc.go
 @@ -28,11 +28,11 @@ import (
@@ -150,10 +150,10 @@ index 216c6093c..39a43e7e3 100644
  	"github.com/pkg/sftp"
  	yaml "go.yaml.in/yaml/v4"
 diff --git a/internal/server/instance/drivers/driver_qemu.go b/internal/server/instance/drivers/driver_qemu.go
-index 8c1dca961..b2ae73f63 100644
+index 08bc0e0c1..46db54ff4 100644
 --- a/internal/server/instance/drivers/driver_qemu.go
 +++ b/internal/server/instance/drivers/driver_qemu.go
-@@ -30,7 +30,7 @@ import (
+@@ -31,7 +31,7 @@ import (
  	"time"
  	"unsafe"
  
@@ -163,7 +163,7 @@ index 8c1dca961..b2ae73f63 100644
  	"github.com/gorilla/websocket"
  	"github.com/kballard/go-shellquote"
 diff --git a/internal/server/instance/instance_interface.go b/internal/server/instance/instance_interface.go
-index dfff9b804..598070495 100644
+index 25bc8cd04..4e6df8cd2 100644
 --- a/internal/server/instance/instance_interface.go
 +++ b/internal/server/instance/instance_interface.go
 @@ -8,7 +8,7 @@ import (
@@ -176,7 +176,7 @@ index dfff9b804..598070495 100644
  	"google.golang.org/protobuf/proto"
  
 diff --git a/internal/server/instance/instance_utils.go b/internal/server/instance/instance_utils.go
-index 7bb4fccc1..110048116 100644
+index 34cac0870..ce4237fb5 100644
 --- a/internal/server/instance/instance_utils.go
 +++ b/internal/server/instance/instance_utils.go
 @@ -16,7 +16,7 @@ import (
@@ -189,7 +189,7 @@ index 7bb4fccc1..110048116 100644
  
  	incus "github.com/lxc/incus/v7/client"
 diff --git a/internal/server/network/driver_ovn.go b/internal/server/network/driver_ovn.go
-index 2aa10a7e8..aafbe1cbb 100644
+index 45087fc0f..4b7e8d470 100644
 --- a/internal/server/network/driver_ovn.go
 +++ b/internal/server/network/driver_ovn.go
 @@ -18,7 +18,7 @@ import (

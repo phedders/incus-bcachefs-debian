@@ -16,10 +16,10 @@ index 12a8baf06..35cb3385d 100644
  // IncusOS management command.
 diff --git a/incus-osd/api/system_network.go b/incus-osd/api/system_network.go
 new file mode 100644
-index 000000000..51f7161ac
+index 000000000..dc7de60b6
 --- /dev/null
 +++ b/incus-osd/api/system_network.go
-@@ -0,0 +1,301 @@
+@@ -0,0 +1,302 @@
 +package api
 +
 +import (
@@ -198,7 +198,8 @@ index 000000000..51f7161ac
 +
 +// SystemNetworkState holds information about the current network state.
 +type SystemNetworkState struct {
-+	Interfaces map[string]SystemNetworkInterfaceState `json:"interfaces" yaml:"interfaces"`
++	Interfaces             map[string]SystemNetworkInterfaceState `json:"interfaces"               yaml:"interfaces"`
++	ConfigurationInProcess bool                                   `json:"configuration_in_process" yaml:"configuration_in_process"`
 +}
 +
 +// GetInterfaceNamesByRole returns a slice of interface names that have the given role applied to them.
@@ -323,10 +324,10 @@ index 000000000..51f7161ac
 +}
 diff --git a/incus-osd/cli/cli_applications.go b/incus-osd/cli/cli_applications.go
 new file mode 100644
-index 000000000..883500b7d
+index 000000000..e66cd32d5
 --- /dev/null
 +++ b/incus-osd/cli/cli_applications.go
-@@ -0,0 +1,137 @@
+@@ -0,0 +1,141 @@
 +package cli
 +
 +import (
@@ -389,6 +390,10 @@ index 000000000..883500b7d
 +		defaultData: "{}",
 +	}
 +	cmd.AddCommand(debugCmd.command())
++
++	// Edit.
++	editCmd := cmdGenericEdit{os: c.os, entity: "application", entityShort: "application", endpoint: "applications"}
++	cmd.AddCommand(editCmd.command())
 +
 +	// Factory reset.
 +	factoryResetCmd := cmdGenericRun{
@@ -1176,7 +1181,7 @@ index 000000000..611ab0017
 +package cli
 diff --git a/incus-osd/cli/generic.go b/incus-osd/cli/generic.go
 new file mode 100644
-index 000000000..f9da903cb
+index 000000000..9781a11a4
 --- /dev/null
 +++ b/incus-osd/cli/generic.go
 @@ -0,0 +1,609 @@
@@ -1304,7 +1309,7 @@ index 000000000..f9da903cb
 +		return err
 +	}
 +
-+	data, err := yaml.Dump(rawData, yaml.V2)
++	data, err := yaml.Dump(rawData, yaml.WithV2Defaults())
 +	if err != nil {
 +		return err
 +	}
@@ -1777,7 +1782,7 @@ index 000000000..f9da903cb
 +		data = append(data, '\n')
 +
 +	case "yaml":
-+		data, err = yaml.Dump(rawData, yaml.V2)
++		data, err = yaml.Dump(rawData, yaml.WithV2Defaults())
 +		if err != nil {
 +			return err
 +		}
