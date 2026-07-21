@@ -1,3 +1,9 @@
+incus (7.2.0-1~exp3) experimental; urgency=medium
+
+  * Set minimum required version of dh-golang
+
+ -- Mathias Gibbens <gibmat@debian.org>  Tue, 21 Jul 2026 22:29:50 +0000
+
 incus (7.2.0-1~exp2) experimental; urgency=medium
 
   * Build using the new module-aware capability

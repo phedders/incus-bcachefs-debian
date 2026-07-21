@@ -4,7 +4,7 @@ Uploaders: Free Ekanayaka <freee@debian.org>, Mathias Gibbens <gibmat@debian.org
 Section: admin
 Testsuite: autopkgtest-pkg-go
 Build-Depends: debhelper-compat (= 13),
-               dh-golang,
+               dh-golang (>= 1.66~),
                golang-any (>= 2:1.26~),
                golang-github-adhocore-gronx-dev,
                golang-github-apex-log-dev,
