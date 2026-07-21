@@ -10,7 +10,7 @@ index 12a8baf06..35cb3385d 100644
  	"github.com/spf13/cobra"
  
 -	"github.com/lxc/incus-os/incus-osd/cli"
-+	"github.com/lxc/incus/incus-osd/cli"
++	"github.com/lxc/incus/v7/incus-osd/cli"
  )
  
  // IncusOS management command.
@@ -2040,7 +2040,7 @@ index b655bf10e..2eb0b4840 100644
  	"net/http"
  
 -	osapi "github.com/lxc/incus-os/incus-osd/api"
-+	osapi "github.com/lxc/incus/incus-osd/api"
++	osapi "github.com/lxc/incus/v7/incus-osd/api"
  )
  
  // GetSystemNetwork returns the IncusOS network configuration and state.
