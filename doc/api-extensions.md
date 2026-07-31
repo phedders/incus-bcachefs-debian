@@ -3223,3 +3223,123 @@ The following instance configuration keys are added:
 
 The computed context is persisted in the `volatile.selinux.context` key so
 that MCS ranges stay stable across restarts.
+
+## `network_bgp_peer_interface`
+
+This adds a new `bgp.peers.NAME.interface` configuration key to `bridge`
+and `physical` networks as an alternative to `bgp.peers.NAME.address`.
+
+When set, the BGP session is established over the given interface using
+BGP unnumbered (the peer's IPv6 link-local address is discovered
+automatically and IPv4 routes are exchanged using extended next-hop).
+
+## `projects_restricted_virtual_machines_nesting`
+
+This adds a new `restricted.virtual-machines.nesting` project configuration key.
+
+When set to `block`, all virtual machines in the project must have
+`security.nesting` set to `false`, turning off nested virtualization.
+
+## `authorization_config`
+
+This moves the authorization configuration keys under a general
+`authorization.*` namespace.
+
+The following server configuration keys replace the former `openfga.*` keys:
+
+* `authorization.openfga.api.url`: URL of the OpenFGA server
+* `authorization.openfga.api.token`: API token of the OpenFGA server
+* `authorization.openfga.store.id`: ID of the OpenFGA permission store
+
+Existing `openfga.*` values are automatically migrated to the new keys on
+upgrade.
+
+## `network_allocations_network`
+Adds the `network` field to the network allocations API response.
+
+## `gpu_native_context`
+
+This adds a new `native-context` `gputype` for `gpu` devices on virtual machines.
+Instead of passing through a PCI device, it gives the VM an accelerated `virtio-gpu`
+that uses DRM native context, so the guest's own driver drives the host GPU
+directly, with graphics and video acceleration. One host GPU can be shared by several
+VMs and the host keeps using it. The `blob.size` device option sets the
+host-visible blob window (default 2GiB). Requires QEMU 11.0.0 or newer.
+
+## `instance_port_forward`
+
+This adds a new `POST /1.0/instances/NAME/port-forward` API endpoint which
+upgrades the connection to a raw TCP connection to the specified address
+and port inside of the instance.
+
+For containers, the connection is established directly by the server from
+within the container's network namespace. For virtual machines, the request
+is forwarded to the `incus-agent` which then handles the connection, this
+is controlled by the new `port-forward` agent feature.
+
+A matching `incus port-forward` command is added to the client, providing
+a local TCP listener which forwards every connection to the instance.
+
+## `unix_block_limits`
+
+This adds the `limits.read` and `limits.write` configuration keys to
+`unix-block` devices. These behave similarly to their `disk` device
+equivalents, accepting either a byte/s value or an IOPS value.
+
+## `authorization_client_routing`
+
+This allows loading multiple authorization drivers at once and routing each
+request to one of them based on the authentication class of the client.
+
+The following server configuration keys are added:
+
+* `authorization.client.default`: driver for clients without a more specific class route
+* `authorization.client.unix`: driver for local (`unix` socket) clients
+* `authorization.client.tls`: driver for unrestricted TLS clients
+* `authorization.client.tls-restricted`: driver for restricted (project-scoped) TLS clients
+* `authorization.client.oidc`: driver for OIDC-authenticated clients
+
+Each key accepts one of `allow`, `deny`, `openfga` or `scriptlet`. A per-class
+key falls back to `authorization.client.default` when unset.
+
+`authorization.client.tls-restricted` additionally accepts `tls`, as the TLS
+authorization method exists to enforce the per-certificate project restrictions
+that only apply to restricted certificates.
+
+The following server configuration key is also added:
+
+* `authorization.openfga.tls.identifier`: certificate attribute (`fingerprint`
+  or `name`) used as the OpenFGA user when a TLS client is authorized by
+  OpenFGA (defaults to `name`).
+
+## `instance_nvram`
+
+This adds new endpoints to manage virtual machines’ UEFI variables:
+
+* `GET /1.0/instances/{name}/nvram`, to get all UEFI variables
+* `GET /1.0/instances/{name}/nvram/{guid}`, to get UEFI variables under the given GUID
+* `GET /1.0/instances/{name}/nvram/{guid}/{var}`, to get specific UEFI variables
+* `DELETE /1.0/instances/{name}/nvram/{guid}/{var}`, to delete specific UEFI variables
+* `PUT /1.0/instances/{name}/nvram/{guid}/{var}`, to set/update specific UEFI variables
+
+It also adds `rebuild-nvram` as an instance debug action.
+
+## `disk_io_limits_combined`
+
+This makes it possible to set both a byte/s limit and an IOPS limit at the
+same time in the I/O limit keys of `disk` and `unix-block` devices by using
+a comma separated list of values (for example, `limits.read=30MiB,1000iops`).
+
+## `resources_cpu_cluster`
+
+Adds a `cluster` field to CPU core entries in the resources API, telling
+apart cores with identical identifiers on systems where core identifiers
+are only unique within a CPU cluster (ARM big.LITTLE).
+
+## `acme_eab`
+
+Adds support for ACME External Account Binding (EAB) through two new
+server configuration keys:
+
+* `acme.eab.kid`
+* `acme.eab.hmac`
