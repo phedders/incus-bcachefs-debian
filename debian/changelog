@@ -8,13 +8,13 @@ incus (7.3.0-1~exp1) experimental; urgency=medium
       * CVE-2026-62941 / GHSA-mq9x-prm8-3vpw
       * CVE-2026-63125 / GHSA-6rqx-22hc-qm36
       * CVE-2026-63343 / GHSA-fmjx-5j3g-997p
-      * GHSA-26gp-p5fw-3r2h
-      * GHSA-4qxq-p5hm-3q3p
-      * GHSA-67qw-68v3-36h6
-      * GHSA-6v6x-387m-rj4w
-      * GHSA-7fj9-65v4-rp7h
-      * GHSA-m3j6-p3v3-qmjv
-      * GHSA-p2v3-6wvc-cv3p
+      * CVE-2026-81493 / GHSA-p2v3-6wvc-cv3p
+      * CVE-2026-81494 / GHSA-7fj9-65v4-rp7h
+      * CVE-2026-81495 / GHSA-67qw-68v3-36h6
+      * CVE-2026-81496 / GHSA-26gp-p5fw-3r2h
+      * CVE-2026-81497 / GHSA-4qxq-p5hm-3q3p
+      * CVE-2026-81498 / GHSA-m3j6-p3v3-qmjv
+      * CVE-2026-81499 / GHSA-6v6x-387m-rj4w
     - Rebase criu patch
     - Update IncusOS network struct and cli patch
   * Update Build-Depends and Depends in d/control
