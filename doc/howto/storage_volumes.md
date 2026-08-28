@@ -92,6 +92,10 @@ All I/O limits only apply to actual block device access.
 Therefore, consider the file system's own overhead when setting limits.
 Access to cached data is not affected by the limit.
 
+For virtual machines, you can also allow the disk to temporarily exceed its limits by setting the `limits.read.burst`, `limits.write.burst` or `limits.max.burst` properties, along with `limits.read.burst.length`, `limits.write.burst.length` or `limits.max.burst.length` to control how long a burst may last (one second by default).
+A burst limit must be higher than the sustained limit it applies to, and only takes effect alongside one.
+Burst limits are not available for containers.
+
 (storage-volume-special)=
 ### Use the volume for backups or images
 
@@ -114,7 +118,7 @@ See the {ref}`storage-drivers` documentation for the available configuration opt
 
 Use the following command to set configuration options for a storage volume:
 
-    incus storage volume set <pool_name> [<volume_type>/]<volume_name> <key> <value>
+    incus storage volume set <pool_name> [<volume_type>/]<volume_name> <key>=<value>
 
 The default {ref}`storage volume type <storage-volume-types>` is `custom`, so you can leave out the `<volume_type>/` when configuring a custom storage volume.
 
@@ -124,7 +128,7 @@ For example, to set the size of your custom storage volume `my-volume` to 1 GiB,
 
 To set the snapshot expiry time for your virtual machine `my-vm` to one month, use the following command:
 
-    incus storage volume set my-pool virtual-machine/my-vm snapshots.expiry 1M
+    incus storage volume set my-pool virtual-machine/my-vm snapshots.expiry=1M
 
 You can also edit the storage volume configuration by using the following command:
 
@@ -141,7 +145,7 @@ In general, the defaults set on a storage pool level (before the volume was crea
 
 For example, to set a default volume size for a storage pool, use the following command:
 
-    incus storage set [<remote>:]<pool_name> volume.size <value>
+    incus storage set [<remote>:]<pool_name> volume.size=<value>
 
 ## View storage volumes
 
@@ -177,12 +181,16 @@ In some cases, it is also possible to reduce the size of a storage volume.
 
 To resize a storage volume, set its size configuration:
 
-    incus storage volume set <pool_name> <volume_name> size <new_size>
+    incus storage volume set <pool_name> <volume_name> size=<new_size>
+
+Direct volume resizing is not always supported; for resizing
+`virtual-machine/*` volumes you should edit its `root` device instead:
+
+    incus config device set my-vm root size=<new_size>
 
 ```{important}
 - Growing a storage volume usually works (if the storage pool has sufficient storage).
 - Shrinking a storage volume is only possible for storage volumes with content type `filesystem`.
   It is not guaranteed to work though, because you cannot shrink storage below its current used size.
 - Shrinking a storage volume with content type `block` is not possible.
-
 ```

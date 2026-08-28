@@ -3343,3 +3343,109 @@ server configuration keys:
 
 * `acme.eab.kid`
 * `acme.eab.hmac`
+
+## `instance_protection_start`
+
+Adds a new `security.protection.start` instance configuration key which
+when set to `true` prevents the instance from being started.
+
+## `instance_nvram_bulk_update`
+
+This adds a new `PATCH /1.0/instances/{name}/nvram` endpoint to update NVRAM in bulk.
+
+## `instance_refresh_migration`
+
+Adds support for refresh migration, where a running container is moved to another
+cluster member through a series of incremental transfers, only being stopped for
+the last one.
+
+This adds a `refresh` field to `POST /1.0/instances/{name}`. When set to `true` on
+a stateless migration (`migration` set to `true` and `live` set to `false`), a
+running container is migrated this way.
+
+It also adds `refresh-migrate` as a configuration option to `cluster.evacuate`
+and as an evacuation mode, which forces refresh migration of instances during
+cluster evacuation.
+
+## `image_locations`
+
+Adds a new `locations` field to the image API, listing the names of the
+cluster members which have a local copy of the image.
+
+## `network_ovn_multicast`
+
+Adds multicast configuration to OVN networks through two new
+configuration keys:
+
+* `bridge.multicast_snooping`
+* `bridge.multicast_relay`
+
+## `device_burst_limits`
+
+This adds burst support to the I/O limits of `disk` and `nic` devices.
+
+For `disk` devices (virtual machines only), the new `limits.read.burst`,
+`limits.write.burst` and `limits.max.burst` keys take the same syntax as their
+sustained counterparts and define the rate the device may reach while bursting.
+
+The new `limits.read.burst.length`, `limits.write.burst.length` and
+`limits.max.burst.length` keys define how long the burst rate may be
+sustained for, defaulting to one second.
+
+For `nic` devices (`bridged`, `p2p`, `routed` and `ovn`), the new
+`limits.ingress.bucket`, `limits.egress.bucket` and `limits.max.bucket` keys
+define the amount of data, in bit, that may be sent in excess of the sustained
+limit.
+
+The `bridged`, `p2p` and `routed` types also take `limits.ingress.burst`,
+`limits.egress.burst` and `limits.max.burst`, defining the bit/s rate at which
+that bucket may be spent. A direction needs both keys to burst.
+
+The `ovn` type only takes the bucket keys, as OVN has no separate burst rate.
+
+## `network_ipv6_ra`
+
+Adds a new `ipv6.ra` configuration key to both `bridge` and `ovn` networks,
+controlling whether IPv6 router advertisements are sent on the network.
+
+## `qemu_scriptlet_nvram`
+
+This extends the QEMU scriptlet feature by adding functions to explore and edit
+the NVRAM:
+
+* `get_nvram_var`
+* `has_nvram_var`
+* `set_nvram_var`
+* `unset_nvram_var`
+* `get_raw_nvram_var`
+* `set_raw_nvram_var`
+* `list_nvram_vars`
+
+## `storage_ceph_rbd_backend`
+
+Adds a new `ceph.rbd.backend` configuration key to the Ceph RBD storage driver.
+
+When set to `librbd`, volumes are accessed through `librbd` rather than the
+RBD kernel driver, with `qemu-nbd` being used whenever a block device is
+needed on the host.
+
+## `instance_nvram_config`
+
+This adds three categories of initial configuration options, `initial.nvram.*`,
+`initial.nvram-binary.*` and `initial.secureboot`, which allow defining default
+NVRAM variables and Secure Boot certificates and keys when rebuilding the NVRAM.
+
+## `storage_cephobject_endpoint_cert`
+
+Adds a new `cephobject.radosgw.endpoint_cert` configuration key to the Ceph
+Object storage driver, holding the TLS certificate (PEM bundle) to trust when
+communicating with the `radosgw` endpoint.
+
+This replaces `cephobject.radosgw.endpoint_cert_file`, existing values are
+converted automatically.
+
+## `device_queue_disc`
+
+Adds new `queue.discipline` and `queue.discipline.attach` configuration keys
+to `nic` devices of type `bridged`, `p2p` and `routed`, controlling the queuing
+discipline used on the host side of the NIC and where it gets attached.

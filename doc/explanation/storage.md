@@ -38,12 +38,12 @@ See the following how-to guides for additional information:
 Where the Incus data is stored depends on the configuration and the selected storage driver.
 Depending on the storage driver that is used, Incus can either share the file system with its host or keep its data separate.
 
-| Storage location         | Directory | Btrfs    | LVM (all) | ZFS      | Ceph (all) | LINSTOR  |
-| :---                     | :---      | :---     | :---      | :---     | :---       | :---     |
-| Shared with the host     | &#x2713;  | &#x2713; | -         | &#x2713; | -          | -        |
-| Dedicated disk/partition | -         | &#x2713; | &#x2713;  | &#x2713; | -          | &#x2713; |
-| Loop disk                | -         | &#x2713; | &#x2713;  | &#x2713; | -          | &#x2713; |
-| Remote storage           | -         | -        | &#x2713;  | -        | &#x2713;   | &#x2713; |
+| Storage location         | Directory | Btrfs    | LVM (all) | ZFS      | Ceph (all) | LINSTOR  | TrueNAS  |
+| :---                     | :---      | :---     | :---      | :---     | :---       | :---     | :---     |
+| Shared with the host     | &#x2713;  | &#x2713; | -         | &#x2713; | -          | -        | -        |
+| Dedicated disk/partition | -         | &#x2713; | &#x2713;  | &#x2713; | -          | &#x2713; | -        |
+| Loop disk                | -         | &#x2713; | &#x2713;  | &#x2713; | -          | &#x2713; | -        |
+| Remote storage           | -         | -        | &#x2713;  | -        | &#x2713;   | &#x2713; | &#x2713; |
 
 #### Shared with the host
 
@@ -188,6 +188,9 @@ Instead, applications can access a storage bucket directly using its URL.
 Each storage bucket is assigned one or more access keys, which the applications must use to access it.
 
 Storage buckets can be located on local storage (with `dir`, `btrfs`, `lvm` or `zfs` pools) or on remote storage (with `cephobject` pools).
+
+In a cluster, storage buckets on local storage belong to a single cluster member and their data is not replicated.
+See {ref}`howto-storage-buckets-cluster` for more information.
 
 To enable storage buckets for local storage pool drivers and allow applications to access the buckets via the S3 protocol, you must configure the {config:option}`server-core:core.storage_buckets_address` server setting.
 

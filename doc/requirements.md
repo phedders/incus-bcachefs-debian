@@ -3,7 +3,7 @@
 (requirements-go)=
 ## Go
 
-Incus requires Go 1.25 or higher and is only tested with the Golang compiler.
+Incus requires Go 1.26 or higher and is only tested with the Golang compiler.
 
 We recommend having at least 2GiB of RAM to allow the build to complete.
 
@@ -56,8 +56,8 @@ Minimum versions for network related tooling:
 
 When using Incus with OVN networks, the minimum versions of OVS and OVN are:
 
-* `openvswitch`: 2.15.0
-* `ovn`: 23.03.0
+* `openvswitch`: 3.3.0
+* `ovn`: 24.03.0
 
 ## Storage
 
