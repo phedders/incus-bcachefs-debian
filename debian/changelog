@@ -1,3 +1,16 @@
+incus (7.4.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Includes fixes for the following security issues:
+      * CVE-2026-81500 / GHSA-9pqw-c7m4-xvg7
+      * CVE-2026-81501 / GHSA-c6wx-8679-hpr9
+    - Rebase criu patch
+    - Update IncusOS network struct and cli patch
+    - Add patch to temporarily use cenkalti/backoff v7
+  * Update Build-Depends and Depends in d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 28 Aug 2026 02:08:22 +0000
+
 incus (7.3.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release:

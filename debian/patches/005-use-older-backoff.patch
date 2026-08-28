@@ -1,0 +1,81 @@
+From: Mathias Gibbens <gibmat@debian.org>
+Description: Use an older version of cenkalti/backoff as v7 isn't available in Debian yet.
+Forwarded: not-needed
+diff --git a/go.mod b/go.mod
+index 0fd8ca7b49..6649e27e7e 100644
+--- a/go.mod
++++ b/go.mod
+@@ -12,7 +12,7 @@ require (
+ 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.3.17
+ 	github.com/aws/aws-sdk-go-v2/service/s3 v1.108.0
+ 	github.com/aws/smithy-go v1.28.1
+-	github.com/cenkalti/backoff/v7 v7.0.0
++	github.com/cenkalti/backoff/v5 v5.0.3
+ 	github.com/checkpoint-restore/go-criu/v7 v7.2.0
+ 	github.com/cowsql/go-cowsql v1.22.1-0.20260810140515-ae0d26981bfc
+ 	github.com/digitalocean/go-smbios v0.0.0-20180907143718-390a4f403a8e
+diff --git a/internal/server/network/ovn/ovn_icnb.go b/internal/server/network/ovn/ovn_icnb.go
+index c63afe69c3..20464a49fd 100644
+--- a/internal/server/network/ovn/ovn_icnb.go
++++ b/internal/server/network/ovn/ovn_icnb.go
+@@ -9,7 +9,7 @@ import (
+ 	"strings"
+ 	"time"
+ 
+-	"github.com/cenkalti/backoff/v7"
++	"github.com/cenkalti/backoff/v5"
+ 	"github.com/go-logr/logr"
+ 	ovsdbClient "github.com/ovn-kubernetes/libovsdb/client"
+ 
+diff --git a/internal/server/network/ovn/ovn_icsb.go b/internal/server/network/ovn/ovn_icsb.go
+index a2cda13e9e..d1f18151c4 100644
+--- a/internal/server/network/ovn/ovn_icsb.go
++++ b/internal/server/network/ovn/ovn_icsb.go
+@@ -9,7 +9,7 @@ import (
+ 	"strings"
+ 	"time"
+ 
+-	"github.com/cenkalti/backoff/v7"
++	"github.com/cenkalti/backoff/v5"
+ 	"github.com/go-logr/logr"
+ 	ovsdbClient "github.com/ovn-kubernetes/libovsdb/client"
+ 	ovsdbModel "github.com/ovn-kubernetes/libovsdb/model"
+diff --git a/internal/server/network/ovn/ovn_nb.go b/internal/server/network/ovn/ovn_nb.go
+index 117fd1666b..f650235282 100644
+--- a/internal/server/network/ovn/ovn_nb.go
++++ b/internal/server/network/ovn/ovn_nb.go
+@@ -10,7 +10,7 @@ import (
+ 	"strings"
+ 	"time"
+ 
+-	"github.com/cenkalti/backoff/v7"
++	"github.com/cenkalti/backoff/v5"
+ 	"github.com/go-logr/logr"
+ 	ovsdbClient "github.com/ovn-kubernetes/libovsdb/client"
+ 	ovsdbModel "github.com/ovn-kubernetes/libovsdb/model"
+diff --git a/internal/server/network/ovn/ovn_sb.go b/internal/server/network/ovn/ovn_sb.go
+index e4f4ae867c..1ac21dea0e 100644
+--- a/internal/server/network/ovn/ovn_sb.go
++++ b/internal/server/network/ovn/ovn_sb.go
+@@ -10,7 +10,7 @@ import (
+ 	"strings"
+ 	"time"
+ 
+-	"github.com/cenkalti/backoff/v7"
++	"github.com/cenkalti/backoff/v5"
+ 	"github.com/go-logr/logr"
+ 	ovsdbCache "github.com/ovn-kubernetes/libovsdb/cache"
+ 	ovsdbClient "github.com/ovn-kubernetes/libovsdb/client"
+diff --git a/internal/server/network/ovs/ovs.go b/internal/server/network/ovs/ovs.go
+index c6f212bca8..8195f27df1 100644
+--- a/internal/server/network/ovs/ovs.go
++++ b/internal/server/network/ovs/ovs.go
+@@ -6,7 +6,7 @@ import (
+ 	"runtime"
+ 	"time"
+ 
+-	"github.com/cenkalti/backoff/v7"
++	"github.com/cenkalti/backoff/v5"
+ 	"github.com/go-logr/logr"
+ 	ovsdbClient "github.com/ovn-kubernetes/libovsdb/client"
+ 

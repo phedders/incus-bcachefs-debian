@@ -1,8 +1,8 @@
 From: Mathias Gibbens <gibmat@debian.org>
-Description: Incus now consumes the IncusOS network API and cli package. This causes a dependency loop, so extract the relevant structs needed by Incus.
+Description: Incus now consumes the IncusOS API and cli packages. This causes a dependency loop, so extract the relevant structs needed by Incus.
 Forwarded: not-needed
 diff --git a/cmd/incus/admin_os.go b/cmd/incus/admin_os.go
-index 12a8baf06..618b117e3 100644
+index 12a8baf064..618b117e34 100644
 --- a/cmd/incus/admin_os.go
 +++ b/cmd/incus/admin_os.go
 @@ -7,7 +7,7 @@ import (
@@ -14,21 +14,96 @@ index 12a8baf06..618b117e3 100644
  )
  
  // IncusOS management command.
+diff --git a/incus-osd/api/application.go b/incus-osd/api/application.go
+new file mode 100644
+index 0000000000..7f71e140ea
+--- /dev/null
++++ b/incus-osd/api/application.go
+@@ -0,0 +1,33 @@
++package api
++
++import (
++	"time"
++)
++
++// ApplicationConfig represents additional configuration for a generic application.
++type ApplicationConfig struct{}
++
++// ApplicationState represents the state of a generic application.
++type ApplicationState struct {
++	IsPrimary         bool       `incusos:"-"                    json:"is_primary"              yaml:"is_primary"`
++	Initialized       bool       `json:"initialized"             yaml:"initialized"`
++	FriendlyVersion   string     `json:"friendly_version"        yaml:"friendly_version"`
++	Version           string     `json:"version"                 yaml:"version"`
++	AvailableVersions []string   `json:"available_versions"      yaml:"available_versions"`
++	LastRestored      *time.Time `json:"last_restored,omitempty" yaml:"last_restored,omitempty"` // In system's timezone.
++}
++
++// Application represents the state and configuration of a generic application.
++type Application struct {
++	State ApplicationState `json:"state" yaml:"state"`
++
++	Config ApplicationConfig `json:"config" yaml:"config"`
++}
++
++// ApplicationAction defines a generic struct that can be used when triggering an application-specific action.
++//
++// swagger:model
++type ApplicationAction struct {
++	Action string            `json:"action"           yaml:"action"`
++	Config map[string]string `json:"config,omitempty" yaml:"config,omitempty"`
++}
+diff --git a/incus-osd/api/debug_kernel.go b/incus-osd/api/debug_kernel.go
+new file mode 100644
+index 0000000000..50c2b4ae99
+--- /dev/null
++++ b/incus-osd/api/debug_kernel.go
+@@ -0,0 +1,18 @@
++package api
++
++// DebugKernelModule represents a loaded kernel module.
++type DebugKernelModule struct {
++	Name         string   `json:"name"         yaml:"name"`
++	Dependencies []string `json:"dependencies" yaml:"dependencies"`
++	InUse        bool     `json:"in_use"       yaml:"in_use"`
++}
++
++// DebugKernel represents kernel debug information for the system.
++//
++// swagger:model
++type DebugKernel struct {
++	Version      string              `json:"version"      yaml:"version"`
++	Architecture string              `json:"architecture" yaml:"architecture"`
++	CPUBaseline  string              `json:"cpu_baseline" yaml:"cpu_baseline"`
++	Modules      []DebugKernelModule `json:"modules"      yaml:"modules"`
++}
 diff --git a/incus-osd/api/system_kernel.go b/incus-osd/api/system_kernel.go
 new file mode 100644
-index 000000000..accdc0cf8
+index 0000000000..c9d888ee72
 --- /dev/null
 +++ b/incus-osd/api/system_kernel.go
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,90 @@
 +package api
 +
 +// SystemKernelConfig holds the kernel-level configuration data.
 +type SystemKernelConfig struct {
 +	Console          []SystemKernelConfigConsole `json:"console,omitempty"           yaml:"console,omitempty"`
 +	BlacklistModules []string                    `json:"blacklist_modules,omitempty" yaml:"blacklist_modules,omitempty"`
++	CPU              *SystemKernelConfigCPU      `json:"cpu,omitempty"               yaml:"cpu,omitempty"`
 +	Memory           *SystemKernelConfigMemory   `json:"memory,omitempty"            yaml:"memory,omitempty"`
 +	Network          *SystemKernelConfigNetwork  `json:"network,omitempty"           yaml:"network,omitempty"`
 +	PCI              *SystemKernelConfigPCI      `json:"pci,omitempty"               yaml:"pci,omitempty"`
++	ZFS              *SystemKernelConfigZFS      `json:"zfs,omitempty"               yaml:"zfs,omitempty"`
++}
++
++// SystemKernelConfigZFS holds ZFS-specific kernel configuration.
++type SystemKernelConfigZFS struct {
++	ARCMaxSize string `json:"arc_max_size,omitempty" yaml:"arc_max_size,omitempty"`
++}
++
++// SystemKernelConfigCPU holds CPU-specific kernel configuration.
++type SystemKernelConfigCPU struct {
++	ScalingGovernor string `json:"scaling_governor,omitempty" yaml:"scaling_governor,omitempty"`
 +}
 +
 +// SystemKernelConfigConsole holds console-specific kernel configuration.
@@ -46,13 +121,22 @@ index 000000000..accdc0cf8
 +// SystemKernelConfigNetwork holds network-specific kernel configuration.
 +type SystemKernelConfigNetwork struct {
 +	BufferSize             int    `json:"buffer_size,omitempty"              yaml:"buffer_size,omitempty"`
++	NetdevMaxBacklog       int    `json:"netdev_max_backlog,omitempty"       yaml:"netdev_max_backlog,omitempty"`
 +	QueuingDiscipline      string `json:"queuing_discipline,omitempty"       yaml:"queuing_discipline,omitempty"`
 +	TCPCongestionAlgorithm string `json:"tcp_congestion_algorithm,omitempty" yaml:"tcp_congestion_algorithm,omitempty"`
++	TCPMTUProbing          bool   `json:"tcp_mtu_probing,omitempty"          yaml:"tcp_mtu_probing,omitempty"`
 +}
 +
 +// SystemKernelConfigPCI holds PCI-specific kernel configuration.
 +type SystemKernelConfigPCI struct {
 +	Passthrough []SystemKernelConfigPCIPassthrough `json:"passthrough,omitempty" yaml:"passthrough,omitempty"`
++	SRIOV       []SystemKernelConfigPCISRIOV       `json:"sriov,omitempty"       yaml:"sriov,omitempty"`
++}
++
++// SystemKernelConfigPCISRIOV defines the number of SR-IOV virtual functions to create on a PCI device.
++type SystemKernelConfigPCISRIOV struct {
++	PCIAddress string `json:"pci_address" yaml:"pci_address"`
++	VFCount    int    `json:"vf_count"    yaml:"vf_count"`
 +}
 +
 +// SystemKernelConfigPCIPassthrough defines a specific PCI device that should be made available for passthrough to a VM.
@@ -83,16 +167,18 @@ index 000000000..accdc0cf8
 +}
 +
 +// SystemKernel defines a struct to hold information about the system's kernel-level configuration.
++//
++// swagger:model
 +type SystemKernel struct {
 +	Config SystemKernelConfig `json:"config" yaml:"config"`
 +	State  SystemKernelState  `incusos:"-"   json:"state"  yaml:"state"`
 +}
 diff --git a/incus-osd/api/system_network.go b/incus-osd/api/system_network.go
 new file mode 100644
-index 000000000..dc7de60b6
+index 0000000000..3bcb36cc20
 --- /dev/null
 +++ b/incus-osd/api/system_network.go
-@@ -0,0 +1,302 @@
+@@ -0,0 +1,328 @@
 +package api
 +
 +import (
@@ -115,6 +201,8 @@ index 000000000..dc7de60b6
 +)
 +
 +// SystemNetwork defines a struct to hold the three types of supported network configuration.
++//
++// swagger:model
 +type SystemNetwork struct {
 +	Config *SystemNetworkConfig `json:"config" yaml:"config"`
 +
@@ -140,6 +228,7 @@ index 000000000..dc7de60b6
 +// SystemNetworkInterface contains information about a network interface.
 +type SystemNetworkInterface struct {
 +	Addresses         []string                    `json:"addresses,omitempty"           yaml:"addresses,omitempty"`
++	Bridge            *SystemNetworkBridge        `json:"bridge,omitempty"              yaml:"bridge,omitempty"`
 +	Ethernet          *SystemNetworkEthernet      `json:"ethernet,omitempty"            yaml:"ethernet,omitempty"`
 +	FirewallRules     []SystemNetworkFirewallRule `json:"firewall_rules,omitempty"      yaml:"firewall_rules,omitempty"`
 +	Hwaddr            string                      `json:"hwaddr"                        yaml:"hwaddr"`
@@ -156,6 +245,7 @@ index 000000000..dc7de60b6
 +// SystemNetworkBond contains information about a network bond.
 +type SystemNetworkBond struct {
 +	Addresses         []string                    `json:"addresses,omitempty"           yaml:"addresses,omitempty"`
++	Bridge            *SystemNetworkBridge        `json:"bridge,omitempty"              yaml:"bridge,omitempty"`
 +	Ethernet          *SystemNetworkEthernet      `json:"ethernet,omitempty"            yaml:"ethernet,omitempty"`
 +	FirewallRules     []SystemNetworkFirewallRule `json:"firewall_rules,omitempty"      yaml:"firewall_rules,omitempty"`
 +	Hwaddr            string                      `json:"hwaddr,omitempty"              yaml:"hwaddr,omitempty"`
@@ -164,10 +254,22 @@ index 000000000..dc7de60b6
 +	Mode              string                      `json:"mode"                          yaml:"mode"`
 +	MTU               int                         `json:"mtu,omitempty"                 yaml:"mtu,omitempty"`
 +	Name              string                      `json:"name"                          yaml:"name"`
++	Options           *SystemNetworkBondOptions   `json:"options,omitempty"             yaml:"options,omitempty"`
 +	RequiredForOnline string                      `json:"required_for_online,omitempty" yaml:"required_for_online,omitempty"`
 +	Roles             []string                    `json:"roles,omitempty"               yaml:"roles,omitempty"`
 +	Routes            []SystemNetworkRoute        `json:"routes,omitempty"              yaml:"routes,omitempty"`
 +	VLANTags          []int                       `json:"vlan_tags,omitempty"           yaml:"vlan_tags,omitempty"`
++}
++
++// SystemNetworkBondOptions contains link monitoring and tuning options for a network bond.
++type SystemNetworkBondOptions struct {
++	ARPInterval        int      `json:"arp_interval,omitempty"         yaml:"arp_interval,omitempty"`
++	ARPIPTargets       []string `json:"arp_ip_targets,omitempty"       yaml:"arp_ip_targets,omitempty"`
++	DownDelay          int      `json:"down_delay,omitempty"           yaml:"down_delay,omitempty"`
++	LACPRate           string   `json:"lacp_rate,omitempty"            yaml:"lacp_rate,omitempty"`
++	MIIMonitorInterval int      `json:"mii_monitor_interval,omitempty" yaml:"mii_monitor_interval,omitempty"`
++	TransmitHashPolicy string   `json:"transmit_hash_policy,omitempty" yaml:"transmit_hash_policy,omitempty"`
++	UpDelay            int      `json:"up_delay,omitempty"             yaml:"up_delay,omitempty"`
 +}
 +
 +// SystemNetworkVLAN contains information about a network vlan.
@@ -183,6 +285,12 @@ index 000000000..dc7de60b6
 +	Routes            []SystemNetworkRoute        `json:"routes,omitempty"              yaml:"routes,omitempty"`
 +}
 +
++// SystemNetworkBridge contains configuration for the bridge that is automatically created on top of an interface or bond.
++type SystemNetworkBridge struct {
++	DisableMulticastSnooping bool `json:"disable_multicast_snooping,omitempty" yaml:"disable_multicast_snooping,omitempty"`
++	STP                      bool `json:"stp,omitempty"                        yaml:"stp,omitempty"`
++}
++
 +// SystemNetworkEthernet contains Ethernet-specific configuration details (offloading and other features).
 +type SystemNetworkEthernet struct {
 +	DisableEnergyEfficient bool     `json:"disable_energy_efficient,omitempty" yaml:"disable_energy_efficient,omitempty"`
@@ -190,6 +298,10 @@ index 000000000..dc7de60b6
 +	DisableGSO             bool     `json:"disable_gso,omitempty"              yaml:"disable_gso,omitempty"`
 +	DisableIPv4TSO         bool     `json:"disable_ipv4_tso,omitempty"         yaml:"disable_ipv4_tso,omitempty"`
 +	DisableIPv6TSO         bool     `json:"disable_ipv6_tso,omitempty"         yaml:"disable_ipv6_tso,omitempty"`
++	RxBufferSize           string   `json:"rx_buffer_size,omitempty"           yaml:"rx_buffer_size,omitempty"`
++	RxJumboBufferSize      string   `json:"rx_jumbo_buffer_size,omitempty"     yaml:"rx_jumbo_buffer_size,omitempty"`
++	RxMiniBufferSize       string   `json:"rx_mini_buffer_size,omitempty"      yaml:"rx_mini_buffer_size,omitempty"`
++	TxBufferSize           string   `json:"tx_buffer_size,omitempty"           yaml:"tx_buffer_size,omitempty"`
 +	WakeOnLAN              bool     `json:"wakeonlan,omitempty"                yaml:"wakeonlan,omitempty"`
 +	WakeOnLANModes         []string `json:"wakeonlan_modes,omitempty"          yaml:"wakeonlan_modes,omitempty"`
 +	WakeOnLANPassword      string   `json:"wakeonlan_password,omitempty"       yaml:"wakeonlan_password,omitempty"`
@@ -395,12 +507,72 @@ index 000000000..dc7de60b6
 +	PublicKey           string                      `json:"public_key"                     yaml:"public_key"`
 +	Stats               SystemNetworkInterfaceStats `json:"stats"                          yaml:"stats"`
 +}
+diff --git a/incus-osd/api/system_security.go b/incus-osd/api/system_security.go
+new file mode 100644
+index 0000000000..e3782a9ae6
+--- /dev/null
++++ b/incus-osd/api/system_security.go
+@@ -0,0 +1,54 @@
++package api
++
++// TPMStatus defines a custom type for reporting the system's TPM status.
++type TPMStatus string
++
++// Define constants used to report the state of the system's TPM.
++const (
++	TPMStatusOK          TPMStatus = "ok"
++	TPMStatusPCRMismatch TPMStatus = "pcr mismatch"
++	TPMStatusSWTPM       TPMStatus = "swtpm"
++)
++
++// SystemSecurityState holds information about the current security state.
++type SystemSecurityState struct {
++	EncryptedVolumes                []SystemSecurityEncryptedVolume       `incusos:"-"                               json:"encrypted_volumes"                  yaml:"encrypted_volumes"`
++	EncryptionRecoveryKeysRetrieved bool                                  `json:"encryption_recovery_keys_retrieved" yaml:"encryption_recovery_keys_retrieved"`
++	DriveRecoveryKeys               map[string]string                     `incusos:"-"                               json:"drive_recovery_keys"                yaml:"drive_recovery_keys"`
++	PoolRecoveryKeys                map[string]string                     `incusos:"-"                               json:"pool_recovery_keys"                 yaml:"pool_recovery_keys"`
++	SecureBootCertificates          []SystemSecuritySecureBootCertificate `incusos:"-"                               json:"secure_boot_certificates"           yaml:"secure_boot_certificates"`
++	SecureBootEnabled               bool                                  `incusos:"-"                               json:"secure_boot_enabled"                yaml:"secure_boot_enabled"`
++	SystemStateIsTrusted            bool                                  `incusos:"-"                               json:"system_state_is_trusted"            yaml:"system_state_is_trusted"`
++	SystemStateStatus               string                                `incusos:"-"                               json:"system_state_status"                yaml:"system_state_status"`
++	TPMStatus                       TPMStatus                             `incusos:"-"                               json:"tpm_status"                         yaml:"tpm_status"`
++	TPMPublicKey                    string                                `incusos:"-"                               json:"tpm_public_key,omitempty"           yaml:"tpm_public_key,omitempty"`
++}
++
++// SystemSecurityConfig holds additional security configuration settings.
++type SystemSecurityConfig struct {
++	CustomCACerts          []string `json:"custom_ca_certs,omitempty" yaml:"custom_ca_certs,omitempty"`
++	EncryptionRecoveryKeys []string `json:"encryption_recovery_keys"  yaml:"encryption_recovery_keys"`
++}
++
++// SystemSecurity defines a struct to hold information about the system's security state.
++//
++// swagger:model
++type SystemSecurity struct {
++	Config SystemSecurityConfig `json:"config" yaml:"config"`
++
++	State SystemSecurityState `json:"state" yaml:"state"`
++}
++
++// SystemSecuritySecureBootCertificate defines a struct that holds information about Secure Boot keys present on the host.
++type SystemSecuritySecureBootCertificate struct {
++	Type        string `json:"type"        yaml:"type"`
++	Fingerprint string `json:"fingerprint" yaml:"fingerprint"`
++	Subject     string `json:"subject"     yaml:"subject"`
++	Issuer      string `json:"issuer"      yaml:"issuer"`
++}
++
++// SystemSecurityEncryptedVolume defines a struct that holds basic information about an encrypted volume.
++type SystemSecurityEncryptedVolume struct {
++	Volume string `json:"volume" yaml:"volume"`
++	State  string `json:"state"  yaml:"state"`
++}
 diff --git a/incus-osd/api/system_storage.go b/incus-osd/api/system_storage.go
 new file mode 100644
-index 000000000..326d806d3
+index 0000000000..245e6169a6
 --- /dev/null
 +++ b/incus-osd/api/system_storage.go
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,169 @@
 +package api
 +
 +import "time"
@@ -413,11 +585,19 @@ index 000000000..326d806d3
 +
 +// SystemStorageState represents additional state for the system's local storage.
 +type SystemStorageState struct {
-+	Drives []SystemStorageDrive `json:"drives" yaml:"drives"`
-+	Pools  []SystemStoragePool  `json:"pools"  yaml:"pools"`
++	Drives        []SystemStorageDrive       `json:"drives"         yaml:"drives"`
++	RootPartition SystemStorageRootPartition `json:"root_partition" yaml:"root_partition"`
++}
++
++// SystemStorageRootPartition defines a struct that holds usage information about the root ("/") partition.
++type SystemStorageRootPartition struct {
++	SizeInBytes      int `json:"size_in_bytes"      yaml:"size_in_bytes"`
++	AvailableInBytes int `json:"available_in_bytes" yaml:"available_in_bytes"`
 +}
 +
 +// SystemStorage defines a struct to hold information about the system's local storage.
++//
++// swagger:model
 +type SystemStorage struct {
 +	Config SystemStorageConfig `json:"config" yaml:"config"`
 +
@@ -440,6 +620,7 @@ index 000000000..326d806d3
 +	Special *SystemStoragePoolSpecial `json:"special,omitempty" yaml:"special"`
 +
 +	// Read-only fields returned from the server with additional pool information.
++	Managed                   bool                          `json:"managed"                       yaml:"managed"`
 +	State                     string                        `json:"state"                         yaml:"state"`
 +	LastScrub                 *SystemStoragePoolScrubStatus `json:"last_scrub,omitempty"          yaml:"last_scrub,omitempty,omitempty"`
 +	EncryptionKeyStatus       string                        `json:"encryption_key_status"         yaml:"encryption_key_status"`
@@ -529,18 +710,24 @@ index 000000000..326d806d3
 +}
 +
 +// SystemStorageWipe defines a struct with information about what drive to wipe.
++//
++// swagger:model
 +type SystemStorageWipe struct {
 +	ID         string `json:"id"          yaml:"id"`
 +	SecureWipe bool   `json:"secure_wipe" yaml:"secure_wipe"` // If true, require a complete secure wiping of the drive, which might take a long time.
 +}
 +
 +// SystemStorageImportEncryptedDrive defines a struct with information about what drive to decrypt.
++//
++// swagger:model
 +type SystemStorageImportEncryptedDrive struct {
 +	ID  string `json:"id"  yaml:"id"`
 +	Key string `json:"key" yaml:"key"`
 +}
 +
 +// SystemStorageEncrypt defines a struct with information about what drive to encrypt.
++//
++// swagger:model
 +type SystemStorageEncrypt struct {
 +	ID         string `json:"id"          yaml:"id"`
 +	SecureWipe bool   `json:"secure_wipe" yaml:"secure_wipe"` // If true, require a complete secure wiping of the drive, which might take a long time.
@@ -548,6 +735,8 @@ index 000000000..326d806d3
 +
 +// SystemStoragePoolKey defines a struct used to provide an encryption key when importing an existing pool.
 +// Currently the only supported type is "zfs".
++//
++// swagger:model
 +type SystemStoragePoolKey struct {
 +	Name          string `json:"name"           yaml:"name"`
 +	Type          string `json:"type"           yaml:"type"`
@@ -555,10 +744,10 @@ index 000000000..326d806d3
 +}
 diff --git a/incus-osd/cli/cli_applications.go b/incus-osd/cli/cli_applications.go
 new file mode 100644
-index 000000000..368dd53b0
+index 0000000000..6e7863d6df
 --- /dev/null
 +++ b/incus-osd/cli/cli_applications.go
-@@ -0,0 +1,153 @@
+@@ -0,0 +1,156 @@
 +package cli
 +
 +import (
@@ -595,7 +784,10 @@ index 000000000..368dd53b0
 +		name:        "add",
 +		description: "Add an application",
 +		endpoint:    "applications",
-+		hasData:     true,
++		dataArgs:    []string{"application"},
++		dataFunc: func(args []string) (any, error) {
++			return map[string]string{"name": args[0]}, nil
++		},
 +	}
 +	cmd.AddCommand(addCmd.command())
 +
@@ -714,10 +906,10 @@ index 000000000..368dd53b0
 +}
 diff --git a/incus-osd/cli/cli_debug.go b/incus-osd/cli/cli_debug.go
 new file mode 100644
-index 000000000..b1fcb8103
+index 0000000000..9adc2f2fce
 --- /dev/null
 +++ b/incus-osd/cli/cli_debug.go
-@@ -0,0 +1,282 @@
+@@ -0,0 +1,286 @@
 +package cli
 +
 +import (
@@ -740,6 +932,10 @@ index 000000000..b1fcb8103
 +	cmd.Use = cli.Usage("debug")
 +	cmd.Short = "Debug IncusOS systems"
 +	cmd.Long = cli.FormatSection("Description", "Debug IncusOS systems")
++
++	// Kernel.
++	kernelCmd := cmdAdminOSDebugKernel{os: c.os}
++	cmd.AddCommand(kernelCmd.command())
 +
 +	// Log.
 +	logCmd := cmdAdminOSDebugLog{os: c.os}
@@ -1000,12 +1196,359 @@ index 000000000..b1fcb8103
 +
 +	return cmd
 +}
+diff --git a/incus-osd/cli/cli_debug_kernel.go b/incus-osd/cli/cli_debug_kernel.go
+new file mode 100644
+index 0000000000..9a37456cac
+--- /dev/null
++++ b/incus-osd/cli/cli_debug_kernel.go
+@@ -0,0 +1,97 @@
++package cli
++
++import (
++	"fmt"
++	"net/url"
++	"os"
++	"strings"
++
++	cli "github.com/lxc/incus/v7/shared/cmd"
++	"github.com/spf13/cobra"
++
++	"github.com/lxc/incus/v7/incus-osd/api"
++)
++
++// Kernel.
++type cmdAdminOSDebugKernel struct {
++	os *cmdAdminOS
++}
++
++func (c *cmdAdminOSDebugKernel) command() *cobra.Command {
++	cmd := &cobra.Command{}
++	cmd.Use = cli.Usage("kernel")
++	cmd.Short = "Show kernel debug information"
++
++	cmd.Long = cli.FormatSection("Description", "Show kernel debug information")
++	if c.os.args.SupportsTarget {
++		cmd.Flags().StringVar(&c.os.flagTarget, "target", "", "Cluster member name``")
++	}
++
++	cmd.RunE = c.run
++
++	return cmd
++}
++
++func (c *cmdAdminOSDebugKernel) run(cmd *cobra.Command, args []string) error {
++	// Quick checks.
++	exit, err := cli.CheckArgs(cmd, args, 0, 1)
++	if exit {
++		return err
++	}
++
++	// Parse remote.
++	remote := ""
++	if len(args) > 0 {
++		remote, _ = parseRemote(args[0])
++	}
++
++	// Prepare the URL.
++	u, err := url.Parse("/os/1.0/debug/kernel")
++	if err != nil {
++		return err
++	}
++
++	values := u.Query()
++	if c.os.flagTarget != "" {
++		values.Set("target", c.os.flagTarget)
++	}
++
++	u.RawQuery = values.Encode()
++
++	// Get the kernel debug information.
++	resp, _, err := doQuery(c.os.args.DoHTTP, remote, "GET", u.String(), nil, nil, "")
++	if err != nil {
++		return err
++	}
++
++	var data api.DebugKernel
++
++	err = resp.MetadataAsStruct(&data)
++	if err != nil {
++		return err
++	}
++
++	_, _ = fmt.Printf("Kernel version: %s\n", data.Version)    //nolint:forbidigo
++	_, _ = fmt.Printf("Architecture: %s\n", data.Architecture) //nolint:forbidigo
++
++	if data.CPUBaseline != "" {
++		_, _ = fmt.Printf("CPU baseline: %s\n", data.CPUBaseline) //nolint:forbidigo
++	}
++
++	_, _ = fmt.Println() //nolint:forbidigo
++
++	rows := make([][]string, 0, len(data.Modules))
++
++	for _, module := range data.Modules {
++		inUse := "NO"
++		if module.InUse {
++			inUse = "YES"
++		}
++
++		rows = append(rows, []string{module.Name, strings.Join(module.Dependencies, ", "), inUse})
++	}
++
++	header := []string{"NAME", "DEPENDENCIES", "IN USE"}
++
++	return cli.RenderTable(os.Stdout, "table", header, rows, nil)
++}
+diff --git a/incus-osd/cli/cli_info.go b/incus-osd/cli/cli_info.go
+new file mode 100644
+index 0000000000..7ceda41e1c
+--- /dev/null
++++ b/incus-osd/cli/cli_info.go
+@@ -0,0 +1,238 @@
++package cli
++
++import (
++	"fmt"
++	"net/url"
++	"slices"
++	"strings"
++	"time"
++
++	incusapi "github.com/lxc/incus/v7/shared/api"
++	cli "github.com/lxc/incus/v7/shared/cmd"
++	"github.com/lxc/incus/v7/shared/units"
++	"github.com/spf13/cobra"
++
++	"github.com/lxc/incus/v7/incus-osd/api"
++)
++
++// Info.
++type cmdAdminOSInfo struct {
++	os *cmdAdminOS
++}
++
++func (c *cmdAdminOSInfo) command() *cobra.Command {
++	cmd := &cobra.Command{}
++	cmd.Use = cli.Usage("info")
++	cmd.Short = "Show system information"
++
++	cmd.Long = cli.FormatSection("Description", "Show system information")
++	if c.os.args.SupportsTarget {
++		cmd.Flags().StringVar(&c.os.flagTarget, "target", "", "Cluster member name``")
++	}
++
++	cmd.RunE = c.run
++
++	return cmd
++}
++
++func (c *cmdAdminOSInfo) get(remote string, endpoint string, data any) error {
++	u, err := url.Parse("/os/1.0" + endpoint)
++	if err != nil {
++		return err
++	}
++
++	values := u.Query()
++	if c.os.flagTarget != "" {
++		values.Set("target", c.os.flagTarget)
++	}
++
++	u.RawQuery = values.Encode()
++
++	resp, _, err := doQuery(c.os.args.DoHTTP, remote, "GET", u.String(), nil, nil, "")
++	if err != nil {
++		return err
++	}
++
++	return resp.MetadataAsStruct(data)
++}
++
++func (c *cmdAdminOSInfo) run(cmd *cobra.Command, args []string) error {
++	// Quick checks.
++	exit, err := cli.CheckArgs(cmd, args, 0, 1)
++	if exit {
++		return err
++	}
++
++	// Parse remote.
++	remote := ""
++	if len(args) > 0 {
++		remote, _ = parseRemote(args[0])
++	}
++
++	// Get the general system information.
++	var root struct {
++		Environment map[string]any `json:"environment"`
++	}
++
++	err = c.get(remote, "", &root)
++	if err != nil {
++		return err
++	}
++
++	// Get the security information.
++	var security api.SystemSecurity
++
++	err = c.get(remote, "/system/security", &security)
++	if err != nil {
++		return err
++	}
++
++	// Get the network information.
++	var network api.SystemNetwork
++
++	err = c.get(remote, "/system/network", &network)
++	if err != nil {
++		return err
++	}
++
++	// Get the system resources.
++	var resources incusapi.Resources
++
++	err = c.get(remote, "/system/resources", &resources)
++	if err != nil {
++		return err
++	}
++
++	// Get the list of applications.
++	var appURLs []string
++
++	err = c.get(remote, "/applications", &appURLs)
++	if err != nil {
++		return err
++	}
++
++	// Get the incus-osd log entries for the current boot.
++	// Request more entries than displayed as the systemd unit messages get filtered out below.
++	var logEntries []map[string]any
++
++	err = c.get(remote, "/debug/log?unit=incus-osd.service&boot=0&entries=100", &logEntries)
++	if err != nil {
++		return err
++	}
++
++	// Only keep actual incus-osd messages (skip the systemd unit messages).
++	logMessages := []string{}
++
++	for _, entry := range logEntries {
++		if entry["SYSLOG_IDENTIFIER"] != "incus-osd" {
++			continue
++		}
++
++		message, ok := entry["MESSAGE"].(string)
++		if !ok {
++			continue
++		}
++
++		logMessages = append(logMessages, message)
++	}
++
++	// Only show the last 25 entries.
++	if len(logMessages) > 25 {
++		logMessages = logMessages[len(logMessages)-25:]
++	}
++
++	// Render the general system information.
++	_, _ = fmt.Printf("Hostname: %v\n", root.Environment["hostname"])                             //nolint:forbidigo
++	_, _ = fmt.Printf("OS: %v %v\n", root.Environment["os_name"], root.Environment["os_version"]) //nolint:forbidigo
++	uptime := strings.TrimSpace(fmt.Sprintf("%v", root.Environment["uptime"]))
++
++	seconds, ok := root.Environment["uptime"].(float64)
++	if ok {
++		uptime = (time.Duration(seconds) * time.Second).String()
++	}
++
++	_, _ = fmt.Printf("Uptime: %s\n", uptime) //nolint:forbidigo
++
++	// Render the machine information.
++	if len(resources.CPU.Sockets) > 0 {
++		numCores := 0
++		for _, socket := range resources.CPU.Sockets {
++			numCores += len(socket.Cores)
++		}
++
++		_, _ = fmt.Printf("Processor: %s (numa=%d, sockets=%d, cores=%d, threads=%d) (%s)\n", resources.CPU.Sockets[0].Name, len(resources.Memory.Nodes), len(resources.CPU.Sockets), numCores, resources.CPU.Total, resources.CPU.Architecture) //nolint:forbidigo
++	}
++
++	_, _ = fmt.Printf("Memory: %s\n", units.GetByteSizeStringIEC(int64(resources.Memory.Total), 0)) //nolint:forbidigo,gosec
++
++	// Render the network addresses.
++	_, _ = fmt.Print("\nNetwork:\n") //nolint:forbidigo
++
++	names := make([]string, 0, len(network.State.Interfaces))
++	for name := range network.State.Interfaces {
++		names = append(names, name)
++	}
++
++	slices.Sort(names)
++
++	for _, name := range names {
++		iface := network.State.Interfaces[name]
++		if len(iface.Addresses) == 0 {
++			continue
++		}
++
++		_, _ = fmt.Printf("  %s: %s\n", name, strings.Join(iface.Addresses, ", ")) //nolint:forbidigo
++	}
++
++	// Render the applications.
++	if len(appURLs) > 0 {
++		_, _ = fmt.Print("\nApplications:\n") //nolint:forbidigo
++
++		for _, appURL := range appURLs {
++			name := appURL[strings.LastIndex(appURL, "/")+1:]
++
++			var app api.Application
++
++			err = c.get(remote, "/applications/"+name, &app)
++			if err != nil {
++				return err
++			}
++
++			_, _ = fmt.Printf("  %s (%s)\n", name, app.State.FriendlyVersion) //nolint:forbidigo
++		}
++	}
++
++	// Render the incus-osd log.
++	if len(logMessages) > 0 {
++		_, _ = fmt.Print("\nLog:\n") //nolint:forbidigo
++
++		for _, message := range logMessages {
++			_, _ = fmt.Printf("  %s\n", message) //nolint:forbidigo
++		}
++	}
++
++	// Render any warnings.
++	warnings := []string{}
++
++	if security.State.TPMStatus == api.TPMStatusSWTPM {
++		warnings = append(warnings, "Degraded security state: no physical TPM found, using swtpm")
++	}
++
++	if !security.State.SecureBootEnabled {
++		warnings = append(warnings, "Degraded security state: Secure Boot is disabled")
++	}
++
++	if !security.State.EncryptionRecoveryKeysRetrieved {
++		warnings = append(warnings, "Some encryption recovery keys have not been retrieved yet")
++	}
++
++	if len(warnings) > 0 {
++		_, _ = fmt.Print("\nWarnings:\n") //nolint:forbidigo
++
++		for _, warning := range warnings {
++			_, _ = fmt.Printf("  - %s\n", warning) //nolint:forbidigo
++		}
++	}
++
++	return nil
++}
 diff --git a/incus-osd/cli/cli_root.go b/incus-osd/cli/cli_root.go
 new file mode 100644
-index 000000000..5a6d6c311
+index 0000000000..df36897dac
 --- /dev/null
 +++ b/incus-osd/cli/cli_root.go
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,58 @@
 +package cli
 +
 +import (
@@ -1037,6 +1580,10 @@ index 000000000..5a6d6c311
 +	debugCmd := cmdAdminOSDebug{os: c}
 +	cmd.AddCommand(debugCmd.command())
 +
++	// Info.
++	infoCmd := cmdAdminOSInfo{os: c}
++	cmd.AddCommand(infoCmd.command())
++
 +	// Services.
 +	serviceCmd := cmdAdminOSService{os: c}
 +	cmd.AddCommand(serviceCmd.command())
@@ -1062,7 +1609,7 @@ index 000000000..5a6d6c311
 +}
 diff --git a/incus-osd/cli/cli_services.go b/incus-osd/cli/cli_services.go
 new file mode 100644
-index 000000000..05c24f08e
+index 0000000000..05c24f08e0
 --- /dev/null
 +++ b/incus-osd/cli/cli_services.go
 @@ -0,0 +1,47 @@
@@ -1115,10 +1662,10 @@ index 000000000..05c24f08e
 +}
 diff --git a/incus-osd/cli/cli_system.go b/incus-osd/cli/cli_system.go
 new file mode 100644
-index 000000000..831dbda97
+index 0000000000..2198cbbbc6
 --- /dev/null
 +++ b/incus-osd/cli/cli_system.go
-@@ -0,0 +1,318 @@
+@@ -0,0 +1,334 @@
 +package cli
 +
 +import (
@@ -1277,6 +1824,14 @@ index 000000000..831dbda97
 +			description: "Security configuration",
 +			isWritable:  true,
 +			extraCommands: func() []*cobra.Command {
++				// Recovery keys retrieved.
++				retrievedCmd := cmdGenericRun{
++					os:          c.os,
++					action:      "retrieved",
++					description: "Mark the encryption recovery keys as retrieved",
++					endpoint:    "system/security",
++				}
++
 +				// TPM rebind.
 +				tpmRebindCmd := cmdGenericRun{
 +					os:          c.os,
@@ -1286,7 +1841,7 @@ index 000000000..831dbda97
 +					confirm:     "rebind the TPM and reboot the system",
 +				}
 +
-+				return []*cobra.Command{tpmRebindCmd.command()}
++				return []*cobra.Command{retrievedCmd.command(), tpmRebindCmd.command()}
 +			},
 +		},
 +		{
@@ -1295,6 +1850,14 @@ index 000000000..831dbda97
 +			isWritable:  true,
 +			info:        systemInfoStorageCommand,
 +			extraCommands: func() []*cobra.Command {
++				// Clean up the root partition.
++				cleanupRootCmd := cmdGenericRun{
++					os:          c.os,
++					action:      "cleanup-root",
++					description: "Clean up the root partition",
++					endpoint:    "system/storage",
++				}
++
 +				// Create storage volume.
 +				createVolumeCmd := cmdGenericRun{
 +					os:          c.os,
@@ -1375,7 +1938,7 @@ index 000000000..831dbda97
 +					hasData:     true,
 +				}
 +
-+				return []*cobra.Command{createVolumeCmd.command(), deletePoolCmd.command(), deleteVolumeCmd.command(), encryptDriveCmd.command(), importEncryptedDriveCmd.command(), importPoolCmd.command(), wipeDriveCmd.command(), scrubPoolCmd.command()}
++				return []*cobra.Command{cleanupRootCmd.command(), createVolumeCmd.command(), deletePoolCmd.command(), deleteVolumeCmd.command(), encryptDriveCmd.command(), importEncryptedDriveCmd.command(), importPoolCmd.command(), wipeDriveCmd.command(), scrubPoolCmd.command()}
 +			},
 +		},
 +		{
@@ -1439,7 +2002,7 @@ index 000000000..831dbda97
 +}
 diff --git a/incus-osd/cli/cli_system_info_kernel.go b/incus-osd/cli/cli_system_info_kernel.go
 new file mode 100644
-index 000000000..d1d0b9b25
+index 0000000000..d1d0b9b251
 --- /dev/null
 +++ b/incus-osd/cli/cli_system_info_kernel.go
 @@ -0,0 +1,48 @@
@@ -1493,7 +2056,7 @@ index 000000000..d1d0b9b25
 +}
 diff --git a/incus-osd/cli/cli_system_info_network.go b/incus-osd/cli/cli_system_info_network.go
 new file mode 100644
-index 000000000..439bcd58b
+index 0000000000..439bcd58b4
 --- /dev/null
 +++ b/incus-osd/cli/cli_system_info_network.go
 @@ -0,0 +1,61 @@
@@ -1560,7 +2123,7 @@ index 000000000..439bcd58b
 +}
 diff --git a/incus-osd/cli/cli_system_info_resources.go b/incus-osd/cli/cli_system_info_resources.go
 new file mode 100644
-index 000000000..1b5ff13b0
+index 0000000000..1b5ff13b01
 --- /dev/null
 +++ b/incus-osd/cli/cli_system_info_resources.go
 @@ -0,0 +1,574 @@
@@ -2140,10 +2703,10 @@ index 000000000..1b5ff13b0
 +}
 diff --git a/incus-osd/cli/cli_system_info_storage.go b/incus-osd/cli/cli_system_info_storage.go
 new file mode 100644
-index 000000000..cbbb1ab93
+index 0000000000..85c92c7f69
 --- /dev/null
 +++ b/incus-osd/cli/cli_system_info_storage.go
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,101 @@
 +package cli
 +
 +import (
@@ -2167,6 +2730,14 @@ index 000000000..cbbb1ab93
 +	if err != nil {
 +		return err
 +	}
++
++	// Root partition.
++	part := storage.State.RootPartition
++
++	_, _ = fmt.Println("Root partition:")                                                               //nolint:forbidigo
++	_, _ = fmt.Printf("  Size: %s\n", units.GetByteSizeStringIEC(int64(part.SizeInBytes), 2))           //nolint:forbidigo,gosec
++	_, _ = fmt.Printf("  Available: %s\n", units.GetByteSizeStringIEC(int64(part.AvailableInBytes), 2)) //nolint:forbidigo,gosec
++	_, _ = fmt.Println("")                                                                              //nolint:forbidigo
 +
 +	// Drives table.
 +	_, _ = fmt.Println("Drives:") //nolint:forbidigo
@@ -2203,11 +2774,11 @@ index 000000000..cbbb1ab93
 +	}
 +
 +	// Pools table.
-+	if len(storage.State.Pools) > 0 {
++	if len(storage.Config.Pools) > 0 {
 +		_, _ = fmt.Println("\nPools:") //nolint:forbidigo
 +
-+		poolRows := make([][]string, 0, len(storage.State.Pools))
-+		for _, pool := range storage.State.Pools {
++		poolRows := make([][]string, 0, len(storage.Config.Pools))
++		for _, pool := range storage.Config.Pools {
 +			poolRows = append(poolRows, []string{
 +				pool.Name,
 +				pool.Type,
@@ -2239,7 +2810,7 @@ index 000000000..cbbb1ab93
 +}
 diff --git a/incus-osd/cli/doc.go b/incus-osd/cli/doc.go
 new file mode 100644
-index 000000000..611ab0017
+index 0000000000..611ab00174
 --- /dev/null
 +++ b/incus-osd/cli/doc.go
 @@ -0,0 +1,2 @@
@@ -2247,10 +2818,10 @@ index 000000000..611ab0017
 +package cli
 diff --git a/incus-osd/cli/generic.go b/incus-osd/cli/generic.go
 new file mode 100644
-index 000000000..c42a2e91a
+index 0000000000..69f54235b6
 --- /dev/null
 +++ b/incus-osd/cli/generic.go
-@@ -0,0 +1,666 @@
+@@ -0,0 +1,708 @@
 +package cli
 +
 +import (
@@ -2519,6 +3090,8 @@ index 000000000..c42a2e91a
 +	hasFileInput  bool
 +	hasFileOutput bool
 +	extraArgs     []cmdGenericRunArgs
++	dataArgs      []string
++	dataFunc      func(args []string) (any, error)
 +
 +	flagData  string
 +	flagForce bool
@@ -2545,6 +3118,16 @@ index 000000000..c42a2e91a
 +
 +	if c.entity != "" {
 +		usage += "<" + c.entity + ">"
++	}
++
++	if len(c.dataArgs) > 0 {
++		dataUsage := "<" + strings.Join(c.dataArgs, "> <") + ">"
++
++		if c.entity == "" {
++			usage += dataUsage
++		} else {
++			usage += " " + dataUsage
++		}
 +	}
 +
 +	if c.hasFileOutput || c.hasFileInput {
@@ -2591,6 +3174,16 @@ index 000000000..c42a2e91a
 +
 +	if c.entity != "" || c.os.args.SupportsRemote {
 +		maxArgs++
++	}
++
++	if len(c.dataArgs) > 0 {
++		minArgs += len(c.dataArgs)
++		maxArgs += len(c.dataArgs)
++
++		// Any remote is part of the first data argument.
++		if c.entity == "" && c.os.args.SupportsRemote {
++			maxArgs--
++		}
 +	}
 +
 +	if c.hasFileOutput || c.hasFileInput {
@@ -2667,6 +3260,26 @@ index 000000000..c42a2e91a
 +		if c.flagData != "" {
 +			inData = c.flagData
 +		}
++	}
++
++	// Build the data from the positional arguments.
++	if c.dataFunc != nil {
++		dataValues := slices.Clone(args)
++		if c.entity == "" && len(dataValues) > 0 {
++			dataValues[0] = resource
++		}
++
++		data, err := c.dataFunc(dataValues)
++		if err != nil {
++			return err
++		}
++
++		body, err := json.Marshal(data)
++		if err != nil {
++			return err
++		}
++
++		inData = string(body)
 +	}
 +
 +	// Set source file.
@@ -2919,7 +3532,7 @@ index 000000000..c42a2e91a
 +}
 diff --git a/incus-osd/cli/load.go b/incus-osd/cli/load.go
 new file mode 100644
-index 000000000..e12b0e7a2
+index 0000000000..e12b0e7a2d
 --- /dev/null
 +++ b/incus-osd/cli/load.go
 @@ -0,0 +1,24 @@
@@ -2949,20 +3562,20 @@ index 000000000..e12b0e7a2
 +}
 diff --git a/incus-osd/cli/utils.go b/incus-osd/cli/utils.go
 new file mode 100644
-index 000000000..1c12ca06a
+index 0000000000..259765fc7a
 --- /dev/null
 +++ b/incus-osd/cli/utils.go
-@@ -0,0 +1,167 @@
+@@ -0,0 +1,165 @@
 +package cli
 +
 +import (
 +	"bytes"
 +	"context"
 +	"encoding/json"
-+	"errors"
 +	"fmt"
 +	"io"
 +	"net/http"
++	"os"
 +	"strconv"
 +	"strings"
 +
@@ -3046,26 +3659,24 @@ index 000000000..1c12ca06a
 +		return nil, "", err
 +	}
 +
-+	// Handle direct download.
-+	if outData != nil {
-+		for {
-+			_, err = io.CopyN(outData, resp.Body, 4*1024*1024)
-+			if err != nil {
-+				if errors.Is(err, io.EOF) {
-+					break
-+				}
++	defer func() { _ = resp.Body.Close() }()
 +
-+				return nil, "", err
-+			}
++	// Handle raw responses.
++	contentType := resp.Header.Get("Content-Type")
++	if contentType == "application/octet-stream" || contentType == "application/gzip" {
++		if outData == nil {
++			outData = os.Stdout
++		}
++
++		_, err = io.Copy(outData, resp.Body)
++		if err != nil {
++			return nil, "", err
 +		}
 +
 +		return nil, "", nil
 +	}
 +
-+	// Handle JSON responses.
-+	defer func() { _ = resp.Body.Close() }()
-+
-+	// Decode the response
++	// Decode the JSON response.
 +	decoder := json.NewDecoder(resp.Body)
 +	response := api.Response{}
 +
@@ -3122,7 +3733,7 @@ index 000000000..1c12ca06a
 +}
 diff --git a/incus-osd/cli/utils_notwindows.go b/incus-osd/cli/utils_notwindows.go
 new file mode 100644
-index 000000000..3738d3c87
+index 0000000000..3738d3c87e
 --- /dev/null
 +++ b/incus-osd/cli/utils_notwindows.go
 @@ -0,0 +1,11 @@
@@ -3139,7 +3750,7 @@ index 000000000..3738d3c87
 +}
 diff --git a/incus-osd/cli/utils_windows.go b/incus-osd/cli/utils_windows.go
 new file mode 100644
-index 000000000..432ce2703
+index 0000000000..432ce27035
 --- /dev/null
 +++ b/incus-osd/cli/utils_windows.go
 @@ -0,0 +1,11 @@
@@ -3155,7 +3766,7 @@ index 000000000..432ce2703
 +	return int(windows.Stdin)
 +}
 diff --git a/internal/incusos/api_system.go b/internal/incusos/api_system.go
-index b655bf10e..e02bcb022 100644
+index b655bf10e6..e02bcb0224 100644
 --- a/internal/incusos/api_system.go
 +++ b/internal/incusos/api_system.go
 @@ -4,7 +4,7 @@ import (
