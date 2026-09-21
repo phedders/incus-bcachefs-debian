@@ -1,4 +1,3 @@
 001-skip-TestConvertNetworkConfig.patch
 003-Compile-against-go-criu-v7.patch
-004-include-incusos-network-structs.patch
 005-use-older-backoff.patch
