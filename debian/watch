@@ -3,5 +3,5 @@ Version: 5
 # For Debian packaging, only search for newer LTS releases, which have versions like <major>.0.<patch>
 Source: https://github.com/lxc/incus/tags
 Matching-Pattern: .*/v(\d\.0\.\d)\.tar\.gz
-Filenamemangle: s%(?:.*?)?v?(\d[\d.]*)\.tar\.gz%@PACKAGE@-$1.tar.gz%
-Uversionmangle: s/(\d)[_\.\-\+]?(RC|rc|pre|dev|beta|alpha)[.]?(\d*)$/$1~$2$3/
+Filename-Mangle: s%(?:.*?)?v?(\d[\d.]*)\.tar\.gz%@PACKAGE@-$1.tar.gz%
+Uversion-Mangle: s/(\d)[_\.\-\+]?(RC|rc|pre|dev|beta|alpha)[.]?(\d*)$/$1~$2$3/
