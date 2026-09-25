@@ -13,7 +13,7 @@ incus (7.5.1-1~exp1) experimental; urgency=medium
       * GHSA-443p-7392-h4v2
       * GHSA-h85r-gjgx-g2rv
       * GHSA-27q7-qwhm-c34p
-    - Build FreeBSD version of incus-agent
+    - Build NetBSD version of incus-agent
     - Rebase criu patch
     - Drop several patches no longer needed
   * Update Build-Depends and Depends in d/control
