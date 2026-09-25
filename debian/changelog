@@ -1,3 +1,25 @@
+incus (7.5.1-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Includes fixes for the following security issues:
+      * GHSA-4cph-ccqv-hm3c
+      * GHSA-hpjh-q53p-f27r
+      * GHSA-579w-c4rw-c8q3
+      * GHSA-x8gj-2q73-qr6j
+      * GHSA-mmj7-8rgf-mx2h
+      * GHSA-jh4v-j34r-2mgh
+      * GHSA-mfwv-x733-9446
+      * GHSA-wfvq-qh87-gm4j
+      * GHSA-443p-7392-h4v2
+      * GHSA-h85r-gjgx-g2rv
+      * GHSA-27q7-qwhm-c34p
+    - Build FreeBSD version of incus-agent
+    - Rebase criu patch
+    - Drop several patches no longer needed
+  * Update Build-Depends and Depends in d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 25 Sep 2026 15:31:37 +0000
+
 incus (7.4.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release:
