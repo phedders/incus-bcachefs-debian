@@ -328,7 +328,7 @@ Description: Modern container and virtual machine manager - VM guest agent
  .
  This package provides an agent to run inside Incus virtual machines.
  Currently supported guest operating systems include Linux, FreeBSD, MacOS,
- and Windows.
+ NetBSD, and Windows.
  .
  It has to be installed on the Incus host if you want to allow agent
  injection capability when creating a virtual machine.

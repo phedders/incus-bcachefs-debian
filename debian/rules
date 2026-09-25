@@ -25,6 +25,7 @@ ifeq ($(DEB_HOST_ARCH),amd64)
 	cd _build && GOARCH=amd64 CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.linux.x86_64 -tags=agent,netgo github.com/lxc/incus/v7/cmd/incus-agent
 	cd _build && GOARCH=amd64 GOOS=darwin CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.macos.x86_64 -tags=agent,netgo github.com/lxc/incus/v7/cmd/incus-agent
 	cd _build && GOARCH=amd64 GOOS=freebsd CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.freebsd.x86_64 -tags=agent,netgo github.com/lxc/incus/v7/cmd/incus-agent
+	cd _build && GOARCH=amd64 GOOS=netbsd CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.netbsd.x86_64 -tags=agent,netgo github.com/lxc/incus/v7/cmd/incus-agent
 	cd _build && GOARCH=386 GOOS=windows CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.windows.i686 -tags=agent,netgo github.com/lxc/incus/v7/cmd/incus-agent
 	cd _build && GOARCH=amd64 GOOS=windows CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.windows.x86_64 -tags=agent,netgo github.com/lxc/incus/v7/cmd/incus-agent
 	cd _build/bin && ln -s incus-agent.linux.x86_64 incus-agent
@@ -32,6 +33,7 @@ else ifeq ($(DEB_HOST_ARCH),arm64)
 	cd _build && GOARCH=arm64 CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.linux.aarch64 -tags=agent,netgo github.com/lxc/incus/v7/cmd/incus-agent
 	cd _build && GOARCH=arm64 GOOS=darwin CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.macos.aarch64 -tags=agent,netgo github.com/lxc/incus/v7/cmd/incus-agent
 	cd _build && GOARCH=arm64 GOOS=freebsd CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.freebsd.aarch64 -tags=agent,netgo github.com/lxc/incus/v7/cmd/incus-agent
+	cd _build && GOARCH=arm64 GOOS=netbsd CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.netbsd.aarch64 -tags=agent,netgo github.com/lxc/incus/v7/cmd/incus-agent
 	cd _build && GOARCH=arm64 GOOS=windows CGO_ENABLED=0 GOPATH=$$(pwd) GOCACHE=$$(pwd)/go-build GOPROXY=off GOTOOLCHAIN=local go build -trimpath -v -o bin/incus-agent.windows.aarch64 -tags=agent,netgo github.com/lxc/incus/v7/cmd/incus-agent
 	cd _build/bin && ln -s incus-agent.linux.aarch64 incus-agent
 else

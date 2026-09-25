@@ -18,8 +18,8 @@ incus-agent versions and static linking
 =======================================
 
 During amd64 and arm64 builds, multiple versions of incus-agent will be built. Notably,
-FreeBSD, MacOS, and Windows versions will be compiled to support incus-agent running
-in non-Linux virtual machines.
+FreeBSD, MacOS, NetBSD, and Windows versions will be compiled to support incus-agent
+running in non-Linux virtual machines.
 
 The incus-agent binary is compiled as a statically-linked executable. This is done
 because if it is available on the host system, Incus will automatically copy the
