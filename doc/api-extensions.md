@@ -3449,3 +3449,63 @@ converted automatically.
 Adds new `queue.discipline` and `queue.discipline.attach` configuration keys
 to `nic` devices of type `bridged`, `p2p` and `routed`, controlling the queuing
 discipline used on the host side of the NIC and where it gets attached.
+
+## `network_bridge_dns_include_hosts`
+
+Adds a new `dns.include_hosts` configuration key to `bridge` networks,
+controlling whether the network's `dnsmasq` serves records from the host's
+`/etc/hosts` file. Setting it to `false` avoids exposing host-only entries
+to instances while keeping AppArmor confinement.
+
+## `gpu_physical_clique`
+
+Adds a new `nvidia.clique` configuration key to `gpu` devices of type `physical`
+when used with virtual machines. It sets the NVIDIA GPUDirect P2P clique ID
+(0 to 15) advertised to the guest driver, allowing peer-to-peer DMA between
+GPUs passed through to the same virtual machine when they share a clique ID.
+
+## `authorization_scriptlet_claims`
+
+This adds a `Claims` field to the `details` argument of the authorization
+scriptlet, holding the validated OIDC token claims of the client as a
+dictionary. This allows writing rules based on claims such as `groups`.
+
+## `instance_project_move_live`
+
+This allows a running instance to change project as part of a live migration
+to another cluster member. It also lets instances with `dependent` disks
+attached change project.
+
+## `metrics_cluster_members`
+
+This adds cluster member metrics to the `/1.0/metrics` endpoint:
+
+* `incus_cluster_member` with the member's architecture and failure domain
+* `incus_cluster_member_status` with one sample per possible status
+* `incus_cluster_member_role` with one sample per role held
+* `incus_cluster_member_group` with one sample per group the member belongs to
+
+## `instance_security_tags`
+
+Adds a new `security.tags` configuration key to instances, holding a
+comma-separated list of tags. The tags are exposed to the authorization
+backend, with OpenFGA maintaining a `security_tag` object for each tag
+along with a `tag` relation to every instance carrying it.
+
+## `network_ovn_parent`
+
+Adds a new `parent` configuration key to `ovn` networks, referencing another
+`ovn` network in the same project.
+
+## `disk_initial_copy`
+
+This adds the `initial.copy` property to `disk` devices backed by a custom storage volume.
+
+When set to `true` on a container, the content already present at the device `path` inside
+the container is copied into the volume the first time the volume is used, if it's empty.
+
+## `internal_debug_pprof`
+
+This adds `/internal/debug/pprof/` to the API, serving the same `pprof`
+profiles as the `core.debug_address` listener but over the regular
+listeners, restricted to trusted clients with server administration rights.

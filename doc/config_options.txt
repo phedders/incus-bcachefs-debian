@@ -88,9 +88,11 @@ User keys can be used in search.
 For root disk devices, this is used to override the storage pool's default volume
 configuration when creating the instance's root volume.
 
-For custom volumes, only `initial.uid`, `initial.gid` and `initial.mode` are
-accepted and they are used when auto-creating sub-directories inside the custom
-volume (when the `source` includes a sub-path that doesn't exist).
+For custom volumes, only `initial.uid`, `initial.gid`, `initial.mode` and
+`initial.copy` are accepted. The first three are used when auto-creating
+sub-directories inside the custom volume (when the `source` includes a sub-path
+that doesn't exist). `initial.copy` copies the container's existing content at
+`path` into the volume the first time it's used, if the volume is empty.
 
 `initial.uid`, `initial.gid` and `initial.mode` are also used to set the ownership
 and mode of the file system when the `source` is `tmpfs:` or `tmpfs-overlay:`.
@@ -436,6 +438,13 @@ With VMs, this option supports mounting file system disk devices and paths withi
 :default: "0660"
 :required: "no"
 :shortdesc: "Mode of the device in the instance (container only)"
+:type: "int"
+
+```
+
+```{config:option} nvidia.clique devices-gpu_physical
+:required: "no"
+:shortdesc: "NVIDIA GPUDirect P2P clique ID (0 to 15) shared by GPUs allowed to DMA to each other (VM only)"
 :type: "int"
 
 ```
@@ -3011,9 +3020,9 @@ See {ref}`dev-incus` for more information.
 ```{config:option} security.idmap.base instance-security
 :condition: "unprivileged container"
 :liveupdate: "no"
-:shortdesc: "The base host ID to use for the allocation"
+:shortdesc: "The base host ID to use for the ID map"
 :type: "integer"
-Setting this option overrides auto-detection.
+The range can be shared by other containers using the same base and can't be combined with `security.idmap.isolated`.
 ```
 
 ```{config:option} security.idmap.isolated instance-security
@@ -3299,6 +3308,14 @@ This system call allows setting a limited subset of restricted extended attribut
 This system call can be used to get cgroup-based resource usage information.
 ```
 
+```{config:option} security.tags instance-security
+:liveupdate: "yes"
+:shortdesc: "Comma-separated list of security tags for the authorization backend"
+:type: "string"
+Tags are made of lowercase letters, digits, dots, dashes and underscores and are at most 64 characters long.
+They are exposed to the authorization backend but don't affect Incus' own authorization decisions.
+```
+
 <!-- config group instance-security end -->
 <!-- config group instance-snapshots start -->
 ```{config:option} snapshots.expiry instance-snapshots
@@ -3572,8 +3589,14 @@ The cluster member that the instance lived on before evacuation.
 ```
 
 ```{config:option} volatile.last_state.agent instance-volatile
-:shortdesc: "Instance agent state as of last host shutdown"
+:shortdesc: "Last recorded instance agent state"
 :type: "string"
+
+```
+
+```{config:option} volatile.last_state.agent.once instance-volatile
+:shortdesc: "Whether the agent has been seen at least once since last boot"
+:type: "bool"
 
 ```
 
@@ -3861,6 +3884,14 @@ User keys can be used in search.
 :default: "`incus`"
 :shortdesc: "Domain to advertise to DHCP clients and use for DNS resolution"
 :type: "string"
+
+```
+
+```{config:option} dns.include_hosts network_bridge-common
+:condition: "-"
+:default: "`true`"
+:shortdesc: "Whether to serve records from the host's `/etc/hosts` file"
+:type: "bool"
 
 ```
 
@@ -4600,6 +4631,12 @@ User keys can be used in search.
 
 ```{config:option} network network_ovn-common
 :shortdesc: "Uplink network to use for external network access or `none` to keep isolated"
+:type: "string"
+
+```
+
+```{config:option} parent network_ovn-common
+:shortdesc: "Parent OVN network whose logical router and uplink to share"
 :type: "string"
 
 ```
@@ -6350,7 +6387,9 @@ Note that the claim must be contained in the access token.
 :scope: "global"
 :shortdesc: "Whether to use RBD lightweight clones rather than full dataset copies"
 :type: "bool"
-
+When disabled, new volumes are still cloned from their source but flattened in the
+background right after creation, so the source can only be fully removed once that
+has completed.
 ```
 
 ```{config:option} ceph.rbd.du storage_ceph-common
