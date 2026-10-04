@@ -1,3 +1,25 @@
+incus (7.5.1-1~exp2) experimental; urgency=medium
+
+  * Sync packaging changes from unstable
+  * Cherry-pick fix for test failure on loong64
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 04 Oct 2026 18:05:37 +0000
+
+incus (7.0.1-6) unstable; urgency=medium
+
+  * Switch to using module-aware builds:
+    - d/control:
+      * Rename binary package golang-github-lxc-incus-dev to
+        golang-github-lxc-incus-v7-dev
+      * Update XS-Go-Import-Path to include major version
+      * Update Build-Depends and Depends
+    - Update agent build commands in d/rules
+    - Add temporary lintian override to d/s/lintian-overrides
+    - Drop several patches that are no longer required
+  * Update patches for GHSA-579w-c4rw-c8q3 and GHSA-mfwv-x733-9446
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 04 Oct 2026 17:18:21 +0000
+
 incus (7.5.1-1~exp1) experimental; urgency=medium
 
   * New upstream feature release:
@@ -20,6 +42,32 @@ incus (7.5.1-1~exp1) experimental; urgency=medium
 
  -- Mathias Gibbens <gibmat@debian.org>  Fri, 25 Sep 2026 15:31:37 +0000
 
+incus (7.0.1-5) unstable; urgency=high
+
+  * Cherry-pick fixes for the following security issues:
+    - GHSA-4cph-ccqv-hm3c
+    - GHSA-hpjh-q53p-f27r
+    - GHSA-579w-c4rw-c8q3
+    - GHSA-x8gj-2q73-qr6j
+    - GHSA-mmj7-8rgf-mx2h
+    - GHSA-jh4v-j34r-2mgh
+    - GHSA-mfwv-x733-9446
+    - GHSA-wfvq-qh87-gm4j
+    - GHSA-443p-7392-h4v2
+    - CVE-2026-85526 / GHSA-h85r-gjgx-g2rv
+    - CVE-2026-85185 / GHSA-27q7-qwhm-c34p
+
+ -- Mathias Gibbens <gibmat@debian.org>  Thu, 24 Sep 2026 22:19:21 +0000
+
+incus (7.0.1-4) unstable; urgency=medium
+
+  * Cherry-pick fixes for a few issues:
+    - VM startup fails in agent device setup with rsync 3.5.0
+    - Only transfer xattrs settable without CAP_SYS_ADMIN
+    - Handle concurrent console access / log retrieval
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 18 Sep 2026 13:53:02 +0000
+
 incus (7.4.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release:
@@ -32,6 +80,14 @@ incus (7.4.0-1~exp1) experimental; urgency=medium
   * Update Build-Depends and Depends in d/control
 
  -- Mathias Gibbens <gibmat@debian.org>  Fri, 28 Aug 2026 02:08:22 +0000
+
+incus (7.0.1-3) unstable; urgency=medium
+
+  * Cherry-pick fixes for the following security issues:
+    - CVE-2026-81500 / GHSA-9pqw-c7m4-xvg7
+    - CVE-2026-81501 / GHSA-c6wx-8679-hpr9
+
+ -- Mathias Gibbens <gibmat@debian.org>  Thu, 27 Aug 2026 20:21:32 +0000
 
 incus (7.3.0-1~exp1) experimental; urgency=medium
 
@@ -56,6 +112,30 @@ incus (7.3.0-1~exp1) experimental; urgency=medium
 
  -- Mathias Gibbens <gibmat@debian.org>  Fri, 31 Jul 2026 12:23:18 +0000
 
+incus (7.0.1-2) unstable; urgency=high
+
+  [ Marcos Talau ]
+  * debian/salsa-ci.yml: Add to provide CI tests for Salsa
+
+  [ Mathias Gibbens ]
+  * Cherry-pick fixes for the following security issues:
+    - CVE-2026-62313 / GHSA-53cg-qvg7-m8vg
+    - CVE-2026-62867 / GHSA-q7xw-r4w2-2wcm
+    - CVE-2026-62940 / GHSA-qw5c-v953-38gw
+    - CVE-2026-62941 / GHSA-mq9x-prm8-3vpw
+    - CVE-2026-63125 / GHSA-6rqx-22hc-qm36
+    - CVE-2026-63343 / GHSA-fmjx-5j3g-997p
+    - CVE-2026-81493 / GHSA-p2v3-6wvc-cv3p
+    - CVE-2026-81494 / GHSA-7fj9-65v4-rp7h
+    - CVE-2026-81495 / GHSA-67qw-68v3-36h6
+    - CVE-2026-81496 / GHSA-26gp-p5fw-3r2h
+    - CVE-2026-81497 / GHSA-4qxq-p5hm-3q3p
+    - CVE-2026-81498 / GHSA-m3j6-p3v3-qmjv
+    - CVE-2026-81499 / GHSA-6v6x-387m-rj4w
+  * Cherry-pick four additional security fixes not assigned CVEs
+
+ -- Mathias Gibbens <gibmat@debian.org>  Thu, 30 Jul 2026 22:13:53 +0000
+
 incus (7.2.0-1~exp3) experimental; urgency=medium
 
   * Set minimum required version of dh-golang
@@ -67,6 +147,17 @@ incus (7.2.0-1~exp2) experimental; urgency=medium
   * Build using the new module-aware capability
 
  -- Mathias Gibbens <gibmat@debian.org>  Tue, 21 Jul 2026 21:28:37 +0000
+
+incus (7.0.1-1) unstable; urgency=medium
+
+  * New upstream release:
+    - Drop patches cherry-picked from upstream
+    - Rebase patch adjusting import paths
+    - Add another patch to fix issues caused by Debian's use of GO111MODULE=off
+    - Update IncusOS network struct and cli patch
+  * Update Build-Depends and Depends in d/control
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 10 Jul 2026 16:12:42 +0000
 
 incus (7.2.0-1~exp1) experimental; urgency=medium
 
@@ -88,6 +179,27 @@ incus (7.2.0-1~exp1) experimental; urgency=medium
   * Update Build-Depends and Depends in d/control
 
  -- Mathias Gibbens <gibmat@debian.org>  Fri, 26 Jun 2026 12:15:40 +0000
+
+incus (7.0.0-5) unstable; urgency=high
+
+  * Apply two small updates to the prior security patches
+
+ -- Mathias Gibbens <gibmat@debian.org>  Thu, 25 Jun 2026 23:08:09 +0000
+
+incus (7.0.0-4) unstable; urgency=high
+
+  * Cherry-pick fixes for the following security issues:
+    - CVE-2026-48749 / GHSA-2q3f-q5pq-g8wv
+    - CVE-2026-48750 / GHSA-73hr-m85f-64v9
+    - CVE-2026-48751 / GHSA-48q5-w887-33wv
+    - CVE-2026-48752 / GHSA-vxp5-584q-c479
+    - CVE-2026-48755 / GHSA-v6mj-8pf4-hhw4
+    - CVE-2026-48769 / GHSA-f6m5-xw2g-xc4x
+    - CVE-2026-55621 / GHSA-64f3-v33m-w89f
+    - CVE-2026-55622 / GHSA-c9f5-j9c3-mhrg
+  * Add patch to fix crash when generating pfx client certificate
+
+ -- Mathias Gibbens <gibmat@debian.org>  Thu, 25 Jun 2026 00:52:42 +0000
 
 incus (7.1.0-1~exp1) experimental; urgency=medium
 

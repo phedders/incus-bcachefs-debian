@@ -1,0 +1,13 @@
+From: Mathias Gibbens <gibmat@debian.org>
+Description: Remove a godebug tag no longer needed with module-aware builds
+Forwarded: not-needed
+diff --git a/cmd/incus-agent/main.go b/cmd/incus-agent/main.go
+index 4addc5d829..5a000d7bc5 100644
+--- a/cmd/incus-agent/main.go
++++ b/cmd/incus-agent/main.go
+@@ -1,5 +1,3 @@
+-//go:debug httpmuxgo121=0
+-
+ package main
+ 
+ import (
