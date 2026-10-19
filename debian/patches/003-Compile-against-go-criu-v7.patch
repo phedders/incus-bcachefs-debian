@@ -3,6 +3,9 @@ Date: Thu, 8 Aug 2024 19:00:14 -0400
 Subject: Compile against go-criu v7
 
 ---
+ internal/server/instance/drivers/driver_lxc.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
 diff --git a/go.mod b/go.mod
 index 5406c7dace..ef85a9cf3a 100644
 --- a/go.mod

@@ -1,3 +1,22 @@
+incus (7.0.2-2) unstable; urgency=medium
+
+  * Add patch to switch indirect dependency on google/renameio to v2
+  * Update minimum required version of golang-github-pkg-sftp-dev to assist
+    backporting
+
+ -- Mathias Gibbens <gibmat@debian.org>  Mon, 19 Oct 2026 21:38:36 +0000
+
+incus (7.0.2-1) unstable; urgency=medium
+
+  * New upstream release:
+    - Drop patches applied upstream
+    - Update Build-Depends and Depends
+    - Build NetBSD agent
+  * Fix a few minor issues in d/copyright (thanks to Andrew McMillan)
+  * Add passwd to Depends for incus-base (Closes: #1150545)
+
+ -- Mathias Gibbens <gibmat@debian.org>  Mon, 19 Oct 2026 13:49:12 +0000
+
 incus (7.5.1-1~exp2) experimental; urgency=medium
 
   * Sync packaging changes from unstable
@@ -200,6 +219,12 @@ incus (7.0.0-4) unstable; urgency=high
   * Add patch to fix crash when generating pfx client certificate
 
  -- Mathias Gibbens <gibmat@debian.org>  Thu, 25 Jun 2026 00:52:42 +0000
+
+incus (7.0.0-3) unstable; urgency=medium
+
+  * Cherry-pick upstream changes for go-yaml/v4 rc5
+
+ -- Mathias Gibbens <gibmat@debian.org>  Sun, 14 Jun 2026 15:34:56 +0000
 
 incus (7.1.0-1~exp1) experimental; urgency=medium
 

@@ -8,7 +8,7 @@ Copyright:
  2023-2026 LinuxContainers
 License: Apache-2.0
 
-Files: shared/cgo/incus_bpf.h
+Files: shared/cgo/incus_bpf.h shared/cgo/incus_bpf_common.h
 Copyright: 2011-2014 PLUMgrid
 License: GPL-2.0 with Linux-syscall-note exception
 
@@ -18,7 +18,7 @@ Copyright:
  Copyright 2016 Red Hat, Inc
 License: LGPL-2.1+ with Linux-syscall-note exception
 
-Files: shared/cgo/macro.h shared/cgo/compiler.h
+Files: shared/cgo/error_utils.h shared/cgo/compiler.h shared/cgo/macro.h
 Copyright:
  Copyright 2018 Christian Brauner
  Copyright 2018 Canonical Ltd
@@ -40,7 +40,7 @@ Copyright:
  Copyright 2013 Google Inc
  Copyright 2016 the gousb Authors
 License: Apache-2.0
-Comment: A fork+minimalized version of code specifically for Incus' use; see internal/usbid/README.md for details
+Comment: A fork+minimalized version of code specifically for Incus' use; see shared/resources/usbid/README.md for details
 
 Files: debian/*
 Copyright:

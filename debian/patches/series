@@ -1,4 +1,5 @@
 001-skip-TestConvertNetworkConfig.patch
 002-remove-godebug.patch
 003-Compile-against-go-criu-v7.patch
+004-renameio-v2-gomod.patch
 100-cherry-pick-fix-loong64-test.patch

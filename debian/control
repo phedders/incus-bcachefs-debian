@@ -56,7 +56,7 @@ Build-Depends: debhelper-compat (= 13),
                golang-github-osrg-gobgp-dev (>= 4.3.0),
                golang-github-ovn-kubernetes-libovsdb-dev,
                golang-github-pires-go-proxyproto-dev,
-               golang-github-pkg-sftp-dev,
+               golang-github-pkg-sftp-dev (>= 1.13.11),
                golang-github-pkg-xattr-dev,
                golang-github-prometheus-procfs-dev,
                golang-github-shirou-gopsutil-dev,
@@ -147,7 +147,7 @@ Depends: golang-github-adhocore-gronx-dev,
          golang-github-osrg-gobgp-dev (>= 4.3.0),
          golang-github-ovn-kubernetes-libovsdb-dev,
          golang-github-pires-go-proxyproto-dev,
-         golang-github-pkg-sftp-dev,
+         golang-github-pkg-sftp-dev (>= 1.13.11),
          golang-github-pkg-xattr-dev,
          golang-github-prometheus-procfs-dev,
          golang-github-shirou-gopsutil-dev,
@@ -183,7 +183,7 @@ Description: Modern container and virtual machine manager - library
  It supports multiple different local or remote storage options, traditional
  or fully distributed networking and offers most common cloud features,
  including a full REST API and integrations with common tooling like Ansible,
- Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
+ Terraform/OpenTofu, Packer, and Kubernetes Cluster API.
  .
  This package contains the Incus source code for use in building other
  Debian packages -- normal users should not directly use this package in
@@ -214,7 +214,7 @@ Description: Modern container and virtual machine manager - daemon
  It supports multiple different local or remote storage options, traditional
  or fully distributed networking and offers most common cloud features,
  including a full REST API and integrations with common tooling like Ansible,
- Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
+ Terraform/OpenTofu, Packer, and Kubernetes Cluster API.
  .
  This metapackage will install everything needed to run system containers,
  application (Docker/OCI) containers, and VMs. Only amd64, arm64, ppc64el,
@@ -232,6 +232,7 @@ Depends: ${misc:Depends},
          incus-client (= ${binary:Version}),
          iproute2,
          nftables,
+         passwd,
          rsync,
          skopeo,
          squashfs-tools,
@@ -259,7 +260,7 @@ Description: Modern container and virtual machine manager - daemon (container-on
  It supports multiple different local or remote storage options, traditional
  or fully distributed networking and offers most common cloud features,
  including a full REST API and integrations with common tooling like Ansible,
- Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
+ Terraform/OpenTofu, Packer, and Kubernetes Cluster API.
  .
  This package contains only what is needed to run system containers and
  application (Docker/OCI) containers.
@@ -282,7 +283,7 @@ Description: Modern container and virtual machine manager - client
  It supports multiple different local or remote storage options, traditional
  or fully distributed networking and offers most common cloud features,
  including a full REST API and integrations with common tooling like Ansible,
- Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
+ Terraform/OpenTofu, Packer, and Kubernetes Cluster API.
  .
  This package contains the Incus command line client.
 
@@ -306,7 +307,7 @@ Description: Modern container and virtual machine manager - extra tools
  It supports multiple different local or remote storage options, traditional
  or fully distributed networking and offers most common cloud features,
  including a full REST API and integrations with common tooling like Ansible,
- Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
+ Terraform/OpenTofu, Packer, and Kubernetes Cluster API.
  .
  This package contains extra tools provided with Incus.
   - fuidshift - A tool to map/unmap filesystem uids/gids
@@ -329,7 +330,7 @@ Description: Modern container and virtual machine manager - VM guest agent
  It supports multiple different local or remote storage options, traditional
  or fully distributed networking and offers most common cloud features,
  including a full REST API and integrations with common tooling like Ansible,
- Terraform/OpenTofu, Packr, and Kubernetes Cluster API.
+ Terraform/OpenTofu, Packer, and Kubernetes Cluster API.
  .
  This package provides an agent to run inside Incus virtual machines.
  Currently supported guest operating systems include Linux, FreeBSD, MacOS,
