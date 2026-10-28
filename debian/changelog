@@ -35,7 +35,7 @@ incus (7.0.1-6) unstable; urgency=medium
     - Update agent build commands in d/rules
     - Add temporary lintian override to d/s/lintian-overrides
     - Drop several patches that are no longer required
-  * Update patches for GHSA-579w-c4rw-c8q3 and GHSA-mfwv-x733-9446
+  * Update patches for CVE-2026-115373 and CVE-2026-115377
 
  -- Mathias Gibbens <gibmat@debian.org>  Sun, 04 Oct 2026 17:18:21 +0000
 
@@ -43,17 +43,17 @@ incus (7.5.1-1~exp1) experimental; urgency=medium
 
   * New upstream feature release:
     - Includes fixes for the following security issues:
-      * GHSA-4cph-ccqv-hm3c
-      * GHSA-hpjh-q53p-f27r
-      * GHSA-579w-c4rw-c8q3
-      * GHSA-x8gj-2q73-qr6j
-      * GHSA-mmj7-8rgf-mx2h
-      * GHSA-jh4v-j34r-2mgh
-      * GHSA-mfwv-x733-9446
-      * GHSA-wfvq-qh87-gm4j
-      * GHSA-443p-7392-h4v2
-      * CVE-2026-85526 / GHSA-h85r-gjgx-g2rv
       * CVE-2026-85185 / GHSA-27q7-qwhm-c34p
+      * CVE-2026-85526 / GHSA-h85r-gjgx-g2rv
+      * CVE-2026-115370 / GHSA-443p-7392-h4v2
+      * CVE-2026-115371 / GHSA-x8gj-2q73-qr6j
+      * CVE-2026-115372 / GHSA-4cph-ccqv-hm3c
+      * CVE-2026-115373 / GHSA-mfwv-x733-9446
+      * CVE-2026-115374 / GHSA-mmj7-8rgf-mx2h
+      * CVE-2026-115375 / GHSA-hpjh-q53p-f27r
+      * CVE-2026-115376 / GHSA-jh4v-j34r-2mgh
+      * CVE-2026-115377 / GHSA-579w-c4rw-c8q3
+      * CVE-2026-115378 / GHSA-wfvq-qh87-gm4j
     - Build NetBSD version of incus-agent
     - Rebase criu patch
     - Drop several patches no longer needed
@@ -64,17 +64,17 @@ incus (7.5.1-1~exp1) experimental; urgency=medium
 incus (7.0.1-5) unstable; urgency=high
 
   * Cherry-pick fixes for the following security issues:
-    - GHSA-4cph-ccqv-hm3c
-    - GHSA-hpjh-q53p-f27r
-    - GHSA-579w-c4rw-c8q3
-    - GHSA-x8gj-2q73-qr6j
-    - GHSA-mmj7-8rgf-mx2h
-    - GHSA-jh4v-j34r-2mgh
-    - GHSA-mfwv-x733-9446
-    - GHSA-wfvq-qh87-gm4j
-    - GHSA-443p-7392-h4v2
-    - CVE-2026-85526 / GHSA-h85r-gjgx-g2rv
     - CVE-2026-85185 / GHSA-27q7-qwhm-c34p
+    - CVE-2026-85526 / GHSA-h85r-gjgx-g2rv
+    - CVE-2026-115370 / GHSA-443p-7392-h4v2
+    - CVE-2026-115371 / GHSA-x8gj-2q73-qr6j
+    - CVE-2026-115372 / GHSA-4cph-ccqv-hm3c
+    - CVE-2026-115373 / GHSA-mfwv-x733-9446
+    - CVE-2026-115374 / GHSA-mmj7-8rgf-mx2h
+    - CVE-2026-115375 / GHSA-hpjh-q53p-f27r
+    - CVE-2026-115376 / GHSA-jh4v-j34r-2mgh
+    - CVE-2026-115377 / GHSA-579w-c4rw-c8q3
+    - CVE-2026-115378 / GHSA-wfvq-qh87-gm4j
 
  -- Mathias Gibbens <gibmat@debian.org>  Thu, 24 Sep 2026 22:19:21 +0000
 
