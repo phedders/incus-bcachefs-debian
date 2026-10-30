@@ -1,3 +1,57 @@
+incus (7.6.0-1~exp1) experimental; urgency=medium
+
+  * New upstream feature release:
+    - Includes fixes for the following security issues:
+      * GHSA-5pgx-q9xx-j3qv
+      * GHSA-jcw9-v2ff-8m79
+      * GHSA-xg75-xf37-cph9
+      * GHSA-p45f-gqqj-6qq3
+      * GHSA-q9fc-p923-6vp7
+      * GHSA-cwg9-8mc4-hf7j
+      * GHSA-5c64-j5m6-8433
+      * GHSA-3wxw-5gh2-j2x2
+      * GHSA-3rgf-297m-775x
+      * GHSA-9c46-v3hw-v6m8
+      * GHSA-h2j8-4crh-vhfc
+      * GHSA-8r3h-vc36-6xpx
+      * GHSA-v736-5xp3-jghf
+      * GHSA-x6pw-mh5w-pq73
+      * GHSA-pf5w-m8m6-5265
+      * GHSA-f7xp-22ph-v444
+      * GHSA-9f75-5fjw-5jvv
+      * GHSA-8mgx-h4v8-xqv2
+    - Update minimum required versions of a couple dependencies
+    - Drop patches applied upstream
+    - Cherry-pick fix for incus-user regression
+  * Sync packaging changes from unstable
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 30 Oct 2026 17:19:31 +0000
+
+incus (7.0.2-3) unstable; urgency=high
+
+  * Cherry-pick fixes for the following security issues:
+    - GHSA-5pgx-q9xx-j3qv
+    - GHSA-jcw9-v2ff-8m79
+    - GHSA-xg75-xf37-cph9
+    - GHSA-p45f-gqqj-6qq3
+    - GHSA-q9fc-p923-6vp7
+    - GHSA-cwg9-8mc4-hf7j
+    - GHSA-5c64-j5m6-8433
+    - GHSA-3wxw-5gh2-j2x2
+    - GHSA-3rgf-297m-775x
+    - GHSA-9c46-v3hw-v6m8
+    - GHSA-h2j8-4crh-vhfc
+    - GHSA-8r3h-vc36-6xpx
+    - GHSA-v736-5xp3-jghf
+    - GHSA-x6pw-mh5w-pq73
+    - GHSA-pf5w-m8m6-5265
+    - GHSA-f7xp-22ph-v444
+    - GHSA-9f75-5fjw-5jvv
+    - GHSA-8mgx-h4v8-xqv2
+  * Drop unneeded lintian override
+
+ -- Mathias Gibbens <gibmat@debian.org>  Thu, 29 Oct 2026 17:47:40 +0000
+
 incus (7.0.2-2) unstable; urgency=medium
 
   * Add patch to switch indirect dependency on google/renameio to v2

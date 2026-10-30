@@ -1,0 +1,207 @@
+From d34562e45efe62c8c31523f7c82a508d13f68219 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?St=C3=A9phane=20Graber?= <stgraber@stgraber.org>
+Date: Fri, 30 Oct 2026 09:18:54 -0400
+Subject: [PATCH 1/2] client: Only probe Unix sockets when several exist
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Closes #4297
+
+Signed-off-by: Stéphane Graber <stgraber@stgraber.org>
+---
+ client/connection.go      | 45 +++++++++++++++++++++------------------
+ client/connection_test.go | 27 +++++++++++++++++++++++
+ 2 files changed, 51 insertions(+), 21 deletions(-)
+
+diff --git a/client/connection.go b/client/connection.go
+index 750149e6927..61a1e047fd7 100644
+--- a/client/connection.go
++++ b/client/connection.go
+@@ -188,12 +188,9 @@ func probeActiveUnixSocket(sock string) bool {
+ 	return false
+ }
+ 
+-func probeFileExists(sock string) bool {
+-	_, err := os.Lstat(sock)
+-	return err == nil
+-}
+-
+-func resolveUnixSocket(path string, probe func(string) bool) (string, string) {
++// ResolveUnixSocket returns the Unix socket path and optional project name for a local Unix connection.
++// If path is empty, it automatically resolves to an active or default socket.
++func ResolveUnixSocket(path string) (string, string) {
+ 	if path != "" {
+ 		return path, ""
+ 	}
+@@ -208,30 +205,36 @@ func resolveUnixSocket(path string, probe func(string) bool) (string, string) {
+ 		return socketForDir(envDir)
+ 	}
+ 
++	// Collect the sockets present on disk.
++	type candidate struct {
++		path    string
++		project string
++	}
++
++	candidates := []candidate{}
+ 	for _, dir := range defaultSocketDirs {
+ 		sock, proj := socketForDir(dir)
+-		if probe(sock) {
+-			return sock, proj
++
++		_, err := os.Lstat(sock)
++		if err == nil {
++			candidates = append(candidates, candidate{path: sock, project: proj})
+ 		}
+ 	}
+ 
+-	return "", ""
+-}
+-
+-// ResolveUnixSocket returns the active Unix socket path and optional project name for a local Unix connection.
+-// If path is empty, it automatically resolves to an active or default socket.
+-func ResolveUnixSocket(path string) (string, string) {
+-	sock, proj := resolveUnixSocket(path, probeActiveUnixSocket)
+-	if sock != "" {
+-		return sock, proj
++	if len(candidates) == 0 {
++		return socketForDir(defaultSocketDirs[len(defaultSocketDirs)-1])
+ 	}
+ 
+-	sock, proj = resolveUnixSocket(path, probeFileExists)
+-	if sock != "" {
+-		return sock, proj
++	// Connecting wakes up socket-activated daemons, so only do it to tell a stale socket from an active one.
++	if len(candidates) > 1 {
++		for _, c := range candidates {
++			if probeActiveUnixSocket(c.path) {
++				return c.path, c.project
++			}
++		}
+ 	}
+ 
+-	return socketForDir(defaultSocketDirs[len(defaultSocketDirs)-1])
++	return candidates[0].path, candidates[0].project
+ }
+ 
+ // ConnectIncusUnixWithContext lets you connect to a remote Incus daemon over a local unix socket with context.Context.
+diff --git a/client/connection_test.go b/client/connection_test.go
+index 56632a8085e..ba6ac080f79 100644
+--- a/client/connection_test.go
++++ b/client/connection_test.go
+@@ -7,6 +7,7 @@ import (
+ 	"path/filepath"
+ 	"runtime"
+ 	"testing"
++	"time"
+ 
+ 	"github.com/stretchr/testify/assert"
+ )
+@@ -31,6 +32,13 @@ func TestResolveUnixSocket(t *testing.T) {
+ 	fallbackDir1 := t.TempDir()
+ 	fallbackDir2 := t.TempDir()
+ 
++	// Dir with a lone active socket, which must be used without connecting to it.
++	loneDir := t.TempDir()
++	loneSock := filepath.Join(loneDir, "unix.socket")
++	loneListener, err := net.Listen("unix", loneSock)
++	assert.NoError(t, err)
++	defer func() { _ = loneListener.Close() }()
++
+ 	// Dirs for incus-user (unix.socket not writable, unix.socket.user writable).
+ 	userDir := t.TempDir()
+ 	userSock := filepath.Join(userDir, "unix.socket.user")
+@@ -49,6 +57,7 @@ func TestResolveUnixSocket(t *testing.T) {
+ 		expectedPath string
+ 		expectedProj string
+ 		skipOS       []string
++		noConnect    net.Listener
+ 	}{
+ 		{
+ 			name:         "env override",
+@@ -73,6 +82,13 @@ func TestResolveUnixSocket(t *testing.T) {
+ 			socketDirs:   []string{staleDir, activeDir},
+ 			expectedPath: activeSock,
+ 		},
++		{
++			name:         "lone socket used without connecting",
++			path:         "",
++			socketDirs:   []string{fallbackDir1, loneDir},
++			expectedPath: loneSock,
++			noConnect:    loneListener,
++		},
+ 		{
+ 			name:         "default fallback when no socket exists",
+ 			path:         "",
+@@ -109,6 +125,17 @@ func TestResolveUnixSocket(t *testing.T) {
+ 			path, project := ResolveUnixSocket(tc.path)
+ 			assert.Equal(t, tc.expectedPath, path)
+ 			assert.Equal(t, tc.expectedProj, project)
++
++			if tc.noConnect != nil {
++				unixListener, ok := tc.noConnect.(*net.UnixListener)
++				assert.True(t, ok)
++
++				err := unixListener.SetDeadline(time.Now().Add(100 * time.Millisecond))
++				assert.NoError(t, err)
++
++				_, err = unixListener.Accept()
++				assert.ErrorIs(t, err, os.ErrDeadlineExceeded)
++			}
+ 		})
+ 	}
+ }
+
+From ef9a103401c19d26a3def929c310eadfa376bfea Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?St=C3=A9phane=20Graber?= <stgraber@stgraber.org>
+Date: Fri, 30 Oct 2026 09:18:55 -0400
+Subject: [PATCH 2/2] incus-user: Serialize user setup across connections
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Stéphane Graber <stgraber@stgraber.org>
+---
+ cmd/incus-user/main_daemon.go | 1 +
+ cmd/incus-user/proxy.go       | 6 +++++-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/cmd/incus-user/main_daemon.go b/cmd/incus-user/main_daemon.go
+index 8b7b8068f29..d1453d13193 100644
+--- a/cmd/incus-user/main_daemon.go
++++ b/cmd/incus-user/main_daemon.go
+@@ -22,6 +22,7 @@ var (
+ 	mu           sync.RWMutex
+ 	connections  uint64
+ 	transactions uint64
++	setupMu      sync.Mutex
+ )
+ 
+ var projectNames []string
+diff --git a/cmd/incus-user/proxy.go b/cmd/incus-user/proxy.go
+index ed1977f8fa1..0809e95bd89 100644
+--- a/cmd/incus-user/proxy.go
++++ b/cmd/incus-user/proxy.go
+@@ -81,16 +81,20 @@ func proxyConnection(conn *net.UnixConn, serverUnixPath string) {
+ 	logger.Debug("Connected")
+ 	defer logger.Debug("Disconnected")
+ 
+-	// Check if the user was setup.
++	// Check if the user was setup, under a lock as concurrent connections would otherwise race on the setup.
++	setupMu.Lock()
+ 	if !util.PathExists(internalUtil.VarPath("users", fmt.Sprintf("%d", creds.Uid))) || !slices.Contains(projectNames, fmt.Sprintf("user-%d", creds.Uid)) {
+ 		log.Infof("Setting up for uid %d", creds.Uid)
+ 		err := serverSetupUser(creds.Uid)
+ 		if err != nil {
++			setupMu.Unlock()
+ 			log.Errorf("Failed to setup new user: %v", err)
+ 			return
+ 		}
+ 	}
+ 
++	setupMu.Unlock()
++
+ 	// Connect to the daemon.
+ 	unixAddr, err := net.ResolveUnixAddr("unix", serverUnixPath)
+ 	if err != nil {

@@ -7,23 +7,23 @@ Subject: Compile against go-criu v7
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/go.mod b/go.mod
-index 5406c7dace..ef85a9cf3a 100644
+index 77f57177d9..f09709fa8b 100644
 --- a/go.mod
 +++ b/go.mod
 @@ -13,7 +13,7 @@ require (
- 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.3
- 	github.com/aws/smithy-go v1.28.2
- 	github.com/cenkalti/backoff/v7 v7.0.0
--	github.com/checkpoint-restore/go-criu/v8 v8.4.0
+ 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.6
+ 	github.com/aws/smithy-go v1.28.7
+ 	github.com/cenkalti/backoff/v7 v7.0.1
+-	github.com/checkpoint-restore/go-criu/v8 v8.5.0
 +	github.com/checkpoint-restore/go-criu/v7 v7.2.0
- 	github.com/cowsql/go-cowsql v1.22.1-0.20260810140515-ae0d26981bfc
+ 	github.com/cowsql/go-cowsql v1.22.1-0.20261014181424-288c15e22ea5
  	github.com/creack/pty v1.1.24
  	github.com/digitalocean/go-smbios v0.0.0-20180907143718-390a4f403a8e
 diff --git a/internal/server/instance/drivers/driver_lxc.go b/internal/server/instance/drivers/driver_lxc.go
-index 86776d44cc..6bd5f54df6 100644
+index ee3e8be0df..b621959e82 100644
 --- a/internal/server/instance/drivers/driver_lxc.go
 +++ b/internal/server/instance/drivers/driver_lxc.go
-@@ -27,7 +27,7 @@ import (
+@@ -28,7 +28,7 @@ import (
  	"syscall"
  	"time"
  
