@@ -90,6 +90,7 @@ type: lifecycle
 | `cluster-group-renamed`                | A cluster group has been renamed.                                     |                                                                                                      |
 | `cluster-group-updated`                | A cluster group has been updated.                                     |                                                                                                      |
 | `cluster-member-added`                 | A new machine has joined the cluster.                                 |                                                                                                      |
+| `cluster-member-offline`               | The cluster member has been detected as offline by cluster healing.   | `healing_delay`: seconds before the evacuation starts.                                               |
 | `cluster-member-removed`               | The cluster member has been removed from the cluster.                 |                                                                                                      |
 | `cluster-member-renamed`               | The cluster member has been renamed.                                  | `old_name`: the previous name.                                                                       |
 | `cluster-member-updated`               | The cluster member's configuration been edited.                       |                                                                                                      |
@@ -151,6 +152,10 @@ type: lifecycle
 | `network-forward-created`              | A new network forward has been created.                               |                                                                                                      |
 | `network-forward-deleted`              | The network forward has been deleted.                                 |                                                                                                      |
 | `network-forward-updated`              | The network forward has been updated.                                 |                                                                                                      |
+| `network-load-balancer-created`        | A new network load balancer has been created.                         |                                                                                                      |
+| `network-load-balancer-deleted`        | The network load balancer has been deleted.                           |                                                                                                      |
+| `network-load-balancer-health-changed` | The network load balancer has gone healthy or unhealthy.              | `status`: `healthy` or `unhealthy`. `service_monitors`: list of the backends' service monitor statuses. |
+| `network-load-balancer-updated`        | The network load balancer has been updated.                           |                                                                                                      |
 | `network-peer-created`                 | A new network peer has been created.                                  |                                                                                                      |
 | `network-peer-deleted`                 | The network peer has been deleted.                                    |                                                                                                      |
 | `network-peer-updated`                 | The network peer has been updated.                                    |                                                                                                      |
