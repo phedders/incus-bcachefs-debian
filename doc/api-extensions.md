@@ -3613,3 +3613,7 @@ is moved along with the virtual machine when it moves to another cluster member.
 ## `nic_sriov_migration_native`
 
 This adds a new `variant` configuration key to both `sriov` networks and NICs, allowing to set the VFIO driver to use (either no value to keep the generic `vfio-pci` driver, or `mlx5` for `mlx5_vfio_pci`). This allows native VFIO live-migration of SR-IOV NICs.
+
+## `storage_driver_bcachefs`
+
+This adds a bcachefs storage driver.

@@ -599,6 +599,7 @@ var APIExtensions = []string{
 	"cluster_healing_delay",
 	"storage_volume_migration_follow_instance",
 	"nic_sriov_migration_native",
+	"storage_driver_bcachefs",
 }
 
 // APIExtensionsCount returns the number of available API extensions.
