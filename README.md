@@ -14,6 +14,40 @@ You can try Incus online at: [`https://linuxcontainers.org/incus/try-it/`](https
 
 <!-- Include end Incus intro -->
 
+## Debian packages (bcachefs fork)
+
+This branch builds Debian packages for Incus with the native bcachefs storage
+driver, including the `incus-ui-canonical` web interface. Signed packages for
+Debian testing and unstable are published at:
+
+<https://phedders.github.io/incus-bcachefs-debian/>
+
+### Install
+
+```sh
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo curl -fsSL https://phedders.github.io/incus-bcachefs-debian/key.asc \
+  -o /etc/apt/keyrings/incus-bcachefs.asc
+
+echo "deb [signed-by=/etc/apt/keyrings/incus-bcachefs.asc] https://phedders.github.io/incus-bcachefs-debian/ testing main" \
+  | sudo tee /etc/apt/sources.list.d/incus-bcachefs.list
+
+sudo apt update
+sudo apt install incus incus-ui-canonical
+```
+
+Use `sid` instead of `testing` on unstable. The packages are built for
+`amd64` only, and only the most recent build of each suite is published.
+
+Signing key fingerprint:
+
+```
+06EC 9621 12E7 EC9C F1B9  FFB0 49DC 7C32 B6C9 54E5
+```
+
+See [`debian/README.source`](debian/README.source) for packaging and build
+details.
+
 ## Project history
 Incus, which is named after the [Cumulonimbus incus](https://en.wikipedia.org/wiki/Cumulonimbus_incus) or anvil cloud
 started as a community fork of Canonical's LXD following [Canonical's takeover](https://linuxcontainers.org/lxd/) of the LXD project from the

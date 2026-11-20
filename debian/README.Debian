@@ -1,3 +1,25 @@
+Packages from the bcachefs repository
+=====================================
+
+This packaging adds the native bcachefs storage driver and builds for Debian
+testing and unstable. Signed packages, including incus-ui-canonical, are
+published at:
+
+    https://phedders.github.io/incus-bcachefs-debian/
+
+To install from that repository:
+
+    sudo install -d -m 0755 /etc/apt/keyrings
+    sudo curl -fsSL https://phedders.github.io/incus-bcachefs-debian/key.asc \
+      -o /etc/apt/keyrings/incus-bcachefs.asc
+    echo "deb [signed-by=/etc/apt/keyrings/incus-bcachefs.asc] https://phedders.github.io/incus-bcachefs-debian/ testing main" \
+      | sudo tee /etc/apt/sources.list.d/incus-bcachefs.list
+    sudo apt update
+    sudo apt install incus incus-ui-canonical
+
+Use sid instead of testing on unstable. The packages are built for amd64
+only, and only the most recent build of each suite is published.
+
 Installation
 ============
 
