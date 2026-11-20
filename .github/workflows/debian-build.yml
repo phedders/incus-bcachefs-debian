@@ -26,6 +26,9 @@ jobs:
     env:
       DEBIAN_FRONTEND: noninteractive
       DEB_BUILD_OPTIONS: parallel=2 nocheck
+      # The checkout is owned by the runner user while the container runs as
+      # root, so Go's VCS stamping would fail on git's ownership check.
+      GOFLAGS: -buildvcs=false
 
     steps:
       - name: Install git
@@ -66,5 +69,3 @@ jobs:
           name: incus-${{ matrix.suite }}
           path: artifacts/*
           if-no-files-found: error
-
-# Trigger a fresh workflow scan.
