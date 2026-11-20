@@ -1,0 +1,68 @@
+name: Debian packages
+
+on:
+  push:
+    branches:
+      - debian/experimental
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: testing
+            image: debian:testing
+          - suite: unstable
+            image: debian:sid
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      DEB_BUILD_OPTIONS: parallel=2 nocheck
+
+    steps:
+      - name: Install git
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure APT
+        run: |
+          # Enable deb-src for the base suite and add experimental, which has a
+          # few build dependencies newer than what testing/unstable currently
+          # ship. The pin keeps experimental below the base suite so only
+          # packages missing from the base suite are pulled from it.
+          sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources
+          printf 'deb http://deb.debian.org/debian experimental main\ndeb-src http://deb.debian.org/debian experimental main\n' > /etc/apt/sources.list.d/experimental.list
+          printf 'Package: *\nPin: release a=experimental\nPin-Priority: 500\n' > /etc/apt/preferences.d/experimental.pref
+
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get build-dep -y .
+
+      - name: Build packages
+        run: |
+          dpkg-buildpackage -b -uc -us
+
+      - name: Collect packages
+        run: |
+          mkdir -p artifacts
+          cp -v ../incus*.deb ../incus*.buildinfo ../incus*.changes artifacts/
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: incus-${{ matrix.suite }}
+          path: artifacts/*
+          if-no-files-found: error
