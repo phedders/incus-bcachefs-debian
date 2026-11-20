@@ -1,3 +1,10 @@
+incus (7.6.0-1~exp1+bcachefs2) experimental; urgency=medium
+
+  * Add the incus-ui-canonical binary package, built from the
+    zabbly/incus-ui-canonical web interface.
+
+ -- Paul Hedderly <paul+github@.mjr.org>  Fri, 20 Nov 2026 10:40:59 +0000
+
 incus (7.6.0-1~exp1+bcachefs1) experimental; urgency=medium
 
   * Local rebuild with the native bcachefs storage driver:

@@ -16,6 +16,9 @@ export DH_GOLANG_INSTALL_EXTRA := test/ shared/subprocess/testscript/ internal/s
 	dh $@ --builddirectory=_build --buildsystem=golang --with=golang
 
 override_dh_auto_build:
+	# Build the web interface from the pinned zabbly fork.
+	./debian/build-ui.sh
+
 	# Build almost everything with dynamic linking
 	CGO_LDFLAGS_ALLOW="-Wl,-z,now" dh_auto_build
 

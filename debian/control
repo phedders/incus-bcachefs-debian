@@ -4,7 +4,9 @@ Uploaders: Free Ekanayaka <freee@debian.org>, Mathias Gibbens <gibmat@debian.org
 Section: admin
 Testsuite: autopkgtest-pkg-go
 Build-Depends: debhelper-compat (= 13),
+               ca-certificates,
                dh-go,
+               git,
                golang-any (>= 2:1.26~),
                golang-github-adhocore-gronx-dev,
                golang-github-apex-log-dev,
@@ -85,6 +87,8 @@ Build-Depends: debhelper-compat (= 13),
                help2man,
                libacl1-dev,
                libcap-dev,
+               nodejs,
+               npm,
                dh-sequence-runit
 Build-Conflicts: golang-github-golang-protobuf-1-3-dev
 Standards-Version: 4.7.4
@@ -315,6 +319,23 @@ Description: Modern container and virtual machine manager - extra tools
   - incus-benchmark - A benchmarking tool for Incus
   - incus-migrate - A tool to turn any filesystem into an Incus instance
   - incus-simplestreams - Maintain an Incus-compatible simplestreams tree
+
+Package: incus-ui-canonical
+Architecture: all
+Depends: ${misc:Depends},
+         incus (= ${source:Version})
+Description: Modern container and virtual machine manager - web interface
+ Incus is a modern system container, application container and virtual
+ machine manager. It provides a cloud-like environment, creating instances
+ from premade images or any Docker (OCI) registry and offers a wide variety
+ of features, including the ability to seamlessly cluster servers together.
+ .
+ It supports multiple different local or remote storage options, traditional
+ or fully distributed networking and offers most common cloud features,
+ including a full REST API and integrations with common tooling like Ansible,
+ Terraform/OpenTofu, Packer, and Kubernetes Cluster API.
+ .
+ This package contains the Canonical web interface for Incus.
 
 Package: incus-agent
 Architecture: linux-any

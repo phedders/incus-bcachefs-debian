@@ -10,7 +10,7 @@ Versioning
 
 Local builds carry a +bcachefsN suffix on the Debian revision, for example:
 
-    incus (7.6.0-1~exp1+bcachefs1) experimental; urgency=medium
+    incus (7.6.0-1~exp1+bcachefs2) experimental; urgency=medium
 
 The suffix is deliberate:
 
@@ -23,6 +23,23 @@ The suffix is deliberate:
 
 Increment the suffix (bcachefs1 -> bcachefs2 -> ...) whenever the packaged
 source changes, so that apt offers the new build.
+
+Web interface
+-------------
+
+The incus-ui-canonical binary package is built from the zabbly fork of
+canonical/lxd-ui:
+
+    https://github.com/zabbly/incus-ui-canonical
+
+debian/build-ui.sh clones the tag pinned in INCUS_UI_TAG (currently
+incus-0.22.1), applies the same re-branding as zabbly/incus, and runs the
+yarn build. It needs network access, git, nodejs and npm; set INCUS_UI_SRC
+to reuse an existing checkout.
+
+The result is installed in /usr/share/incus/ui and enabled for incusd by
+a systemd drop-in that sets INCUS_UI. The interface is LGPL-3.0-only and
+is not part of the source package; see debian/copyright.
 
 Merging upstream packaging
 --------------------------
