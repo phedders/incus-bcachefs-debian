@@ -52,6 +52,9 @@ jobs:
           sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources
           printf 'deb http://deb.debian.org/debian experimental main\ndeb-src http://deb.debian.org/debian experimental main\n' > /etc/apt/sources.list.d/experimental.list
           printf 'Package: *\nPin: release a=experimental\nPin-Priority: 500\n' > /etc/apt/preferences.d/experimental.pref
+          # Keep dh-runit from experimental: its generated dependency is
+          # satisfied by the runit-helper version in testing and unstable.
+          printf 'Package: dh-runit runit-helper\nPin: release a=experimental\nPin-Priority: 100\n' > /etc/apt/preferences.d/dh-runit.pref
 
       - name: Install build dependencies
         run: |

@@ -10,7 +10,7 @@ Versioning
 
 Local builds carry a +bcachefsN suffix on the Debian revision, for example:
 
-    incus (7.6.0-1~exp1+bcachefs2) experimental; urgency=medium
+    incus (7.6.0-1~exp1+bcachefs3) experimental; urgency=medium
 
 The suffix is deliberate:
 

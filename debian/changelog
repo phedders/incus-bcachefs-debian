@@ -1,3 +1,10 @@
+incus (7.6.0-1~exp1+bcachefs3) experimental; urgency=medium
+
+  * Build against the base suite's dh-runit so incus-base is installable
+    on testing and unstable.
+
+ -- Paul Hedderly <paul+github@.mjr.org>  Fri, 20 Nov 2026 13:03:34 +0000
+
 incus (7.6.0-1~exp1+bcachefs2) experimental; urgency=medium
 
   * Add the incus-ui-canonical binary package, built from the
