@@ -76,7 +76,7 @@ jobs:
           ls ../incus-ui-canonical_*.deb
 
       - name: Upload packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: incus-${{ matrix.suite }}
           path: artifacts/*
