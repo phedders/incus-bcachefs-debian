@@ -58,6 +58,10 @@ jobs:
           apt-get update
           apt-get build-dep -y .
 
+      - name: Install Yarn
+        run: |
+          npm install -g yarn@1.22.22
+
       - name: Build packages
         run: |
           dpkg-buildpackage -b -uc -us
@@ -66,6 +70,7 @@ jobs:
         run: |
           mkdir -p artifacts
           cp -v ../incus*.deb ../incus*.buildinfo ../incus*.changes artifacts/
+          ls ../incus-ui-canonical_*.deb
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
