@@ -1,30 +1,44 @@
-Packaging policy for LTS and Feature releases
-=============================================
+Local bcachefs packaging
+========================
 
-Debian packages the current LTS release of Incus in unstable, which will then migrate
-to testing and eventually become part of the next stable Debian release. Upstream
-supports a LTS branch for five years, including security fixes. This aligns well with
-Debian's development cycle and commitment to supporting packaged software.
+This branch is Debian's debian/experimental packaging with the native
+bcachefs storage driver applied on top. It is not intended for upload to
+Debian.
 
-Monthly feature releases of Incus are uploaded on a best-effort basis to experimental,
-and _only_ to experimental. Upstream is very clear that each feature release is only
-supported until the next feature release is made. A given feature release of Incus will
-NEVER be uploaded to unstable, _except_ when a new LTS branch is created by upstream.
+Versioning
+----------
 
-Versions of Incus in experimental will by definition be less well tested than the version
-in unstable, though bug reports are always welcome.
+Local builds carry a +bcachefsN suffix on the Debian revision, for example:
 
-incus-agent versions and static linking
-=======================================
+    incus (7.6.0-1~exp1+bcachefs1) experimental; urgency=medium
 
-During amd64 and arm64 builds, multiple versions of incus-agent will be built. Notably,
-FreeBSD, MacOS, NetBSD, and Windows versions will be compiled to support incus-agent
-running in non-Linux virtual machines.
+The suffix is deliberate:
 
-The incus-agent binary is compiled as a statically-linked executable. This is done
-because if it is available on the host system, Incus will automatically copy the
-incus-agent binary into new virtual machines that are created. Statically-linking
-it will allow execution within any arbitrary virtual machine that a user may create.
+  * "+" sorts after the base version, so the local build replaces the
+    matching Debian package.
+  * It still sorts before the next Debian upload (~exp2, -1, -2, ...), so
+    official packages supersede it again.
+  * No epoch is used. An epoch would outrank every future Debian version
+    and could not be dropped without a manual downgrade.
 
-This issue was encountered in the initial packaging of LXD for Debian, and the
-Gentoo folks have also run into this: https://bugs.gentoo.org/show_bug.cgi?id=752480
+Increment the suffix (bcachefs1 -> bcachefs2 -> ...) whenever the packaged
+source changes, so that apt offers the new build.
+
+Merging upstream packaging
+--------------------------
+
+    git fetch origin
+    git merge origin/debian/experimental
+
+Conflicts are normally limited to debian/changelog and the API extension
+lists. Resolve the changelog by keeping the local +bcachefs entry on top
+with an incremented suffix. Enable `git rerere` to reuse the resolution.
+
+CI
+--
+
+.github/workflows/debian-build.yml builds binary packages on
+debian:testing and debian:sid and uploads the .deb files as artifacts.
+A few build dependencies are only available in Debian experimental; the
+workflow adds experimental with a priority-500 pin so the packages still
+build against the base suite.
