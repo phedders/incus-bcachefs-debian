@@ -39,6 +39,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Trust workspace
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Configure APT
         run: |
           # Enable deb-src for the base suite and add experimental, which has a
