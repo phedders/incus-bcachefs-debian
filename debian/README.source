@@ -41,6 +41,20 @@ The result is installed in /usr/share/incus/ui and enabled for incusd by
 a systemd drop-in that sets INCUS_UI. The interface is LGPL-3.0-only and
 is not part of the source package; see debian/copyright.
 
+APT repository
+--------------
+
+The publish job in .github/workflows/debian-build.yml creates a signed
+static apt repository and deploys it to GitHub Pages:
+
+    https://phedders.github.io/incus-bcachefs-debian/
+
+debian/publish-apt-repo.sh takes the .deb files for each suite, writes
+dists/<suite> and pool/<suite>, signs InRelease with the key in the
+APT_GPG_PRIVATE_KEY secret and publishes the key as key.asc. The key ID is
+in the APT_GPG_KEY_ID repository variable. Only the current build of each
+suite is published, which keeps the site well below the Pages size limit.
+
 Merging upstream packaging
 --------------------------
 
