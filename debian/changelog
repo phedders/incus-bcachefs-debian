@@ -1,3 +1,13 @@
+incus (7.6.0-1~exp1+bcachefs1) experimental; urgency=medium
+
+  * Local rebuild with the native bcachefs storage driver:
+    - COW volumes and snapshots, project quotas and the
+      bcachefs.optimized_images pool option.
+    - Based on the Debian experimental packaging, rebuilt for
+      testing and unstable.
+
+ -- Paul Hedderly <paul+github@.mjr.org>  Fri, 20 Nov 2026 10:11:28 +0000
+
 incus (7.6.0-1~exp1) experimental; urgency=medium
 
   * New upstream feature release:
