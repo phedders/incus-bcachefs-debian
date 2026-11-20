@@ -66,3 +66,5 @@ jobs:
           name: incus-${{ matrix.suite }}
           path: artifacts/*
           if-no-files-found: error
+
+# Trigger a fresh workflow scan.
